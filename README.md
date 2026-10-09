@@ -153,6 +153,10 @@ Node 24+. Data goes to `./database` unless `UNIFI_DATABASE_DIR` is set.
 
 See [NOTICE](NOTICE).
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 [GPL-3.0](LICENSE).
