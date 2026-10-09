@@ -100,6 +100,16 @@ It checks the connection before finishing. Everything can be changed later in **
 **Forgot the password?** Start the container once with `NETLENS_RESET_PASSWORD=1`, set a new
 password in the browser, then remove the variable.
 
+### Backup, restore and moving history
+
+**Settings → History**: *Export history* downloads one file with everything saved — usage,
+connection records, network events, Wi-Fi and equipment samples. *Import history…* merges such
+a file into this installation: days it does not have are added, a day it has is replaced only
+by a fuller copy, and events and samples are added where missing. Use it to move to a new
+server, to restore a backup, or to bring in history from another installation. Settings, the
+API key and the password are never in the file. Days older than the 30 days of usage history
+are skipped.
+
 ### Optional environment variables
 
 For scripted installs these seed empty settings on the very first start; after that the

@@ -341,13 +341,19 @@ export async function setClientBlocked(mac, blocked) {
   return { ok: true, blocked: Boolean(json?.data?.[0]?.blocked ?? blocked) };
 }
 
+// Every client UniFi has ever seen, offline ones included (name, hostname, last_ip,
+// fixed_ip, blocked). Used for blocking state and for naming local destinations.
+export async function getKnownClients() {
+  const { site } = config();
+  const json = await request(`/proxy/network/api/s/${site}/rest/user`);
+  return json?.data || [];
+}
+
 // Blocked state for every known client, not just the connected ones — a blocked device
 // usually is not associated, so it would be missing from the active list.
 export async function listBlockedMacs() {
-  const { site } = config();
-  const json = await request(`/proxy/network/api/s/${site}/rest/user`);
   const out = new Set();
-  for (const u of json?.data || []) {
+  for (const u of await getKnownClients()) {
     if (u?.blocked && u.mac) out.add(String(u.mac).toLowerCase());
   }
   return out;

@@ -1,4 +1,7 @@
 import { exec } from "node:child_process";
+import zlib from "node:zlib";
+import readline from "node:readline";
+import { pipeline } from "node:stream/promises";
 import * as auth from "./auth.js";
 import express from "express";
 import cors from "cors";
@@ -794,6 +797,107 @@ app.post("/api/cache/refetch", async (_req, res) => {
   }
 });
 
+// ---- History export / import (UU-C-066) -----------------------------------------------
+//
+// One gzip file of JSON lines: a header, then every saved day (with its flows), then the
+// rows of the history tables. Never settings, the API key or the password. Import merges:
+// a day is added when missing or replaced when the file's copy holds more traffic; table
+// rows are added when missing. Nothing on the request path talks to UniFi.
+const HISTORY_FORMAT = "netlens-history";
+
+app.get("/api/history/export", async (_req, res) => {
+  const gz = zlib.createGzip({ level: 6 });
+  try {
+    res.setHeader("Content-Type", "application/gzip");
+    res.setHeader("Content-Disposition", `attachment; filename="netlens-history-${zonedDateKey(Date.now())}.ndjson.gz"`);
+    gz.pipe(res);
+    const write = (obj) =>
+      new Promise((resolve) => {
+        if (gz.write(`${JSON.stringify(obj)}\n`)) resolve();
+        else gz.once("drain", resolve);
+      });
+    await write({ format: HISTORY_FORMAT, version: 1, exportedAt: Date.now(), app: process.env.APP_VERSION || "dev", tz });
+    let dayCount = 0;
+    for (const day of cache.exportDays()) {
+      await write({ type: "day", day });
+      // A busy day has 150k+ flows: written in chunks so neither side holds it whole.
+      if (day.flowsFollow) {
+        for (const rows of flowstore.iterDay(day.dayKey)) await write({ type: "flows", dayKey: day.dayKey, rows });
+      }
+      dayCount += 1;
+    }
+    for (const table of db.HISTORY_TABLES) {
+      for (const rows of db.exportTable(table)) await write({ type: "rows", table, rows });
+    }
+    gz.end();
+    console.log(`history export: ${dayCount} day(s)`);
+  } catch (err) {
+    if (!res.headersSent) return sendError(res, "GET /api/history/export", err);
+    logError("GET /api/history/export", err);
+    res.destroy(err);
+  }
+});
+
+app.post("/api/history/import", async (req, res) => {
+  const tmp = path.join(databaseDir, `import-${Date.now()}.tmp`);
+  try {
+    await pipeline(req, fs.createWriteStream(tmp));
+    const head = Buffer.alloc(2);
+    const fd = fs.openSync(tmp, "r");
+    fs.readSync(fd, head, 0, 2, 0);
+    fs.closeSync(fd);
+    const gzipped = head[0] === 0x1f && head[1] === 0x8b;
+    const source = fs.createReadStream(tmp);
+    const lines = readline.createInterface({ input: gzipped ? source.pipe(zlib.createGunzip()) : source, crlfDelay: Infinity });
+    const days = { added: 0, replaced: 0, kept: 0, old: 0, busy: 0, bad: 0 };
+    const rows = {};
+    let header = null;
+    // A day whose flows follow as chunks is held until its last chunk, then imported. Days
+    // that will be kept or skipped do not collect their chunks at all.
+    let held = null;
+    const flush = () => {
+      if (!held) return;
+      days[held.take ? cache.importDay(held.day) : held.verdict] += 1;
+      held = null;
+    };
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      const obj = JSON.parse(line);
+      if (!header) {
+        if (obj?.format !== HISTORY_FORMAT) {
+          res.status(400).json({ error: "This is not a NetLens history file." });
+          lines.close();
+          source.destroy();
+          return;
+        }
+        header = obj;
+        continue;
+      }
+      if (obj.type === "flows") {
+        if (held?.take && held.day.dayKey === obj.dayKey) for (const r of obj.rows || []) held.day.flows.push(r);
+        continue;
+      }
+      flush();
+      if (obj.type === "day") {
+        const verdict = cache.importVerdict(obj.day);
+        const take = verdict === "added" || verdict === "replaced";
+        if (obj.day && obj.day.flowsFollow) obj.day.flows = [];
+        held = { day: obj.day, verdict, take };
+      } else if (obj.type === "rows") {
+        rows[obj.table] = (rows[obj.table] || 0) + db.importRows(obj.table, obj.rows);
+      }
+    }
+    flush();
+    if (!header) return res.status(400).json({ error: "The file is empty." });
+    console.log(`history import: days ${JSON.stringify(days)} rows ${JSON.stringify(rows)}`);
+    res.json({ ok: true, exportedAt: header.exportedAt || null, days, rows, retainDays: cache.RETAIN_DAYS });
+  } catch (err) {
+    sendError(res, "POST /api/history/import", err);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+});
+
 app.post("/api/log", (req, res) => {
   const body = req.body || {};
   logError(body.source || "ui", body.stack || body.message || "unknown", body.extra);
@@ -875,16 +979,24 @@ app.get("/api/report", async (req, res) => {
     const localName = (() => {
       const byMac = new Map();
       const byIp = new Map();
+      // UniFi gives an unnamed client its MAC as the name; that is not a name.
+      const real = (n) => (n && !/^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i.test(String(n).trim()) ? n : null);
       for (const c of db.listStoredClients()) {
-        const n = c.name || c.hostname;
+        const n = real(c.name) || real(c.hostname);
         if (!n) continue;
         if (c.mac) byMac.set(String(c.mac).toLowerCase(), n);
         if (c.ip) byIp.set(c.ip, n);
       }
-      for (const [m, n] of db.siemNamesByMac()) if (!byMac.has(m)) byMac.set(m, n);
+      for (const [m, n] of db.siemNamesByMac()) if (!byMac.has(m) && real(n)) byMac.set(m, n);
+      // Then UniFi's own devices (every interface) and known, also offline, clients.
+      const saved = db.localNames();
       return (domain) => {
         const d = String(domain || "").toLowerCase();
-        return byMac.get(d) || byIp.get(d) || null;
+        const n = byMac.get(d) || byIp.get(d) || real(saved.get(d));
+        if (n) return n;
+        // No name anywhere: the address itself, so each device is its own row instead of
+        // one anonymous "Local network" bucket (owner: "if no name just report it as mac").
+        return /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(d) || /^\d{1,3}(\.\d{1,3}){3}$/.test(d) || /^[0-9a-f:]+:[0-9a-f:]*$/.test(d) ? d : null;
       };
     })();
     const named = (row) => {
@@ -1380,6 +1492,7 @@ async function snapshot() {
     await health.pollHealth().catch((err) => logError("health pollHealth", err));
     // UniFi's per-device daily totals: fills lost days, 90+ days of history (UU-C-057).
     await health.refreshDaily(zonedDateKey).catch((err) => logError("health refreshDaily", err));
+    await health.refreshLocalNames().catch((err) => logError("health refreshLocalNames", err));
     db.metaSet("last_snapshot", end);
     console.log(`snapshot ${new Date(end).toISOString()} clients=${online.length} buckets=+${rows}`);
   } catch (err) {

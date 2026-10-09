@@ -116,6 +116,19 @@ export function readDay(day) {
   return selectDay.all(day).map(toRow);
 }
 
+// The same rows in chunks, for an export that must not hold a whole day at once.
+export function* iterDay(day, chunk = 5000) {
+  let rows = [];
+  for (const r of selectDay.iterate(day)) {
+    rows.push(toRow(r));
+    if (rows.length >= chunk) {
+      yield rows;
+      rows = [];
+    }
+  }
+  if (rows.length) yield rows;
+}
+
 export function writeDay(day, rows, classifier) {
   db.exec("BEGIN");
   try {

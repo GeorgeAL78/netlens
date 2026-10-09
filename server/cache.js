@@ -175,6 +175,104 @@ function persistDay(entry) {
   }
 }
 
+// ---- Export / import (UU-C-066) ------------------------------------------------------
+//
+// Settings > History > Export writes every saved day as one self-contained object (the day
+// file plus its flows from flows.db); Import takes such days from another installation —
+// or this one, as a restore — while running. Old PC day files (flows inside the JSON) have
+// the same shape, so they import the same way.
+
+// Each saved day, oldest first, with its flows. A generator, so an export streams one day
+// at a time instead of holding the whole history.
+export function* exportDays() {
+  for (const dayKey of cachedDayKeys()) {
+    const e = days.get(dayKey);
+    if (!e?.fetchedAt) continue;
+    yield {
+      dayKey,
+      start: e.start,
+      end: e.end,
+      coveredThrough: e.coveredThrough,
+      fetchedAt: e.fetchedAt,
+      classifierVersion: CLASSIFIER_VERSION,
+      closedTrafficRead: Boolean(e.closedTrafficRead),
+      traffic: e.traffic,
+      // The flows follow the day as {type:"flows"} chunks (flowstore.iterDay).
+      flows: [],
+      flowsFollow: e.flowCount || 0,
+      flowsInDb: false,
+      buckets: e.buckets || [],
+      bucketSpans: e.bucketSpans || [],
+      hourlyRead: Number(e.hourlyRead) || 0,
+      fineSpans: e.fineSpans || [],
+      bucketVersion: e.bucketVersion || 0,
+    };
+  }
+}
+
+// Bring flows of any vintage to the current shape and classifier.
+function currentFlows(source, classifier) {
+  const stale = Number(classifier || 0) !== CLASSIFIER_VERSION;
+  const flows = (source || []).map((f) => {
+    const row = toCachedFlow(f);
+    return stale ? reclassifyCachedRow(row) : row;
+  });
+  return stale ? nameBareIpFlows(flows) : flows;
+}
+
+// One imported day. A day this installation does not have is added; one it has is replaced
+// only when the imported copy holds more traffic (a container started mid-day has a partial
+// day). Days past RETAIN_DAYS are skipped (restore would evict them), and so is a day being
+// fetched right now. Returns "added" | "replaced" | "kept" | "old" | "busy" | "bad".
+// What importDay would do with this day, without doing it — so an import only collects a
+// day's flow chunks when the day will actually be taken.
+export function importVerdict(incoming) {
+  const dayKey = String(incoming?.dayKey || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey) || !incoming.fetchedAt || !Array.isArray(incoming.traffic)) return "bad";
+  if (Number(incoming.end) < Date.now() - RETAIN_DAYS * 86400000) return "old";
+  const current = days.get(dayKey);
+  if (current?.pending || current?.warming) return "busy";
+  if (current?.fetchedAt && trafficTotal(incoming.traffic) <= trafficTotal(current.traffic)) return "kept";
+  return current?.fetchedAt ? "replaced" : "added";
+}
+
+export function importDay(incoming) {
+  const verdict = importVerdict(incoming);
+  if (verdict !== "added" && verdict !== "replaced") return verdict;
+  const dayKey = incoming.dayKey;
+  const current = days.get(dayKey);
+  const carried = !incoming.flowsInDb && (incoming.flows || []).length > 0;
+  let flowCount = current?.flowCount || 0;
+  if (carried) {
+    const flows = currentFlows(incoming.flows, incoming.classifierVersion);
+    flowstore.writeDay(dayKey, flows, CLASSIFIER_VERSION);
+    flowCount = flows.length;
+  }
+  // An imported day without flows keeps the flows this installation already had for it.
+  const entry = {
+    dayKey,
+    start: Number(incoming.start),
+    end: Number(incoming.end),
+    traffic: incoming.traffic,
+    flowCount,
+    buckets: incoming.buckets || [],
+    bucketSpans: incoming.bucketSpans || [],
+    hourlyRead: Number(incoming.hourlyRead) || 0,
+    fineSpans: incoming.fineSpans || (incoming.hourlyRead ? [] : incoming.bucketSpans || []),
+    bucketVersion: Number(incoming.bucketVersion || 0),
+    coveredThrough: Number(incoming.coveredThrough || incoming.end || 0),
+    fetchedAt: Number(incoming.fetchedAt),
+    classifierVersion: CLASSIFIER_VERSION,
+    closedTrafficRead: Boolean(incoming.closedTrafficRead),
+    warming: false,
+    pending: null,
+  };
+  fitBucketsToTotals(entry);
+  days.set(dayKey, entry);
+  persistDay(entry);
+  return verdict;
+}
+
 function restore() {
   try {
     if (!fs.existsSync(cacheDir)) return;

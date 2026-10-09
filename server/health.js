@@ -113,6 +113,7 @@ export async function pollHealth() {
     const clients = stations.map((c) => clientRow(c, ts)).filter((c) => c.mac);
     const devs = devices.map((d) => deviceRow(d, ts)).filter((d) => d.mac);
     db.saveLiveSamples({ clients, devices: devs, wan: wanRow(health, ts) });
+    db.saveLocalNames("device", deviceNames(devices), ts);
     if (ts - lastPrune > 60 * 60 * 1000) {
       db.pruneLiveSamples(ts - RETAIN_MS);
       lastPrune = ts;
@@ -123,6 +124,57 @@ export async function pollHealth() {
     return state.counts;
   } catch (err) {
     state.error = err.message;
+    throw err;
+  }
+}
+
+// ---- Names for local destinations (UU-F-052) ------------------------------------------
+//
+// Flows to the LAN name their destination only by MAC or IP when UniFi has no hostname.
+// The gateway was the biggest such destination (2.9 GB over 7 days, to one of its LAN
+// interface MACs): stat/device lists a device's MAC per interface, port and network, and
+// its address on each network (ip_subnet "192.168.1.1/24"). Known clients (rest/user)
+// cover devices that are offline now.
+function deviceNames(devices) {
+  const out = [];
+  for (const d of devices || []) {
+    const name = d.name || d.model;
+    if (!name) continue;
+    const macs = [d.mac, ...(d.ethernet_table || []).map((e) => e.mac), ...(d.port_table || []).map((p) => p.mac), ...(d.network_table || []).map((n) => n.mac)];
+    const ips = [d.ip, d.lan_ip, ...(d.network_table || []).map((n) => String(n.ip_subnet || "").split("/")[0])];
+    for (const k of [...macs.map(lower), ...ips]) if (k) out.push([k, name]);
+  }
+  return out;
+}
+
+function knownClientNames(users) {
+  const out = [];
+  const byLastIp = new Map();
+  for (const u of users || []) {
+    const name = u.name || u.hostname;
+    if (!name || !u.mac) continue;
+    out.push([lower(u.mac), name]);
+    if (u.use_fixedip && u.fixed_ip) out.push([u.fixed_ip, name]);
+    if (u.last_ip) byLastIp.set(u.last_ip, byLastIp.has(u.last_ip) ? null : name);
+  }
+  // A last-seen address can have been handed to another client since; only when one known
+  // client claims it.
+  for (const [ip, name] of byLastIp) if (name) out.push([ip, name]);
+  return out;
+}
+
+export const names = { lastFetchedAt: 0, error: null };
+
+export async function refreshLocalNames({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && now - names.lastFetchedAt < 60 * 60 * 1000) return { skipped: true };
+  try {
+    const pairs = knownClientNames(await unifi.getKnownClients());
+    db.saveLocalNames("client", pairs, now);
+    Object.assign(names, { lastFetchedAt: now, error: null });
+    return { names: pairs.length };
+  } catch (err) {
+    names.error = err.message;
     throw err;
   }
 }

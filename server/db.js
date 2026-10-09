@@ -91,6 +91,16 @@ db.exec(`
     data TEXT,
     PRIMARY KEY (mac, ts)
   );
+  -- Names for local MACs and IPs that are not current clients (UU-F-052): UniFi devices by
+  -- every interface MAC and network address, and known (also offline) clients. Rebuilt
+  -- from UniFi by health.refreshLocalNames; read by the report to name LAN destinations.
+  CREATE TABLE IF NOT EXISTS local_names (
+    key TEXT NOT NULL,
+    name TEXT NOT NULL,
+    source TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (source, key)
+  );
   -- UniFi's per-device daily totals (stat/report/daily.user), kept a year (UU-C-057).
   CREATE TABLE IF NOT EXISTS daily_device (
     day TEXT NOT NULL,
@@ -369,6 +379,69 @@ export function siemNamesByMac(limit = 5000) {
     ];
     for (const [m, n] of pairs) if (m && n && !out.has(m)) out.set(m, n);
   }
+  return out;
+}
+
+// History that travels in an export (UU-C-066). Never settings: the API key and the login
+// password stay with the installation that owns them.
+export const HISTORY_TABLES = ["clients", "siem_events", "daily_device", "client_samples", "device_samples", "wan_samples"];
+
+export function* exportTable(name, chunk = 5000) {
+  if (!HISTORY_TABLES.includes(name)) throw new Error(`not exportable: ${name}`);
+  let rows = [];
+  for (const row of db.prepare(`SELECT * FROM ${name}`).iterate()) {
+    rows.push(row);
+    if (rows.length >= chunk) {
+      yield rows;
+      rows = [];
+    }
+  }
+  if (rows.length) yield rows;
+}
+
+// Rows already present (same primary key) are left alone. Columns are taken from the
+// table itself, never from the file, so a crafted file cannot name a column.
+export function importRows(name, rows) {
+  if (!HISTORY_TABLES.includes(name)) return 0;
+  const cols = db.prepare(`PRAGMA table_info(${name})`).all().map((c) => c.name);
+  const ins = db.prepare(`INSERT OR IGNORE INTO ${name} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`);
+  let added = 0;
+  db.exec("BEGIN");
+  try {
+    for (const r of rows || []) {
+      if (!r || typeof r !== "object") continue;
+      const vals = cols.map((c) => {
+        const v = r[c];
+        if (typeof v === "boolean") return v ? 1 : 0;
+        return typeof v === "number" || typeof v === "string" ? v : null;
+      });
+      added += Number(ins.run(...vals).changes);
+    }
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return added;
+}
+
+export function saveLocalNames(source, pairs, ts = Date.now()) {
+  db.exec("BEGIN");
+  try {
+    db.prepare(`DELETE FROM local_names WHERE source = ?`).run(source);
+    const ins = db.prepare(`INSERT INTO local_names (key, name, source, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(source, key) DO NOTHING`);
+    for (const [key, name] of pairs) ins.run(key, name, source, ts);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+export function localNames() {
+  // A UniFi device's own name wins over a client record for the same address.
+  const out = new Map();
+  for (const r of db.prepare(`SELECT key, name FROM local_names ORDER BY source = 'device' DESC`).all()) if (!out.has(r.key)) out.set(r.key, r.name);
   return out;
 }
 

@@ -1,0 +1,25 @@
+# Push DOCKERHUB.md to the Docker Hub repository page (UU-C-066). Runs when the file changes
+# on main, or by hand. Uses the same DOCKER_USERNAME / DOCKER_PASSWORD secrets as the image
+# publish; Docker Hub only accepts a description update from a personal access token with
+# the "Read, Write, Delete" permission.
+name: Docker Hub description
+
+on:
+  push:
+    branches: [main]
+    paths: [DOCKERHUB.md, .github/workflows/dockerhub-readme.yml]
+  workflow_dispatch:
+
+jobs:
+  description:
+    if: github.repository == 'GeorgeAL78/netlens'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          repository: gjergjk/netlens
+          short-description: "A dashboard for UniFi networks: traffic per device and app, Wi-Fi, equipment, threats."
+          readme-filepath: ./DOCKERHUB.md

@@ -1,13 +1,17 @@
 **NetLens — a dashboard for UniFi networks.**
 
-**Much lighter.** Connection records (flows) — about 90% of the saved data — now live in a
-small embedded database (`/data/flows.db`) instead of daily JSON files that were all held in
-memory. On a busy network with 30 days of history the server went from about 1.2 GB of
-memory to under 150 MB, and long views (30 days) load a little faster. Every number is the
-same: hundreds of reports were compared before and after, and all were identical.
+**Export and import history** — Settings → History. *Export history* downloads one file with
+everything saved (usage, connection records, network events, Wi-Fi and equipment samples).
+*Import history…* merges such a file: missing days are added, a day is replaced only by a fuller
+copy. Use it for backups, restores, or moving to a new server. Settings, the API key and the
+password are never in the file.
 
-**Upgrading** is automatic: on the first start the existing history is converted once (a few
-seconds per day of history) and the old files shrink to a fraction of their size. Keep the
-same `/data` folder.
+**Local devices get names.** Traffic to your own network that UniFi only knew by a MAC or IP
+address is now named after the UniFi device or client it belongs to — on the test network the
+largest one turned out to be the gateway itself. Anything with no name anywhere is shown by its
+address instead of one anonymous "Local network" row.
+
+**Cleaner logs.** The settings loader no longer prints an "injected env" line to the error
+output on every start.
 
 Not affiliated with Ubiquiti. UniFi is a trademark of Ubiquiti Inc.

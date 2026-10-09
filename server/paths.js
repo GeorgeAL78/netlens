@@ -34,6 +34,8 @@ if (!fs.existsSync(dbFile)) {
   }
 }
 
-dotenv.config({ path: bundledEnv });
-dotenv.config({ path: legacyEnv });
-dotenv.config({ path: path.join(databaseDir, ".env") });
+// quiet: dotenv otherwise prints "injected env (N) from <path>" to stderr on every start,
+// which Docker and Unraid show as an error and which names the user's folders (UU-F-054).
+dotenv.config({ path: bundledEnv, quiet: true });
+dotenv.config({ path: legacyEnv, quiet: true });
+dotenv.config({ path: path.join(databaseDir, ".env"), quiet: true });

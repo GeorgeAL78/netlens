@@ -228,6 +228,74 @@ export function AccountSettings({ tz, onTz }) {
         )}
       </div>
       {msg && <p className="setup-dim">{msg}</p>}
+      <HistoryTransfer />
     </div>
+  );
+}
+
+// Settings > History (UU-C-066): download everything this installation has saved, or merge
+// a file from another installation (or an older backup of this one).
+function HistoryTransfer() {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function upload(file) {
+    if (!file) return;
+    setBusy(true);
+    setMsg(`Importing ${file.name}…`);
+    try {
+      const r = await fetch("/api/history/import", {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: file,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `Import failed (${r.status})`);
+      const d = j.days || {};
+      const added = Object.values(j.rows || {}).reduce((n, v) => n + v, 0);
+      const parts = [
+        `${d.added || 0} day(s) added`,
+        d.replaced ? `${d.replaced} replaced with a fuller copy` : null,
+        d.kept ? `${d.kept} kept (this installation's copy was fuller)` : null,
+        d.old ? `${d.old} older than ${j.retainDays} days skipped` : null,
+        d.busy ? `${d.busy} skipped while being fetched — import again later` : null,
+        d.bad ? `${d.bad} unreadable` : null,
+        `${added.toLocaleString()} event/sample rows added`,
+      ].filter(Boolean);
+      setMsg(`Done: ${parts.join(", ")}. Reload to see it.`);
+    } catch (err) {
+      setMsg(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <h3>History</h3>
+      <p className="setup-dim">
+        Export saves usage, connection records, events and Wi-Fi/equipment samples to one file. Import merges such a
+        file: missing days are added, a day is replaced only by a fuller copy. Settings, the API key and the password are
+        never included.
+      </p>
+      <div className="account-actions">
+        <a className="btn ghost" href="/api/history/export" download>
+          Export history
+        </a>
+        <label className="btn ghost history-import">
+          {busy ? "Importing…" : "Import history…"}
+          <input
+            type="file"
+            accept=".gz,.ndjson,application/gzip"
+            disabled={busy}
+            onChange={(e) => {
+              upload(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
+      {msg && <p className="setup-dim">{msg}</p>}
+    </>
   );
 }
