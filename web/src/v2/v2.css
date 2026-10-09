@@ -1,0 +1,505 @@
+/* v2 carries its own tokens so it can be restyled without touching the classic view. */
+:root {
+  --v2-bg: #0a0f1a;
+  --v2-panel: #111827;
+  --v2-panel-2: #0e1523;
+  --v2-line: #1f2b40;
+  --v2-text: #e6ecf7;
+  --v2-dim: #8496b4;
+  --v2-accent: #4f8dfd;
+  --v2-warn: #fbbf24;
+  --v2-danger: #f87171;
+  --v2-radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--v2-bg);
+  color: var(--v2-text);
+  font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.v2 {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 20px 24px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- top bar ---------- */
+.v2-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.v2-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.v2-brand h1 {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.v2-pill {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--v2-accent);
+  background: color-mix(in srgb, var(--v2-accent) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--v2-accent) 34%, transparent);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.v2-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.v2-dim {
+  color: var(--v2-dim);
+}
+
+.v2-warn {
+  color: var(--v2-warn);
+  font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--v2-warn) 34%, transparent);
+  background: color-mix(in srgb, var(--v2-warn) 12%, transparent);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+.v2-btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: var(--v2-accent);
+  color: #06101f;
+  font: inherit;
+  font-weight: 600;
+  padding: 7px 13px;
+  border-radius: 9px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  transition: filter 120ms ease, border-color 120ms ease;
+}
+
+.v2-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.v2-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.v2-ghost {
+  background: transparent;
+  color: var(--v2-text);
+  border-color: var(--v2-line);
+}
+
+.v2-ghost:hover:not(:disabled) {
+  border-color: var(--v2-accent);
+}
+
+/* ---------- filters ---------- */
+.v2-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding-bottom: 2px;
+}
+
+.v2-chips,
+.v2-selects {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v2-chip {
+  appearance: none;
+  border: 1px solid var(--v2-line);
+  background: var(--v2-panel-2);
+  color: var(--v2-dim);
+  font: inherit;
+  padding: 6px 13px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.v2-chip:hover {
+  color: var(--v2-text);
+}
+
+.v2-chip.on {
+  color: var(--v2-text);
+  background: color-mix(in srgb, var(--v2-accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--v2-accent) 52%, transparent);
+}
+
+.v2-selects select,
+.v2-date {
+  background: var(--v2-panel-2);
+  color: var(--v2-text);
+  border: 1px solid var(--v2-line);
+  border-radius: 9px;
+  padding: 7px 10px;
+  font: inherit;
+  max-width: 220px;
+}
+
+.v2-error {
+  border: 1px solid color-mix(in srgb, var(--v2-danger) 40%, transparent);
+  background: color-mix(in srgb, var(--v2-danger) 12%, transparent);
+  color: var(--v2-danger);
+  padding: 10px 12px;
+  border-radius: var(--v2-radius);
+}
+
+/* ---------- summary ---------- */
+.v2-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.v2-summary > div {
+  background: var(--v2-panel);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-radius);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.v2-summary span {
+  font-size: 12px;
+}
+
+.v2-summary strong {
+  font-size: 19px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- cards ---------- */
+.v2-card {
+  background: var(--v2-panel);
+  border: 1px solid var(--v2-line);
+  border-radius: var(--v2-radius);
+  padding: 16px 18px 18px;
+}
+
+.v2-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.v2-card-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 620;
+}
+
+.v2-card-head span {
+  font-size: 12px;
+}
+
+/* ---------- activity map ---------- */
+.v2-map {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.v2-axis {
+  position: relative;
+  height: 16px;
+  margin-left: 148px;
+  color: var(--v2-dim);
+  font-size: 11px;
+}
+
+.v2-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.v2-lane {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-lane-name {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--v2-dim);
+  text-align: right;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v2-lane-name:hover {
+  color: var(--v2-text);
+}
+
+.v2-track {
+  position: relative;
+  height: 22px;
+  background: var(--v2-panel-2);
+  border: 1px solid var(--v2-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.v2-grid {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--v2-line);
+  opacity: 0.55;
+}
+
+.v2-block {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  min-width: 2px;
+  border: 0;
+  border-radius: 3px;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 110ms ease, transform 110ms ease;
+}
+
+.v2-block:hover,
+.v2-block.focused {
+  opacity: 1;
+  transform: scaleY(1.18);
+}
+
+.v2-focus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 9px 12px;
+  background: var(--v2-panel-2);
+  border: 1px solid var(--v2-line);
+  border-radius: 9px;
+  min-height: 38px;
+  font-size: 13px;
+}
+
+.v2-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+
+/* ---------- session feed ---------- */
+.v2-feed {
+  display: flex;
+  flex-direction: column;
+}
+
+.v2-row {
+  display: grid;
+  grid-template-columns: 130px 150px 160px 1fr 90px;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 4px;
+  border-top: 1px solid var(--v2-line);
+}
+
+.v2-row:first-child {
+  border-top: 0;
+}
+
+.v2-row:hover {
+  background: var(--v2-panel-2);
+}
+
+.v2-when {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.v2-when span {
+  font-size: 12px;
+}
+
+.v2-service {
+  appearance: none;
+  border: 0;
+  font: inherit;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-device {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--v2-text);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-device:hover {
+  color: var(--v2-accent);
+}
+
+.v2-domains {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v2-bytes {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.crash {
+  padding: 40px;
+  color: var(--v2-text);
+}
+
+.crash a {
+  color: var(--v2-accent);
+}
+
+/* ---------- narrow ---------- */
+@media (max-width: 1000px) {
+  .v2-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .v2-row {
+    grid-template-columns: 110px 130px 1fr 80px;
+  }
+  .v2-domains {
+    display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .v2 {
+    padding: 16px 14px 40px;
+  }
+  .v2-lane {
+    grid-template-columns: 92px 1fr;
+  }
+  .v2-axis {
+    margin-left: 100px;
+  }
+  .v2-row {
+    grid-template-columns: 96px 1fr 76px;
+  }
+  .v2-device {
+    display: none;
+  }
+}
+
+/* The side rail lives in web/src/shared/ so both releases share one menu. */
+.v2-shell { display: grid; grid-template-columns: 236px minmax(0, 1fr); min-height: 100vh; }
+.v2-main { min-width: 0; }
+.v2-nav-toggle { display: none; }
+
+.v2-modal-back {
+  position: fixed; inset: 0; background: rgba(4, 7, 13, 0.66);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; z-index: 60;
+}
+.v2-modal {
+  width: min(460px, 92vw); background: var(--v2-panel);
+  border: 1px solid var(--v2-line); border-radius: var(--v2-radius); padding: 20px;
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.7);
+}
+.v2-modal h2 { margin: 0 0 14px; font-size: 17px; font-weight: 650; }
+.v2-modal label { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; font-size: 12px; color: var(--v2-dim); }
+.v2-modal input {
+  background: var(--v2-panel-2); color: var(--v2-text);
+  border: 1px solid var(--v2-line); border-radius: 9px; padding: 9px 11px; font: inherit;
+}
+.v2-modal input:focus-visible { outline: none; border-color: var(--v2-accent); }
+.v2-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+@media (max-width: 1100px) {
+  .v2-shell { grid-template-columns: minmax(0, 1fr); }
+  .v2-nav-toggle {
+    display: flex; flex-direction: column; justify-content: center; gap: 4px;
+    width: 34px; height: 34px; flex: none; padding: 0 8px;
+    background: var(--v2-panel); border: 1px solid var(--v2-line); border-radius: 9px; cursor: pointer;
+  }
+  .v2-nav-toggle span { display: block; height: 1.5px; background: var(--v2-text); border-radius: 2px; }
+}
+
+/* Data UniFi deleted before the app saved it (UU-F-053). */
+.v2-lost {
+  margin: 0 0 10px; padding: 6px 10px; border-radius: 8px;
+  background: rgba(127, 29, 29, 0.22); border: 1px solid rgba(248, 113, 113, 0.35);
+  color: #fecaca; font-size: 12px;
+}

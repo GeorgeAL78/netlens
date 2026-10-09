@@ -1,0 +1,19 @@
+UniFi NetLens
+Copyright (C) 2026 GeorgeAL78
+
+This program is free software, licensed under the GNU General Public License v3.0 (see LICENSE).
+
+Not affiliated with, endorsed by, or sponsored by Ubiquiti Inc. UniFi is a trademark of
+Ubiquiti Inc.
+
+Third-party data bundled in server/data/:
+
+- public_suffix_list.dat — the Public Suffix List, https://publicsuffix.org,
+  Mozilla Public License 2.0 (header retained in the file).
+- ip2asn.tsv.gz — derived from IPinfo Lite. IP address data powered by IPinfo
+  (https://ipinfo.io), licensed CC BY-SA 4.0. The derived file is shared under the same
+  licence.
+
+Ideas, not code: the Wi-Fi presence definitions (dwell time, favourite access point, presence
+pattern) follow unifi-toolkit's Wi-Fi Stalker by Crosstalk Solutions (MIT), and the choice of
+client and equipment metrics was inspired by Unpoller (MIT).

@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<CommunityApplications>
+  <Profile>UniFi NetLens is a self-hosted dashboard for a UniFi network: per-device and per-app traffic with time charts and sessions, Wi-Fi signal and roaming per device, access point and gateway health, security events, and local-network traffic. It runs 24/7 so nothing is lost to UniFi's short data retention. Not affiliated with Ubiquiti.</Profile>
+  <Icon>https://raw.githubusercontent.com/GeorgeAL78/unifi-netlens/main/assets/icon.png</Icon>
+  <WebPage>https://github.com/GeorgeAL78/unifi-netlens</WebPage>
+  <Forum>https://github.com/GeorgeAL78/unifi-netlens/issues</Forum>
+</CommunityApplications>

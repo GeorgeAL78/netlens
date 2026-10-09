@@ -1,0 +1,11 @@
+node_modules/
+dist/
+/data/
+database/
+.env
+*.log
+logs/
+.DS_Store
+release/
+build-resources/
+

@@ -1,0 +1,30 @@
+{
+  "name": "unifi-netlens",
+  "private": true,
+  "version": "1.0.0",
+  "description": "UniFi NetLens: traffic, Wi-Fi quality, equipment health and security for a UniFi network, as a self-hosted web app",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "node --watch server/index.js",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "check": "node scripts/check-report-isolation.mjs",
+    "audit": "node scripts/audit-report.mjs"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.1",
+    "express": "^5.2.1",
+    "undici": "^8.10.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.1",
+    "concurrently": "^10.0.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "recharts": "^3.10.1",
+    "vite": "^8.3.0"
+  }
+}

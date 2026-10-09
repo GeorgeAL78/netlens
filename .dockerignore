@@ -1,0 +1,14 @@
+# Nothing personal goes into the image: no data, no keys, no logs (UU-C-054).
+node_modules
+dist
+database
+data
+logs
+build-resources
+.env
+*.env
+*.log
+.git
+.github
+.claude
+cowork

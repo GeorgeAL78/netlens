@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>unifi-netlens</Name>
+  <Repository>gjergjk/unifi-netlens:latest</Repository>
+  <Registry>https://hub.docker.com/r/gjergjk/unifi-netlens</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/GeorgeAL78/unifi-netlens/issues</Support>
+  <Project>https://github.com/GeorgeAL78/unifi-netlens</Project>
+  <Overview>Self-hosted dashboard for a UniFi network. Per-device and per-app traffic with time charts and sessions; Wi-Fi signal, roaming and presence per device; access point, switch and gateway health; security events; local-network traffic; WAN status. It samples your UniFi console around the clock, so history is kept beyond UniFi's own short retention (24 hours of 5-minute data, 7 days hourly). Needs a UniFi OS console (UDM, UCG, UDR, Cloud Key Gen2+) and a local API key. Not affiliated with Ubiquiti.</Overview>
+  <Category>Network:Management Tools: Status:Stable</Category>
+  <WebUI>http://[IP]:[PORT:3780]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/GeorgeAL78/unifi-netlens/main/unraid/unifi-netlens.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/GeorgeAL78/unifi-netlens/main/assets/icon.png</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <Requires>A UniFi OS console reachable from this server, and a local API key (UniFi Network &gt; Settings &gt; Control Plane &gt; Integrations &gt; Create API Key).</Requires>
+
+  <Config Name="Web UI port" Target="3780" Default="3780" Mode="tcp" Description="Port for the dashboard in your browser." Type="Port" Display="always" Required="true" Mask="false">3780</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/unifi-netlens" Mode="rw" Description="Cache, settings and logs. Keep it on appdata so updates never lose history." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/unifi-netlens</Config>
+
+  <Config Name="UniFi host" Target="UNIFI_HOST" Default="192.168.1.1" Mode="" Description="IP or hostname of your UniFi console." Type="Variable" Display="always" Required="true" Mask="false">192.168.1.1</Config>
+  <Config Name="UniFi API key" Target="UNIFI_API_KEY" Default="" Mode="" Description="UniFi Network &gt; Settings &gt; Control Plane &gt; Integrations &gt; Create API Key. Shown only once in UniFi — copy it then." Type="Variable" Display="always" Required="true" Mask="true"></Config>
+  <Config Name="UniFi site" Target="UNIFI_SITE" Default="default" Mode="" Description="Network site name. The site ID is looked up automatically." Type="Variable" Display="always" Required="false" Mask="false">default</Config>
+  <Config Name="Login password" Target="UI_PASSWORD" Default="" Mode="" Description="Password for the dashboard (any user name). Strongly recommended: the dashboard can block devices." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+
+  <Config Name="Syslog port (ad-block stats)" Target="SIEM_PORT" Default="" Mode="" Description="Optional. Set to 5514 to receive UniFi's SIEM syslog (directly or relayed) for blocked-ad counts; blank = off." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+  <Config Name="Syslog TCP" Target="5514" Default="5514" Mode="tcp" Description="Only used when the syslog port is 5514." Type="Port" Display="advanced" Required="false" Mask="false">5514</Config>
+  <Config Name="Syslog UDP" Target="5514" Default="5514" Mode="udp" Description="Only used when the syslog port is 5514." Type="Port" Display="advanced" Required="false" Mask="false">5514</Config>
+  <Config Name="UniFi site ID" Target="UNIFI_SITE_ID" Default="" Mode="" Description="Optional override; normally looked up automatically." Type="Variable" Display="advanced" Required="false" Mask="false"></Config>
+</Container>
