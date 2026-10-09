@@ -65,7 +65,7 @@ app.use((req, res, next) => {
 app.get("/login", (_req, res) => {
   res.type("html").send(auth.LOGIN_PAGE);
 });
-if (SERVER_MODE && !auth.hasPassword()) {
+if (SERVER_MODE && !auth.hasPassword() && db.getSetting("login_disabled", "") !== "1") {
   console.warn("No login password yet: open the web UI and finish the setup to set one");
 }
 // UNIFI_PORT wins over the stored setting so a second instance can run alongside the
@@ -649,9 +649,12 @@ app.get("/api/settings", (_req, res) => {
     ...s,
     tz,
     hasPassword: auth.hasPassword(),
+    // The owner chose to run without a login (UU-C-082).
+    loginDisabled: db.getSetting("login_disabled", "") === "1",
     serverMode: SERVER_MODE,
-    // First run: no API key yet, or a LAN server without a login password.
-    needsSetup: !s.hasApiKey || (SERVER_MODE && !auth.hasPassword()),
+    // First run: no API key yet, or a LAN server with neither a password nor an explicit
+    // choice to run without one.
+    needsSetup: !s.hasApiKey || (SERVER_MODE && !auth.hasPassword() && db.getSetting("login_disabled", "") !== "1"),
   });
 });
 
@@ -679,8 +682,26 @@ app.post("/api/password", (req, res) => {
   if (auth.hasPassword() && !auth.checkPassword(current)) return res.status(403).json({ error: "Current password is wrong" });
   if (String(password || "").length < 8) return res.status(400).json({ error: "Use at least 8 characters" });
   auth.setPassword(password);
+  db.setSetting("login_disabled", "");
   auth.startSession(res);
   res.json({ ok: true, hasPassword: true });
+});
+
+// Run without a login (UU-C-082), chosen by the owner: in the first-run setup, or later by
+// removing the password (which needs the current one). Anyone on the network can then open
+// the dashboard — and block devices — so the UI says so where the choice is made.
+app.post("/api/login-mode", (req, res) => {
+  if (auth.hasPassword()) return res.status(409).json({ error: "Remove the password in Settings first" });
+  db.setSetting("login_disabled", req.body?.disabled ? "1" : "");
+  res.json({ ok: true, loginDisabled: Boolean(req.body?.disabled) });
+});
+
+app.post("/api/password/remove", (req, res) => {
+  if (auth.hasPassword() && !auth.checkPassword(req.body?.current)) return res.status(403).json({ error: "Current password is wrong" });
+  auth.clearPassword();
+  db.setSetting("login_disabled", "1");
+  auth.endSession(res);
+  res.json({ ok: true, hasPassword: false, loginDisabled: true });
 });
 
 app.put("/api/settings", (req, res) => {

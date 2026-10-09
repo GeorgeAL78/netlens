@@ -52,14 +52,29 @@ function Setup({ settings }) {
   async function submit(e) {
     e.preventDefault();
     setError("");
-    if (needPassword && settings.serverMode && password.length < 8) return setError("Choose a login password of at least 8 characters.");
-    if (password !== confirm) return setError("The two passwords do not match.");
+    // Read the fields themselves: a browser that auto-fills a password does not always tell
+    // React, which made a 9-character password fail the 8-character check.
+    const form = new FormData(e.currentTarget);
+    const pw = String(form.get("password") ?? password);
+    const pw2 = String(form.get("confirm") ?? confirm);
+    // Run without a login (UU-C-082): both fields left empty, then confirmed — never silently.
+    let noLogin = false;
+    if (needPassword) {
+      if (!pw && !pw2) {
+        if (!window.confirm("Continue without a password? Anyone on your network can open NetLens and block devices. You can set one later in Settings.")) return;
+        noLogin = true;
+      } else {
+        if (settings.serverMode && pw.length < 8) return setError("Choose a login password of at least 8 characters, or leave both fields empty to skip it.");
+        if (pw !== pw2) return setError("The two passwords do not match.");
+      }
+    }
     setBusy(true);
     try {
       const payload = { host, site, tz };
       if (apiKey) payload.apiKey = apiKey;
       await call("/api/settings", payload, "PUT");
-      if (password) await call("/api/password", { password });
+      if (needPassword && noLogin) await call("/api/login-mode", { disabled: true });
+      else if (pw) await call("/api/password", { password: pw });
       // Prove the connection before leaving the setup screen.
       const res = await fetch("/api/clients?scope=online");
       if (!res.ok) {
@@ -113,18 +128,17 @@ function Setup({ settings }) {
           <>
             <h2>Login password</h2>
             <p className="setup-dim">
-              {settings.serverMode
-                ? "Required: anyone on your network could otherwise open the dashboard and block devices."
-                : "Optional on this machine."}
+              Recommended: without one, anyone on your network can open the dashboard and block devices. Leave both
+              fields empty to skip it.
             </p>
             <div className="setup-row">
               <label>
                 Password
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
+                <input name="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
               </label>
               <label>
                 Repeat
-                <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+                <input name="confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
               </label>
             </div>
           </>
@@ -230,6 +244,20 @@ export function AccountSettings({ tz, onTz }) {
     window.location.href = "/login";
   }
 
+  // Run without a login from now on (UU-C-082); needs the current password.
+  async function removePassword() {
+    setMsg("");
+    if (!window.confirm("Remove the password? Anyone on your network will be able to open NetLens and block devices.")) return;
+    try {
+      await call("/api/password/remove", { current });
+      setCurrent("");
+      setInfo((i) => ({ ...i, hasPassword: false, loginDisabled: true }));
+      setMsg("Password removed. NetLens now opens without a login.");
+    } catch (err) {
+      setMsg(err.message);
+    }
+  }
+
   return (
     <>
       <SettingsSection icon="clock" title="General" hint="Days, hours and charts follow this timezone.">
@@ -241,7 +269,13 @@ export function AccountSettings({ tz, onTz }) {
       <SettingsSection
         icon="lock"
         title="Login"
-        hint={info?.hasPassword ? "Change the password or sign out of this browser." : "Set a password to protect the dashboard."}
+        hint={
+          info?.hasPassword
+            ? "Change the password, remove it, or sign out of this browser."
+            : info?.loginDisabled
+              ? "No password: anyone on your network can open NetLens and block devices. Set one here to require a login."
+              : "Set a password to protect the dashboard."
+        }
       >
       {info?.hasPassword && (
         <label>
@@ -266,6 +300,11 @@ export function AccountSettings({ tz, onTz }) {
         {info?.hasPassword && (
           <button type="button" className="btn ghost" onClick={logout}>
             Log out
+          </button>
+        )}
+        {info?.hasPassword && (
+          <button type="button" className="btn ghost" disabled={!current} onClick={removePassword} title="Enter the current password first">
+            Remove password
           </button>
         )}
       </div>

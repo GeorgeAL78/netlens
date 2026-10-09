@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1 — 2026-10-09
+
+### Added
+- Setup: leave both password fields empty to run without a login (asks to confirm).
+- Settings → Login: "Remove password" (needs the current password).
+
 ## 1.5.0 — 2026-10-09
 
 ### Added
