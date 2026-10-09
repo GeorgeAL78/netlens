@@ -64,8 +64,12 @@ export function dayGrid({ bundle, start, end, now, today }) {
     hourly.set(b[1], arr);
   }
   const totals = new Map();
+  // UniFi's usage record says wired or Wi-Fi for every day, even days NetLens took no
+  // samples (before it was installed, or while it was off).
+  const wiredFlag = new Map();
   for (const c of bundle.traffic) {
     totals.set(c.client.mac, c.usage.reduce((n, u) => n + (u.totalBytes || u.bytesRx + u.bytesTx), 0));
+    if (typeof c.client.wired === "boolean") wiredFlag.set(c.client.mac, c.client.wired);
   }
   // Hours with 5-minute or hourly detail; the rest is "no data", never a quiet hour.
   const spans = bundle.bucketSpans;
@@ -80,12 +84,13 @@ export function dayGrid({ bundle, start, end, now, today }) {
   const samples = latestSamples(start, end);
   const macs = new Set([...totals.keys(), ...hourly.keys(), ...marks.keys()]);
   const rows = [...macs].map((mac) => {
-    const link = linkOf(samples.get(mac), nameOf);
+    const sampled = linkOf(samples.get(mac), nameOf);
+    const link = sampled || (wiredFlag.has(mac) ? { wired: wiredFlag.get(mac), unsampled: true } : null);
     return {
       mac,
       name: nameOf(mac),
       link,
-      health: healthOf(link, now, today),
+      health: healthOf(sampled, now, today),
       hourly: hourly.get(mac) || new Array(24).fill(0),
       marks: marks.get(mac) || null,
       total: totals.get(mac) || (hourly.get(mac) || []).reduce((n, v) => n + v, 0),

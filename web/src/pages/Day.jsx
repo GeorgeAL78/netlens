@@ -9,6 +9,7 @@ const HOUR = 3600000;
 
 function linkText(link) {
   if (!link) return "not seen";
+  if (link.unsampled) return `${link.wired ? "Wired" : "Wi-Fi"} · no connection details that day`;
   if (link.wired) return `Wired · ${link.via || "switch"}${link.port != null ? ` port ${link.port}` : ""}${link.speed ? ` · ${speed(link.speed)}` : ""}`;
   return `Wi-Fi · ${link.via || "AP"}${link.signal != null ? ` · ${link.signal} dBm` : ""}`;
 }

@@ -102,8 +102,10 @@ export default function Device({ route }) {
           {wired && link?.speed != null && link.speed <= 100 && <span className="tag warn">SLOW LINK</span>}
           <h1 style={{ fontSize: 32 }}>{name}</h1>
           <span className="muted">
-            {wired
-              ? `Wired · ${link?.via || "switch"}${link?.port != null ? ` port ${link.port}` : ""}${link?.speed ? ` · ${speed(link.speed)}` : ""}`
+            {link?.unsampled && !current
+              ? `${wired ? "Wired" : "Wi-Fi"} · no connection details that day`
+              : wired
+              ? `Wired ·${link?.via || "switch"}${link?.port != null ? ` port ${link.port}` : ""}${link?.speed ? ` · ${speed(link.speed)}` : ""}`
               : current
                 ? `Wi-Fi ${BAND[current.band] || current.band || ""} on ${current.ap}${current.essid ? ` · ${current.essid}` : ""}`
                 : "Not seen on this day"}

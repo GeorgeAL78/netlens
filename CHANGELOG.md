@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.6 — 2026-10-09
+
+### Fixed
+- Day: the Wi-Fi and Wired filters no longer come up empty on days NetLens was not running; devices show as wired or Wi-Fi from UniFi's own records.
+
 ## 2.0.5 — 2026-10-09
 
 ### Changed
