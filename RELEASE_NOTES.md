@@ -1,2 +1,3 @@
-### Fixed
-- Day: the Wi-Fi and Wired filters no longer come up empty on days NetLens was not running; devices show as wired or Wi-Fi from UniFi's own records.
+### Added
+- Days NetLens was not running now show where each device was connected, from UniFi's System Log: the access points a device used that day, band and signal, or the switch and port for wired devices.
+- Device page for those days: signal per hour and time on each access point, from the same log.

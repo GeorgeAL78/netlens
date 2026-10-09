@@ -367,6 +367,14 @@ export function querySiemEvents(start, end, mac) {
   }));
 }
 
+// System Log connects / roams / disconnects in [since, before), oldest first, optionally for
+// one device — where devices were attached on days NetLens took no samples (UU-C-102).
+export function linkEvents(since, before, mac = null) {
+  const sql = `SELECT mac, ts, data FROM siem_events WHERE kind = 'log' AND mac IS NOT NULL AND ts >= ? AND ts < ?${mac ? " AND mac = ?" : ""}
+    AND json_extract(data, '$.key') GLOB 'CLIENT_*' AND (json_extract(data, '$.key') GLOB '*CONNECTED*' OR json_extract(data, '$.key') GLOB '*ROAMED*') ORDER BY ts`;
+  return (mac ? db.prepare(sql).all(since, before, mac) : db.prepare(sql).all(since, before)).map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
+}
+
 export function siemStats() {
   return db.prepare(`SELECT COUNT(*) AS events, MAX(ts) AS newest, MIN(ts) AS oldest FROM siem_events`).get();
 }

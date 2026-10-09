@@ -7,11 +7,16 @@ import { DayStep, Failed, Loading, healthClass } from "../ui.jsx";
 
 const HOUR = 3600000;
 
-function linkText(link) {
+function linkText(link, start) {
   if (!link) return "not seen";
-  if (link.unsampled) return `${link.wired ? "Wired" : "Wi-Fi"} · no connection details that day`;
-  if (link.wired) return `Wired · ${link.via || "switch"}${link.port != null ? ` port ${link.port}` : ""}${link.speed ? ` · ${speed(link.speed)}` : ""}`;
-  return `Wi-Fi · ${link.via || "AP"}${link.signal != null ? ` · ${link.signal} dBm` : ""}`;
+  if (link.unsampled && !link.via) return `${link.wired ? "Wired" : "Wi-Fi"} · no connection details that day`;
+  // From the System Log (UU-C-102): when UniFi logged it, as a time that day or an earlier date.
+  const when = link.logged
+    ? ` (logged ${link.logged >= start ? new Date(link.logged).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : new Date(link.logged).toLocaleDateString([], { month: "short", day: "numeric" })})`
+    : "";
+  if (link.wired) return `Wired · ${link.via || "switch"}${link.port != null ? ` port ${link.port}` : ""}${link.speed ? ` · ${speed(link.speed)}` : ""}${when}`;
+  const aps = link.aps?.length > 1 ? link.aps.join(" → ") : link.via; // every AP it used that day
+  return `Wi-Fi · ${aps || "AP"}${link.band ? ` · ${link.band}` : ""}${link.signal != null ? ` · ${link.signal} dBm` : ""}${when}`;
 }
 
 function shade(v, max) {
@@ -125,7 +130,7 @@ export default function Day({ route }) {
                   <span className={`status-dot ${healthClass(r.health)}`} />
                   <span className="stack">
                     <span className="nm ellipsis">{r.name}</span>
-                    <span className="dim small ellipsis">{linkText(r.link)}</span>
+                    <span className="dim small ellipsis">{linkText(r.link, data.hours[0])}</span>
                   </span>
                 </a>,
                 ...r.hourly.map((v, h) => {

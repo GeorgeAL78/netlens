@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.7 — 2026-10-09
+
+### Added
+- Days NetLens was not running now show where each device was connected, from UniFi's System Log: the access points a device used that day, band and signal, or the switch and port for wired devices.
+- Device page for those days: signal per hour and time on each access point, from the same log.
+
 ## 2.0.6 — 2026-10-09
 
 ### Fixed

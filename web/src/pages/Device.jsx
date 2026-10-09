@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import { api, bytes, clock, duration, go, href, rate, speed, todayKey, useApi } from "../lib.js";
+import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi } from "../lib.js";
 import { DayStep, Failed, Loading, Meter } from "../ui.jsx";
 
 // One device (UU-C-087): its day — traffic, signal and events by hour — its connection,
@@ -102,8 +102,10 @@ export default function Device({ route }) {
           {wired && link?.speed != null && link.speed <= 100 && <span className="tag warn">SLOW LINK</span>}
           <h1 style={{ fontSize: 32 }}>{name}</h1>
           <span className="muted">
-            {link?.unsampled && !current
+            {link?.unsampled && !current && !link.via
               ? `${wired ? "Wired" : "Wi-Fi"} · no connection details that day`
+              : link?.unsampled && !current && !wired
+              ? `Wi-Fi · ${link.via}${link.band ? ` · ${link.band}` : ""}${link.signal != null ? ` · ${link.signal} dBm` : ""} · from UniFi's System Log`
               : wired
               ? `Wired ·${link?.via || "switch"}${link?.port != null ? ` port ${link.port}` : ""}${link?.speed ? ` · ${speed(link.speed)}` : ""}`
               : current
@@ -146,14 +148,28 @@ export default function Device({ route }) {
             ) : (
               <>
                 <div className="card tight stat">
-                  <span className="label">Signal now</span>
-                  <span className={`value ${current?.signal < -80 ? "bad" : current?.signal < -75 ? "warn" : ""}`}>{current?.signal ?? "—"} dBm</span>
-                  <span className="sub">{current ? `at ${clock(current.ts)} · average ${w.summary.avgSignal ?? "—"}` : "no sample"}</span>
+                  {/* Without samples: the last signal UniFi's System Log recorded (UU-C-102). */}
+                  {(() => {
+                    const sig = current ? current.signal : link?.unsampled ? link.signal : null;
+                    return (
+                      <>
+                        <span className="label">{current ? "Signal now" : "Last logged signal"}</span>
+                        <span className={`value ${sig < -80 ? "bad" : sig < -75 ? "warn" : ""}`}>{sig ?? "—"} dBm</span>
+                        <span className="sub">
+                          {current
+                            ? `at ${clock(current.ts)} · average ${w.summary.avgSignal ?? "—"}`
+                            : link?.logged
+                              ? `System Log, ${shortDate(link.logged)}${w?.source === "log" && w.summary.avgSignal != null ? ` · average ${w.summary.avgSignal}` : ""}`
+                              : "no sample"}
+                        </span>
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="card tight stat">
                   <span className="label">Link</span>
-                  <span className="value small">{current ? `Tx ${rate(current.txRate)} · Rx ${rate(current.rxRate)}` : "—"}</span>
-                  <span className="sub">{current ? `ch ${current.channel}${current.width ? ` · ${current.width} MHz` : ""}` : ""}</span>
+                  <span className="value small">{current ? `Tx ${rate(current.txRate)} · Rx ${rate(current.rxRate)}` : link?.via ? `${link.via}${link.band ? ` · ${link.band}` : ""}` : "—"}</span>
+                  <span className="sub">{current ? `ch ${current.channel}${current.width ? ` · ${current.width} MHz` : ""}` : link?.channel ? `ch ${link.channel}${link.aps?.length > 1 ? ` · used ${link.aps.join(", ")}` : ""}` : ""}</span>
                 </div>
               </>
             )}
@@ -188,7 +204,7 @@ export default function Device({ route }) {
               {!wired && <span className="dim small">Signal</span>}
               {!wired &&
                 sigHours.map((s, h) => (
-                  <span key={h} className="cell" style={{ background: s == null ? "var(--cell-0)" : sigColor(s), cursor: "default" }} title={s == null ? "no sample" : `${s} dBm`} />
+                  <span key={h} className="cell" style={{ background: s == null ? "var(--cell-0)" : sigColor(s), cursor: "default" }} title={s == null ? (w?.source === "log" ? "nothing logged" : "no sample") : `${s} dBm${w?.source === "log" ? " (System Log)" : ""}`} />
                 ))}
               <span className="dim small">Events</span>
               {Array.from({ length: 24 }, (_, h) => {
@@ -218,7 +234,11 @@ export default function Device({ route }) {
               <span>○ roam / connect</span>
               <span><span className="bad">▲</span> blocked</span>
             </div>
-            {w?.sampledSince > (day.data?.start || 0) && !wired && (
+            {w?.source === "log" && !wired ? (
+              <p className="dim small" style={{ margin: 0 }}>
+                NetLens took no samples this day: signal is what UniFi's System Log recorded at each connect, roam and disconnect, and time per access point runs between them.
+              </p>
+            ) : w?.sampledSince > (day.data?.start || 0) && !wired && (
               <p className="dim small" style={{ margin: 0 }}>
                 NetLens started sampling Wi-Fi {new Date(w.sampledSince).toLocaleString()}; signal before that is unknown. Roams come from UniFi's own log.
               </p>

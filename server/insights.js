@@ -142,6 +142,106 @@ function roamsFor(start, end, mac) {
     .map((e) => ({ ts: e.ts, mac: e.mac, msg: e.data?.msg || null, via: e.data?.via || null }));
 }
 
+// ---- connection history from UniFi's System Log (UU-C-102) ------------------------------
+// Connects, roams and disconnects name the access point (with signal, band, channel) or the
+// switch and port. They are moments, not a running record, so samples win where they exist.
+
+const durationMs = (txt) => {
+  let ms = 0;
+  for (const [, n, u] of String(txt || "").matchAll(/(\d+)\s*([dhms])/g)) ms += Number(n) * { d: 864e5, h: 36e5, m: 6e4, s: 1e3 }[u];
+  return ms || null;
+};
+
+function parseLinkEvent(e) {
+  const d = e.data || {};
+  const p = d.params || {};
+  const key = d.key || "";
+  const msg = d.msg || "";
+  const kind = /ROAMED/.test(key) ? "roam" : /DISCONNECTED/.test(key) ? "disconnect" : "connect";
+  const connectedMs = kind === "disconnect" ? durationMs(d.duration) : null;
+  if (/WIRED/.test(key)) {
+    const port = /Port (\d+)/.exec(p.DEVICE_WITH_PORT?.n || d.via || "");
+    const via = p.DEVICE?.n || (d.via || "").replace(/ Port \d+$/, "") || null;
+    return { ts: e.ts, mac: e.mac, kind, wired: true, via, port: port ? Number(port[1]) : null, connectedMs };
+  }
+  const band = /\(([\d.]+) GHz/.exec(msg);
+  const essid = /\bconnected to (.+?) on /.exec(msg);
+  const signal = Number(p.SIGNAL_STRENGTH?.n ?? d.signal);
+  return {
+    ts: e.ts,
+    mac: e.mac,
+    kind,
+    wired: false,
+    via: p.DEVICE_TO?.n || (d.via || "").split(" → ").pop() || null,
+    signal: Number.isFinite(signal) && signal < 0 ? signal : null,
+    band: band ? `${band[1]} GHz` : null,
+    channel: p.CHANNEL?.n ? Number(p.CHANNEL.n) : null,
+    essid: essid ? essid[1] : null, //  keeps "disconnected from" out
+    connectedMs,
+  };
+}
+
+// Per device for [start, end): the day's events, the last event at or before the day (up to
+// 30 days back — where it already was at midnight), and segments of time on each AP / port.
+export function logHistory(start, end, mac = null, now = Date.now()) {
+  const events = db.linkEvents(start - 30 * 86400e3, end, mac ? String(mac).toLowerCase() : null).map(parseLinkEvent);
+  // Disconnects carry the channel but not the band; take it from that AP and channel elsewhere.
+  const bandAt = new Map();
+  for (const e of events) if (e.band && e.channel) bandAt.set(`${e.via}|${e.channel}`, e.band);
+  const byMac = new Map();
+  for (const e of events) {
+    if (!e.wired && !e.band && e.channel) e.band = bandAt.get(`${e.via}|${e.channel}`) || (e.channel <= 14 ? "2.4 GHz" : null);
+    const list = byMac.get(e.mac);
+    if (list) list.push(e);
+    else byMac.set(e.mac, [e]);
+  }
+  const stop = Math.min(end, now);
+  const out = new Map();
+  for (const [m, list] of byMac) {
+    const inDay = list.filter((e) => e.ts >= start);
+    const prior = list.filter((e) => e.ts < start).pop() || null;
+    const segments = [];
+    let open = null;
+    const close = (t) => {
+      if (open && t > open.from) segments.push({ ...open, to: t });
+      open = null;
+    };
+    const seg = (from, e) => ({ from, via: e.via, port: e.port ?? null, band: e.band ?? null });
+    if (prior && prior.kind !== "disconnect") open = seg(start, prior);
+    for (const e of inDay) {
+      if (e.kind === "disconnect") {
+        // "Time Connected" dates the start of a session whose connect fell outside the log.
+        if (!open && e.connectedMs) open = seg(Math.max(start, e.ts - e.connectedMs), e);
+        close(e.ts);
+      } else {
+        close(e.ts);
+        open = seg(e.ts, e);
+      }
+    }
+    close(stop);
+    const known = [...(prior ? [prior] : []), ...inDay];
+    const last = known[known.length - 1] || null;
+    const lastWith = (k) => [...known].reverse().find((e) => e[k] != null)?.[k] ?? null;
+    out.set(m, {
+      last,
+      events: inDay,
+      segments,
+      link: last && {
+        wired: last.wired,
+        via: last.via,
+        port: last.wired ? last.port : undefined,
+        signal: last.wired ? undefined : lastWith("signal"),
+        band: last.wired ? undefined : last.band,
+        channel: last.wired ? undefined : last.channel,
+        essid: last.wired ? undefined : lastWith("essid"),
+        aps: [...new Set(segments.map((s) => s.via).filter(Boolean))],
+        logged: last.ts,
+      },
+    });
+  }
+  return out;
+}
+
 export function wifiList(start, end) {
   const nameOf = names();
   const rows = db.queryClientSamples(start, end, null).filter((r) => !r.wired);
@@ -231,9 +331,38 @@ export function wifiClient(start, end, mac, tz) {
     cur.lastSeen = Math.max(cur.lastSeen, r.ts);
     perAp.set(key, cur);
   }
-  const dwell = [...perAp.values()]
+  let dwell = [...perAp.values()]
     .map((d) => ({ ap: d.ap, band: d.band, minutes: d.minutes, avgSignal: avg(d.signals), lastSeen: d.lastSeen }))
     .sort((a, b) => b.minutes - a.minutes || b.lastSeen - a.lastSeen);
+  // No Wi-Fi samples in the period: signal at each logged connect / roam / disconnect, and
+  // time per AP from the log's segments (UU-C-102).
+  const log = rows.length ? null : logHistory(start, end, m).get(m) || null;
+  let logSeries = null;
+  if (log && !log.last?.wired) {
+    const points = log.events.filter((e) => !e.wired && e.signal != null);
+    logSeries = bucketsOf(points, start, end, (g) => ({
+      signal: avg(g.map((e) => e.signal)),
+      minSignal: minOf(g.map((e) => e.signal)),
+      satisfaction: null,
+      band: g[g.length - 1].band,
+      ap: g[g.length - 1].via,
+    }));
+    const per = new Map();
+    for (const sg of log.segments) {
+      const k = `${sg.via}|${sg.band}`;
+      const cur = per.get(k) || { ap: sg.via, band: sg.band, minutes: 0, signals: [], lastSeen: 0 };
+      cur.minutes += Math.round((sg.to - sg.from) / 60e3);
+      cur.lastSeen = Math.max(cur.lastSeen, sg.to);
+      per.set(k, cur);
+    }
+    for (const e of points) {
+      const cur = per.get(`${e.via}|${e.band}`);
+      if (cur) cur.signals.push(e.signal);
+    }
+    dwell = [...per.values()]
+      .map((d) => ({ ap: d.ap, band: d.band, minutes: d.minutes, avgSignal: avg(d.signals), lastSeen: d.lastSeen }))
+      .sort((a, b) => b.minutes - a.minutes || b.lastSeen - a.lastSeen);
+  }
 
   // Favourite AP: always over the last 30 days, per the Stalker definition.
   const now = Date.now();
@@ -275,7 +404,9 @@ export function wifiClient(start, end, mac, tz) {
   return {
     mac: m,
     name: nameOf(m),
-    wired: last ? Boolean(last.wired) : null,
+    wired: last ? Boolean(last.wired) : log?.last ? log.last.wired : null,
+    // "log" when the signal and AP figures come from UniFi's System Log, not samples.
+    source: rows.length ? "samples" : logSeries ? "log" : null,
     current: last
       ? {
           ts: last.ts,
@@ -292,15 +423,15 @@ export function wifiClient(start, end, mac, tz) {
         }
       : null,
     summary: {
-      avgSignal: avg(sig),
-      minSignal: minOf(sig),
-      weakMinutes: sig.filter((s) => s < WEAK).length * SAMPLE_MIN,
-      badMinutes: sig.filter((s) => s < BAD).length * SAMPLE_MIN,
-      minutes: wifi.length * SAMPLE_MIN,
+      avgSignal: avg(logSeries ? log.events.map((e) => e.signal) : sig),
+      minSignal: minOf(logSeries ? log.events.map((e) => e.signal) : sig),
+      weakMinutes: logSeries ? null : sig.filter((s) => s < WEAK).length * SAMPLE_MIN,
+      badMinutes: logSeries ? null : sig.filter((s) => s < BAD).length * SAMPLE_MIN,
+      minutes: logSeries ? dwell.reduce((n, d) => n + d.minutes, 0) : wifi.length * SAMPLE_MIN,
       satisfaction: avg(wifi.map((r) => r.satisfaction)),
     },
     thresholds: { weak: WEAK, bad: BAD },
-    series: bucketsOf(wifi, start, end, (g) => ({
+    series: logSeries || bucketsOf(wifi, start, end, (g) => ({
       signal: avg(g.map((r) => r.signal)),
       minSignal: minOf(g.map((r) => r.signal)),
       satisfaction: avg(g.map((r) => r.satisfaction)),

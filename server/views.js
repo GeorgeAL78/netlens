@@ -82,15 +82,24 @@ export function dayGrid({ bundle, start, end, now, today }) {
   });
   const marks = markersFor(start, end);
   const samples = latestSamples(start, end);
+  const logs = insights.logHistory(start, end, null, now);
   const macs = new Set([...totals.keys(), ...hourly.keys(), ...marks.keys()]);
   const rows = [...macs].map((mac) => {
     const sampled = linkOf(samples.get(mac), nameOf);
-    const link = sampled || (wiredFlag.has(mac) ? { wired: wiredFlag.get(mac), unsampled: true } : null);
+    // No samples that day: the System Log's last word on where it was attached, unless the
+    // day's usage record says the other link type (then the log is stale).
+    const logged = logs.get(mac)?.link;
+    const flag = wiredFlag.get(mac);
+    const link =
+      sampled ||
+      (logged && (flag === undefined || flag === logged.wired) ? { ...logged, unsampled: true } : null) ||
+      (flag !== undefined ? { wired: flag, unsampled: true } : null);
     return {
       mac,
       name: nameOf(mac),
       link,
-      health: healthOf(sampled, now, today),
+      // Past days with only the log: judged on the logged signal; today it needs a sample.
+      health: sampled ? healthOf(sampled, now, today) : !today && link?.via ? healthOf(link, now, false) : "off",
       hourly: hourly.get(mac) || new Array(24).fill(0),
       marks: marks.get(mac) || null,
       total: totals.get(mac) || (hourly.get(mac) || []).reduce((n, v) => n + v, 0),
