@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, href, go, useRoute } from "./lib.js";
+import { ago, api, href, go, useRoute } from "./lib.js";
 import Home from "./pages/Home.jsx";
 import Day from "./pages/Day.jsx";
 import Network from "./pages/Network.jsx";
@@ -93,6 +93,44 @@ function Search() {
   );
 }
 
+// Fetch the newest data from UniFi now, then redraw the page (UU-C-089). NetLens also does this
+// by itself every 5 minutes; the button is for "show me right now".
+function Refresh({ onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [last, setLast] = useState(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    api("/api/cache").then((c) => setLast(c.fetchedAt)).catch(() => {});
+  }, []);
+  async function run() {
+    setBusy(true);
+    setErr("");
+    try {
+      const c = await api("/api/cache/delta", { method: "POST", body: JSON.stringify({}) });
+      setLast(c.fetchedAt || Date.now());
+      onDone();
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      className={`iconbtn ${busy ? "spin" : ""}`}
+      onClick={run}
+      disabled={busy}
+      aria-label="Refresh data now"
+      title={err ? `Refresh failed: ${err}` : busy ? "Fetching from UniFi…" : `Refresh now · updated ${ago(last)}`}
+      style={err ? { borderColor: "var(--bad)", color: "var(--bad)" } : undefined}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+        <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" />
+      </svg>
+    </button>
+  );
+}
+
 function useVersion() {
   const [v, setV] = useState("");
   useEffect(() => {
@@ -120,6 +158,8 @@ export default function App() {
     settings: Settings,
   };
   const Page = pages[route.page] || Home;
+  // Bumped by Refresh: remounts the page so it loads everything again.
+  const [refreshKey, setRefreshKey] = useState(0);
   return (
     <>
       <header className="topbar">
@@ -137,13 +177,14 @@ export default function App() {
         </nav>
         <span className="spacer" />
         <Search />
+        <Refresh onDone={() => setRefreshKey((k) => k + 1)} />
         <a className={`iconbtn ${route.page === "settings" ? "on" : ""}`} href={href("settings")} aria-label="Settings" title="Settings">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
             <path d="M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4" />
           </svg>
         </a>
       </header>
-      <Page route={route} version={version} />
+      <Page key={refreshKey} route={route} version={version} />
     </>
   );
 }

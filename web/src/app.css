@@ -222,3 +222,6 @@ table.t tr.click:hover td { background: #141b26; }
 .empty { padding: 40px 20px; text-align: center; color: var(--dim); }
 .loading { padding: 40px; color: var(--dim); }
 .error { padding: 12px 14px; border-radius: 12px; background: #2a1517; border: 1px solid #4a2628; color: #ffb4ab; }
+
+.iconbtn.spin svg { animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
