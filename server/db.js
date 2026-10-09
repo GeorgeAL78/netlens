@@ -518,9 +518,13 @@ if (!db.prepare(`PRAGMA table_info(client_samples)`).all().some((c) => c.name ==
 if (!db.prepare(`PRAGMA table_info(client_samples)`).all().some((c) => c.name === "uptime")) {
   db.exec(`ALTER TABLE client_samples ADD COLUMN uptime INTEGER`);
 }
+// The client's IP address at that sample (UU-C-104).
+if (!db.prepare(`PRAGMA table_info(client_samples)`).all().some((c) => c.name === "ip")) {
+  db.exec(`ALTER TABLE client_samples ADD COLUMN ip TEXT`);
+}
 const insClient = db.prepare(`INSERT OR REPLACE INTO client_samples
-  (ts, mac, wired, ap_mac, radio, channel, width, essid, signal, noise, tx_rate, rx_rate, satisfaction, tx_retries, tx_attempts, port, uptime)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  (ts, mac, wired, ap_mac, radio, channel, width, essid, signal, noise, tx_rate, rx_rate, satisfaction, tx_retries, tx_attempts, port, uptime, ip)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 const insDevice = db.prepare(`INSERT OR REPLACE INTO device_samples
   (ts, mac, name, type, model, state, cpu, mem, temp, uptime, clients, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 const insWan = db.prepare(`INSERT OR REPLACE INTO wan_samples
@@ -530,7 +534,7 @@ export function saveLiveSamples({ clients = [], devices = [], wan = null }) {
   db.exec("BEGIN");
   try {
     for (const c of clients) {
-      insClient.run(c.ts, c.mac, c.wired ? 1 : 0, c.apMac, c.radio, c.channel, c.width, c.essid, c.signal, c.noise, c.txRate, c.rxRate, c.satisfaction, c.txRetries, c.txAttempts, c.port ?? null, c.uptime ?? null);
+      insClient.run(c.ts, c.mac, c.wired ? 1 : 0, c.apMac, c.radio, c.channel, c.width, c.essid, c.signal, c.noise, c.txRate, c.rxRate, c.satisfaction, c.txRetries, c.txAttempts, c.port ?? null, c.uptime ?? null, c.ip ?? null);
     }
     for (const d of devices) {
       insDevice.run(d.ts, d.mac, d.name, d.type, d.model, d.state, d.cpu, d.mem, d.temp, d.uptime, d.clients, JSON.stringify(d.data || {}));

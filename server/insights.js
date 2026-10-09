@@ -162,7 +162,7 @@ function parseLinkEvent(e) {
   if (/WIRED/.test(key)) {
     const port = /Port (\d+)/.exec(p.DEVICE_WITH_PORT?.n || d.via || "");
     const via = p.DEVICE?.n || (d.via || "").replace(/ Port \d+$/, "") || null;
-    return { ts: e.ts, mac: e.mac, kind, wired: true, via, port: port ? Number(port[1]) : null, connectedMs };
+    return { ts: e.ts, mac: e.mac, kind, wired: true, via, port: port ? Number(port[1]) : null, ip: d.clientIp || null, connectedMs };
   }
   const band = /\(([\d.]+) GHz/.exec(msg);
   const essid = /\bconnected to (.+?) on /.exec(msg);
@@ -176,6 +176,7 @@ function parseLinkEvent(e) {
     signal: Number.isFinite(signal) && signal < 0 ? signal : null,
     band: band ? `${band[1]} GHz` : null,
     channel: p.CHANNEL?.n ? Number(p.CHANNEL.n) : null,
+    ip: d.clientIp || null,
     essid: essid ? essid[1] : null, //  keeps "disconnected from" out
     connectedMs,
   };
@@ -235,6 +236,9 @@ export function logHistory(start, end, mac = null, now = Date.now()) {
         channel: last.wired ? undefined : last.channel,
         essid: last.wired ? undefined : lastWith("essid"),
         aps: [...new Set(segments.map((s) => s.via).filter(Boolean))],
+        // The address it had that day; an earlier one only as a fallback (UU-C-104).
+        ip: [...inDay].reverse().find((e) => e.ip)?.ip || null,
+        priorIp: prior?.ip || null,
         logged: last.ts,
       },
     });

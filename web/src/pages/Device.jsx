@@ -112,6 +112,15 @@ export default function Device({ route }) {
                 ? `Wi-Fi ${BAND[current.band] || current.band || ""} on ${current.ap}${current.essid ? ` · ${current.essid}` : ""}`
                 : "Not seen on this day"}
             {link?.uptime != null ? ` · connected ${duration(link.uptime)}` : ""}
+            {row?.ip && (
+              <>
+                {" · "}
+                <span className="mono" title={row.ipLastKnown ? "No address recorded that day; this is the last one known" : "Its address that day"}>
+                  {row.ip}
+                </span>
+                {row.ipLastKnown && <span className="dim"> (last known)</span>}
+              </>
+            )}
             {" · "}
             <span className="mono">{mac}</span>
           </span>

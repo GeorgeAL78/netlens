@@ -19,8 +19,8 @@ function latestSamples(start, end) {
 function linkOf(r, nameOf) {
   if (!r) return null;
   return r.wired
-    ? { wired: true, via: r.ap_mac ? nameOf(r.ap_mac) : null, port: r.port ?? null, speed: r.tx_rate != null ? Math.round(r.tx_rate / 1000) : null, uptime: r.uptime ?? null, ts: r.ts }
-    : { wired: false, via: r.ap_mac ? nameOf(r.ap_mac) : null, signal: r.signal ?? null, radio: r.radio || null, essid: r.essid || null, uptime: r.uptime ?? null, ts: r.ts };
+    ? { wired: true, ip: r.ip ?? null, via: r.ap_mac ? nameOf(r.ap_mac) : null, port: r.port ?? null, speed: r.tx_rate != null ? Math.round(r.tx_rate / 1000) : null, uptime: r.uptime ?? null, ts: r.ts }
+    : { wired: false, ip: r.ip ?? null, via: r.ap_mac ? nameOf(r.ap_mac) : null, signal: r.signal ?? null, radio: r.radio || null, essid: r.essid || null, uptime: r.uptime ?? null, ts: r.ts };
 }
 
 function healthOf(link, now, today) {
@@ -83,6 +83,7 @@ export function dayGrid({ bundle, start, end, now, today }) {
   const marks = markersFor(start, end);
   const samples = latestSamples(start, end);
   const logs = insights.logHistory(start, end, null, now);
+  const storedIp = new Map(db.listStoredClients().filter((c) => c.ip).map((c) => [String(c.mac).toLowerCase(), c.ip]));
   const macs = new Set([...totals.keys(), ...hourly.keys(), ...marks.keys()]);
   const rows = [...macs].map((mac) => {
     const sampled = linkOf(samples.get(mac), nameOf);
@@ -94,9 +95,14 @@ export function dayGrid({ bundle, start, end, now, today }) {
       sampled ||
       (logged && (flag === undefined || flag === logged.wired) ? { ...logged, unsampled: true } : null) ||
       (flag !== undefined ? { wired: flag, unsampled: true } : null);
+    // IP that day: a sample, else the day's System Log; failing both the last one known.
+    const dayIp = sampled?.ip || logs.get(mac)?.link?.ip || null;
+    const lastIp = dayIp ? null : logs.get(mac)?.link?.priorIp || storedIp.get(mac) || null;
     return {
       mac,
       name: nameOf(mac),
+      ip: dayIp || lastIp,
+      ipLastKnown: !dayIp && Boolean(lastIp),
       link,
       // Past days with only the log: judged on the logged signal; today it needs a sample.
       health: sampled ? healthOf(sampled, now, today) : !today && link?.via ? healthOf(link, now, false) : "off",

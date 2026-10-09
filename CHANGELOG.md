@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.8 — 2026-10-09
+
+### Added
+- Device page: the device's IP address that day (or the last one known, marked as such).
+
 ## 2.0.7 — 2026-10-09
 
 ### Added

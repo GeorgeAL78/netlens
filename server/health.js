@@ -36,6 +36,7 @@ function clientRow(c, ts) {
     port: wired ? num(c.sw_port) : null,
     // How long UniFi says the client has been connected, in seconds (UU-C-086).
     uptime: num(c.uptime),
+    ip: c.ip || c.last_ip || null,
   };
 }
 
