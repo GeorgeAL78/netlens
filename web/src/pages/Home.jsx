@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { addDays, bytes, clock, go, href, shortDate, todayKey, useApi } from "../lib.js";
-import { Bars, DayStep, Failed, Loading, levelColor } from "../ui.jsx";
+import { Bars, Calendar, DayStep, Failed, Loading, levelColor } from "../ui.jsx";
 
 // Home — the feed (UU-C-087): what happened today, in plain language, each finding linking
 // to the place that shows it in full.
@@ -42,6 +42,7 @@ export default function Home({ route }) {
   const picked = !days && route.query.d && route.query.d !== todayKey();
   const range = days || (picked ? "day" : "today");
   const [filter, setFilter] = useState("all");
+  const [cal, setCal] = useState(false);
   const path = days ? `/api/findings?days=${days}` : `/api/findings?date=${date}`;
   const { data, error, loading, reload } = useApi(path, range === "today" || days ? 5 * 60 * 1000 : 0);
   const list = (data?.findings || []).filter((f) => {
@@ -59,23 +60,31 @@ export default function Home({ route }) {
           <span className="dim small">{days ? `The last ${days} days, up to now` : data?.today ? "So far today" : "On this day"}</span>
           <h1>{days ? `Your network, last ${days} days` : data?.today ? "Today on your network" : "That day on your network"}</h1>
         </div>
+        <span style={{ position: "relative" }}>
         <div className="seg" role="group" aria-label="Period">
           {RANGES.map(([id, label]) => (
             <button
               key={id}
               className={range === id ? "on" : ""}
               onClick={() =>
-                id === "today"
-                  ? go("home")
-                  : id === "day"
-                    ? go("home", null, { d: picked ? date : addDays(todayKey(), -1) })
-                    : go("home", null, { r: id })
+                id === "today" ? go("home") : id === "day" ? setCal((v) => !v) : go("home", null, { r: id })
               }
             >
               {label}
             </button>
           ))}
         </div>
+        {cal && (
+          <Calendar
+            value={picked ? date : null}
+            onClose={() => setCal(false)}
+            onPick={(k) => {
+              setCal(false);
+              go("home", null, { d: k === todayKey() ? null : k });
+            }}
+          />
+        )}
+        </span>
         {range === "day" && <DayStep date={date} onDate={(d) => go("home", null, { d: d === todayKey() ? null : d })} />}
       </div>
       {error && <Failed error={error} reload={reload} />}

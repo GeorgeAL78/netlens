@@ -167,7 +167,8 @@ export function networkMap({ bundle, now }) {
 const GB = 1e9;
 const fmtGB = (b) => (b >= GB ? `${(b / GB).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`);
 
-export function findings({ bundle, start, end, now, lostSpans, clock, appName }) {
+export function findings({ bundle, start, end, now, lostSpans, clock, appName, today, days }) {
+  const when = today ? "today" : days ? `in these ${days} days` : "that day";
   const nameOf = insights.names();
   const out = [];
   const totalDay = bundle.traffic.reduce((n, c) => n + c.usage.reduce((m, u) => m + (u.totalBytes || u.bytesRx + u.bytesTx), 0), 0);
@@ -182,7 +183,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName })
     const hourly = new Array(24).fill(0);
     for (const r of rows) if (r.mac === top.mac) hourly[Math.max(0, Math.min(23, Math.floor((r.t - start) / HOUR)))] += r.bytes;
     const minutes = Math.max(1, Math.round((top.end - top.start) / 60000));
-    const share = totalDay ? ` — ${Math.round((top.bytes / totalDay) * 100)}% of the day's traffic` : "";
+    const share = totalDay ? ` — ${Math.round((top.bytes / totalDay) * 100)}% of ${days ? "all" : "the day's"} traffic` : "";
     // A burst reads as one; a device busy all day (a torrent box) reads as the day's total.
     const burst = minutes <= 180;
     out.push({
@@ -190,7 +191,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName })
       kind: "usage",
       level: "info",
       ts: top.start,
-      title: burst ? `${nameOf(top.mac)} moved ${fmtGB(top.bytes)} in ${minutes} minutes` : `${nameOf(top.mac)} used ${fmtGB(top.bytes)} of ${top.app} today`,
+      title: burst ? `${nameOf(top.mac)} moved ${fmtGB(top.bytes)} in ${minutes} minutes` : `${nameOf(top.mac)} used ${fmtGB(top.bytes)} of ${top.app} ${when}`,
       text: burst ? `${clock(top.start)} – ${clock(top.end)}, ${top.app}${share}.` : `Busy for ${Math.round(minutes / 60)} hours${share}.`,
       mac: top.mac,
       hourly,
@@ -261,7 +262,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName })
   // New devices: first seen by this installation today.
   const firstSeen = db.firstSeenSince ? db.firstSeenSince(start) : [];
   for (const d of firstSeen) {
-    out.push({ id: `new-${d.mac}`, kind: "device", level: "warn", ts: d.ts, title: `New device on your network: ${nameOf(d.mac)}`, text: `First seen ${clock(d.ts)}${d.wired ? " on a wired port" : " on Wi-Fi"}. If you don't recognise it, block it from its page.`, mac: d.mac });
+    out.push({ id: `new-${d.mac}`, kind: "device", level: "warn", ts: d.ts, title: `New device on your network: ${nameOf(d.mac)}`, text: `First seen ${days ? new Date(d.ts).toLocaleDateString() + " " : ""}${clock(d.ts)}${d.wired ? " on a wired port" : " on Wi-Fi"}. If you don't recognise it, block it from its page.`, mac: d.mac });
   }
 
   // Equipment: offline, hot or with an update waiting.

@@ -238,3 +238,26 @@ table.t tr.click:hover td { background: #141b26; }
 .port-label { display: flex; flex-direction: column; padding-top: 8px; font-size: 13px; }
 .port-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 4px 0; }
 @media (max-width: 700px) { .port-row { grid-template-columns: minmax(0, 1fr); } .ports { margin-left: 8px; padding-left: 10px; } }
+
+/* ---- calendar (UU-C-096) ---- */
+.calendar {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40; width: 300px; padding: 14px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 24px 50px -20px #000;
+}
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cal-head .iconbtn { width: 32px; height: 32px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.cal-dow { text-align: center; font-size: 11px; color: var(--faint); padding: 4px 0; }
+.cal-day {
+  height: 36px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer;
+  position: relative; font-family: var(--mono); font-size: 13px;
+}
+.cal-day:hover:not([disabled]) { background: var(--raised); color: var(--text); }
+.cal-day.has { color: var(--text); }
+.cal-day.has::after { content: ""; position: absolute; bottom: 4px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--accent); }
+.cal-day.today { outline: 1px solid var(--line-2); }
+.cal-day.on { background: var(--accent-strong); color: #fff; }
+.cal-day.on::after { background: #fff; }
+.cal-day[disabled] { color: #333b49; cursor: default; }
+.cal-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+.cal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 4px; vertical-align: 1px; }

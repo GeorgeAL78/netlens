@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.4 — 2026-10-09
+
+### Changed
+- "Pick a day" and every date button open a calendar; days with saved data are marked.
+
+### Fixed
+- Findings for a past day or a range no longer say "today".
+
 ## 2.0.3 — 2026-10-09
 
 ### Added
