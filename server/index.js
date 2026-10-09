@@ -796,6 +796,13 @@ app.get("/api/threats", (req, res) => {
 // ---- Views of the redesigned interface (UU-C-087), read-only like /api/report -------------
 function dayContext(query) {
   const todayKey = zonedDateKey(Date.now());
+  // The last N days up to now (Home's ranges, UU-C-094).
+  const days = Number(query.days);
+  if ([3, 7, 14, 30].includes(days)) {
+    const start = zonedMidnight(addDays(todayKey, -(days - 1)));
+    const now = Date.now();
+    return { date: todayKey, days, today: false, bundle: cache.readDays(dayKeysForRange(start, now)), start, end: now, now };
+  }
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(query.date || "")) ? String(query.date) : todayKey;
   const range = rangeFor({ period: "custom", date });
   const bundle = cache.readDays([date]);
@@ -829,6 +836,7 @@ app.get("/api/findings", (req, res) => {
     const blocked = insights.threats(ctx.start, ctx.end).total;
     res.json({
       date: ctx.date,
+      days: ctx.days || 1,
       today: ctx.today,
       tz,
       findings: list,

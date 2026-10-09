@@ -133,6 +133,112 @@ function Panel({ data, route }) {
   );
 }
 
+// The real topology (UU-C-093): each switch / AP hangs off the device and port it reports as its
+// uplink; wired devices are grouped by the port they are on.
+function portSpeed(node, idx) {
+  const p = (node.ports || []).find((x) => x.idx === idx);
+  return p?.up && p.speed ? speed(p.speed) : null;
+}
+
+function Branch({ node, all, byName, gateway, sel, selC, root = false }) {
+  const parentOf = (n) => (n.uplink?.device && byName[n.uplink.device]) || gateway;
+  const kids = all.filter((n) => n !== gateway && n !== node && parentOf(n) === node);
+  const wired = node.clients.filter((c) => c.wired);
+  const wifi = node.clients.filter((c) => !c.wired);
+  const ports = new Map();
+  const at = (p) => {
+    const k = p ?? "?";
+    if (!ports.has(k)) ports.set(k, { kids: [], clients: [] });
+    return ports.get(k);
+  };
+  for (const k of kids) at(k.uplink?.port).kids.push(k);
+  for (const c of wired) at(c.port).clients.push(c);
+  const order = [...ports.keys()].sort((a, b) => (a === "?" ? 1 : b === "?" ? -1 : a - b));
+  const isAp = /uap/.test(node.type || "");
+  return (
+    <div className={`branch-tree ${root ? "root" : ""}`}>
+      <a className={`node ${root ? "gw" : ""} ${sel === node.mac ? "sel" : ""}`} href={href("network", null, { n: node.mac })}>
+        <span className="small" style={{ color: root ? "var(--accent)" : "var(--dim)" }}>
+          {kindOf(node.type)}{node.online === false ? " · offline" : ""}
+        </span>
+        <strong>{node.name}</strong>
+        {root ? (
+          <span className="mono small dim">{node.cpu != null ? `CPU ${Math.round(node.cpu)}%` : ""}{node.temp != null ? ` · ${Math.round(node.temp)} °C` : ""} · up {duration(node.uptime)}</span>
+        ) : (
+          <NodeStat n={node} />
+        )}
+      </a>
+      {(order.length > 0 || (isAp && wifi.length > 0)) && (
+        <div className="ports">
+          {order.map((p) => {
+            const g = ports.get(p);
+            const sp = p === "?" ? null : portSpeed(node, p);
+            return (
+              <div key={p} className="port-row">
+                <span className="port-label">
+                  <strong>{p === "?" ? "Port ?" : `Port ${p}`}</strong>
+                  <span className="mono small dim">{[sp, g.clients.length > 1 ? `${g.clients.length} devices` : null].filter(Boolean).join(" · ")}</span>
+                </span>
+                <div className="port-body">
+                  {g.kids.map((k) => (
+                    <Branch key={k.mac} node={k} all={all} byName={byName} gateway={gateway} sel={sel} selC={selC} />
+                  ))}
+                  {g.clients.length > 0 && (
+                    <div className="chips">
+                      {g.clients.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} />)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {isAp && wifi.length > 0 && (
+            <div className="port-row">
+              <span className="port-label">
+                <strong>Wi-Fi</strong>
+                <span className="mono small dim">{wifi.length} devices</span>
+              </span>
+              <div className="port-body">
+                <div className="chips">{wifi.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} />)}</div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Tree({ data, sel, selC }) {
+  const gateway = data.gateway;
+  if (!gateway) return <div className="card empty">No gateway data yet.</div>;
+  const all = [gateway, ...data.nodes];
+  const byName = Object.fromEntries(all.map((n) => [n.name, n]));
+  return (
+    <div className="map">
+      <div className="node internet">
+        <span className="dim small">Internet</span>
+        <strong>{data.wan?.isp || "WAN"}</strong>
+        <span className={`mono small ${data.wan?.status === "ok" ? "ok" : "warn"}`}>
+          {data.wan?.status === "ok" ? "OK" : data.wan?.status || "unknown"}
+          {data.wan?.latency != null ? ` · ${data.wan.latency} ms` : ""}
+        </span>
+        {gateway.uplink?.speed ? <span className="mono small dim">WAN link {speed(gateway.uplink.speed)}</span> : null}
+      </div>
+      <Branch node={gateway} all={all} byName={byName} gateway={gateway} sel={sel} selC={selC} root />
+      {data.loose.length > 0 && (
+        <div className="port-row" style={{ marginTop: 8 }}>
+          <span className="port-label">
+            <strong>Elsewhere</strong>
+            <span className="small dim">behind other devices</span>
+          </span>
+          <div className="port-body"><div className="chips">{data.loose.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} />)}</div></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Network({ route }) {
   const { data, error, loading, reload } = useApi("/api/network", 60 * 1000);
   const sel = route.query.n || null;
@@ -149,60 +255,7 @@ export default function Network({ route }) {
           </div>
           {error && <Failed error={error} reload={reload} />}
           {!data && loading && <Loading />}
-          {data && (
-            <div className="tree">
-              <div className="node" style={{ gridRow: `span ${Math.max(1, data.nodes.length + 1)}`, alignSelf: "center", cursor: "default" }}>
-                <span className="dim small">Internet</span>
-                <strong>{data.wan?.isp || "WAN"}</strong>
-                <span className={`mono small ${data.wan?.status === "ok" ? "ok" : "warn"}`}>
-                  {data.wan?.status === "ok" ? "OK" : data.wan?.status || "unknown"}
-                  {data.wan?.latency != null ? ` · ${data.wan.latency} ms` : ""}
-                </span>
-                {data.wan?.availability != null && <span className="mono small dim">{data.wan.availability}% up</span>}
-              </div>
-              <div className="wire strong" style={{ gridRow: `span ${Math.max(1, data.nodes.length + 1)}` }} />
-              {data.gateway ? (
-                <a
-                  className={`node gw ${sel === data.gateway.mac ? "sel" : ""}`}
-                  href={href("network", null, { n: data.gateway.mac })}
-                  style={{ gridRow: `span ${Math.max(1, data.nodes.length + 1)}`, alignSelf: "center" }}
-                >
-                  <span className="small" style={{ color: "var(--accent)" }}>Gateway</span>
-                  <strong>{data.gateway.name}</strong>
-                  {data.gateway.cpu != null && <span className="mono small dim">CPU {Math.round(data.gateway.cpu)}%{data.gateway.temp != null ? ` · ${Math.round(data.gateway.temp)} °C` : ""}</span>}
-                  <span className="mono small dim">up {duration(data.gateway.uptime)}</span>
-                </a>
-              ) : (
-                <div className="node" style={{ gridRow: "span 1" }}>No gateway data yet</div>
-              )}
-              {[...data.nodes, ...(data.gateway && data.gateway.clients.length ? [{ ...data.gateway, direct: true }] : [])].map((n) => [
-                <div key={`${n.mac}-w`} className="wire" style={{ gridColumn: 4 }} />,
-                <div key={n.mac} className="branch" style={{ gridColumn: 5 }}>
-                  {n.direct ? (
-                    <span className="node" style={{ cursor: "default" }}>
-                      <span className="dim small">Gateway ports</span>
-                      <strong>Wired to the gateway</strong>
-                    </span>
-                  ) : (
-                    <a className={`node ${sel === n.mac ? "sel" : ""}`} href={href("network", null, { n: n.mac })}>
-                      <span className="dim small">{kindOf(n.type)}{n.online ? "" : " · offline"}</span>
-                      <strong>{n.name}</strong>
-                      <NodeStat n={n} />
-                    </a>
-                  )}
-                  {n.clients.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} />)}
-                  {!n.clients.length && <span className="dim small">no devices right now</span>}
-                </div>,
-              ])}
-              {data.loose.length > 0 && [
-                <div key="loose-w" className="wire" style={{ gridColumn: 4 }} />,
-                <div key="loose" className="branch" style={{ gridColumn: 5 }}>
-                  <span className="node" style={{ cursor: "default" }}><span className="dim small">Behind other devices</span><strong>Other</strong></span>
-                  {data.loose.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} />)}
-                </div>,
-              ]}
-            </div>
-          )}
+          {data && <Tree data={data} sel={sel} selC={selC} />}
         </div>
       </div>
       {data && <Panel data={data} route={route} />}

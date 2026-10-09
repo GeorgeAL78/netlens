@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bytes, clock, go, href, todayKey, useApi } from "../lib.js";
+import { addDays, bytes, clock, go, href, shortDate, todayKey, useApi } from "../lib.js";
 import { Bars, DayStep, Failed, Loading, levelColor } from "../ui.jsx";
 
 // Home — the feed (UU-C-087): what happened today, in plain language, each finding linking
@@ -27,10 +27,23 @@ function actionsFor(f, date) {
   return a;
 }
 
+const RANGES = [
+  ["today", "Today"],
+  ["3", "3 days"],
+  ["7", "7 days"],
+  ["14", "14 days"],
+  ["30", "30 days"],
+  ["day", "Pick a day"],
+];
+
 export default function Home({ route }) {
+  const days = ["3", "7", "14", "30"].includes(route.query.r) ? route.query.r : null;
   const date = route.query.d || todayKey();
+  const picked = !days && route.query.d && route.query.d !== todayKey();
+  const range = days || (picked ? "day" : "today");
   const [filter, setFilter] = useState("all");
-  const { data, error, loading, reload } = useApi(`/api/findings?date=${date}`, date === todayKey() ? 5 * 60 * 1000 : 0);
+  const path = days ? `/api/findings?days=${days}` : `/api/findings?date=${date}`;
+  const { data, error, loading, reload } = useApi(path, range === "today" || days ? 5 * 60 * 1000 : 0);
   const list = (data?.findings || []).filter((f) => {
     if (filter === "all") return true;
     if (filter === "look") return f.level !== "info";
@@ -43,10 +56,27 @@ export default function Home({ route }) {
     <div className="page">
       <div className="page-head">
         <div className="titles">
-          <span className="dim small">{data?.today ? "So far today" : "On this day"}</span>
-          <h1>{data?.today ? "Today on your network" : "That day on your network"}</h1>
+          <span className="dim small">{days ? `The last ${days} days, up to now` : data?.today ? "So far today" : "On this day"}</span>
+          <h1>{days ? `Your network, last ${days} days` : data?.today ? "Today on your network" : "That day on your network"}</h1>
         </div>
-        <DayStep date={date} onDate={(d) => go("home", null, { d: d === todayKey() ? null : d })} />
+        <div className="seg" role="group" aria-label="Period">
+          {RANGES.map(([id, label]) => (
+            <button
+              key={id}
+              className={range === id ? "on" : ""}
+              onClick={() =>
+                id === "today"
+                  ? go("home")
+                  : id === "day"
+                    ? go("home", null, { d: picked ? date : addDays(todayKey(), -1) })
+                    : go("home", null, { r: id })
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {range === "day" && <DayStep date={date} onDate={(d) => go("home", null, { d: d === todayKey() ? null : d })} />}
       </div>
       {error && <Failed error={error} reload={reload} />}
       {!data && loading && <Loading />}
@@ -69,7 +99,7 @@ export default function Home({ route }) {
                     {f.level === "info" ? TAG[f.kind] || "NOTE" : "NEEDS A LOOK"}
                   </span>
                   <span>·</span>
-                  <span>{f.level === "info" ? "" : `${TAG[f.kind] || ""} · `}{clock(f.ts)}</span>
+                  <span>{f.level === "info" ? "" : `${TAG[f.kind] || ""} · `}{days ? shortDate(f.ts) : clock(f.ts)}</span>
                 </div>
                 <h3>{f.title}</h3>
                 {f.text && <p>{f.text}</p>}
@@ -95,7 +125,7 @@ export default function Home({ route }) {
           </div>
           <aside style={{ flex: "1 1 260px", maxWidth: 320, display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="card">
-              <span className="dim small">{data.today ? "Right now" : "That day"}</span>
+              <span className="dim small">{data.today ? "Right now" : days ? `Last ${days} days` : "That day"}</span>
               <div className="kv">
                 {now?.internet && (
                   <div>
@@ -106,7 +136,7 @@ export default function Home({ route }) {
                     </span>
                   </div>
                 )}
-                {data.today && (
+                {(data.today || days) && (
                   <div>
                     <span>Devices online</span>
                     <span className="mono">

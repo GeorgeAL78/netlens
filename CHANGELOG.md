@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.3 — 2026-10-09
+
+### Added
+- Network: the real topology — each switch and access point under the device and port it is plugged into, wired devices grouped by switch port, with link speeds.
+- Home: Today, 3, 7, 14 or 30 days, or pick a day.
+
 ## 2.0.2 — 2026-10-09
 
 ### Added
