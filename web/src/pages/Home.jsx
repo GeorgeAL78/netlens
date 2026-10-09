@@ -63,7 +63,7 @@ export default function Home({ route }) {
             </div>
             {!list.length && <div className="card empty">Nothing to report{filter !== "all" ? " here" : ""} — a quiet {data.today ? "day so far" : "day"}.</div>}
             {list.map((f) => (
-              <article key={f.id} className={`finding ${f.level}`}>
+              <article key={f.id} className={`finding lv-${f.level}`}>
                 <div className="meta">
                   <span className="tag" style={{ color: levelColor[f.level] }}>
                     {f.level === "info" ? TAG[f.kind] || "NOTE" : "NEEDS A LOOK"}

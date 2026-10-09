@@ -11,6 +11,19 @@ which UniFi itself deletes after a day or a week.
 
 > Not affiliated with, endorsed by, or sponsored by Ubiquiti Inc. UniFi is a trademark of Ubiquiti Inc.
 
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Home — today's findings](assets/screenshots/home.png) | ![Day — every device by hour](assets/screenshots/day.png) |
+| **Home** — today's findings in plain language | **Day** — every device by hour |
+| ![Network — live map with access-point detail](assets/screenshots/network.png) | ![Device — traffic, signal and events](assets/screenshots/device.png) |
+| **Network** — live map, access point selected | **Device** — its day, apps, sessions and events |
+| ![Security — blocked intrusion with full detail](assets/screenshots/security.png) | ![Usage — one hour in 5-minute steps](assets/screenshots/usage.png) |
+| **Security** — blocked intrusion with its full record | **Usage** — one hour in 5-minute steps |
+
+<sub>Screenshots use a made-up demo network, not real data.</sub>
+
 ## Features
 
 - **Home** — what happened today, in plain language: the day's big transfers, devices on weak

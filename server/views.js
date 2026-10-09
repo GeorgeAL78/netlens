@@ -224,8 +224,28 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName })
 
   // Security: each IPS hit; firewall rules grouped; repeat offenders.
   const t = insights.threats(start, end);
-  for (const it of t.items.filter((i) => i.kind === "Threat blocked").slice(0, 5)) {
-    out.push({ id: `threat-${it.uid}`, kind: "security", level: "bad", ts: it.ts, title: `Intrusion attempt blocked: ${it.source || "a device"} → ${it.domain || it.target || "outside"}`, text: it.signature ? `${it.signature}${it.note ? ` — ${it.note}` : ""}` : "UniFi blocked it; no connection details were caught for this one.", uid: it.uid });
+  // One finding per source → target: four attempts from one address are one story, not four.
+  const groups = new Map();
+  for (const it of t.items.filter((i) => i.kind === "Threat blocked")) {
+    const k = `${it.source}|${it.domain || it.target}`;
+    const g = groups.get(k);
+    if (g) g.n += 1;
+    else groups.set(k, { it, n: 1 });
+  }
+  for (const { it, n } of [...groups.values()].slice(0, 5)) {
+    const outsideRepeat = n >= 3 && /^\d+\.\d+\.\d+\.\d+$/.test(it.source || "");
+    out.push({
+      id: `threat-${it.uid}`,
+      kind: "security",
+      level: "bad",
+      ts: it.ts,
+      title: outsideRepeat
+        ? `${it.source} tried ${n} times to reach ${it.domain || it.target || "your network"}`
+        : `Intrusion attempt${n > 1 ? `s (${n})` : ""} blocked: ${it.source || "a device"} → ${it.domain || it.target || "outside"}`,
+      text: it.signature ? `${it.signature}${it.note ? ` — ${it.note}` : ""}` : outsideRepeat ? "The same outside address was blocked repeatedly." : "UniFi blocked it; no connection details were caught for this one.",
+      uid: it.uid,
+      ip: outsideRepeat ? it.source : undefined,
+    });
   }
   const byRule = new Map();
   for (const it of t.items.filter((i) => i.kind === "Firewall block")) {
@@ -238,17 +258,6 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName })
   for (const [rule, v] of byRule) {
     out.push({ id: `rule-${rule}`, kind: "security", level: "info", ts: v.ts, title: `Your “${rule}” rule fired ${v.n === 1 ? "once" : `${v.n} times`}`, text: v.sources.size ? `From ${[...v.sources].slice(0, 3).join(", ")}${v.sources.size > 3 ? " and others" : ""}.` : "", rule });
   }
-  const offenders = new Map();
-  for (const it of t.items) {
-    const outside = it.kind === "Threat blocked" && it.source && !isMac(it.source) && /^\d+\.\d+\.\d+\.\d+$/.test(it.source) ? it.source : null;
-    if (!outside) continue;
-    offenders.set(outside, (offenders.get(outside) || 0) + 1);
-  }
-  for (const [ip, n] of offenders) {
-    if (n < 3) continue;
-    out.push({ id: `offender-${ip}`, kind: "security", level: "bad", ts: now, title: `${ip} tried ${n} times`, text: "The same outside address was blocked repeatedly.", ip });
-  }
-
   // New devices: first seen by this installation today.
   const firstSeen = db.firstSeenSince ? db.firstSeenSince(start) : [];
   for (const d of firstSeen) {

@@ -45,7 +45,9 @@ function Detail({ it, all, onHide, hidden }) {
       )}
       {!d && (
         <p className="note warn">
-          No connection details: UniFi keeps connection records only about 4 days, and this one was gone before NetLens could read it.
+          {Date.now() - it.ts > 4 * 86400000
+            ? "No connection details: UniFi keeps connection records only about 4 days, and this one was gone before NetLens could read it."
+            : "No connection record was found for this event (UniFi did not log one, or NetLens has not looked it up yet)."}
         </p>
       )}
       <div className="kv">
@@ -184,7 +186,7 @@ export default function Security({ route }) {
                       <span className={it.kind === "Threat blocked" ? "bad" : "warn"}>{it.kind === "Threat blocked" ? "Intrusion" : "Firewall"}</span>
                       <span className="stack">
                         <span className="ellipsis">{it.source || "—"} → {it.target || "—"}</span>
-                        <span className="dim small ellipsis">{it.domain || (it.detail ? "" : "details older than 4 days")}</span>
+                        <span className="dim small ellipsis">{it.domain || (it.detail ? "" : Date.now() - it.ts > 4 * 86400000 ? "details older than 4 days" : "no connection details")}</span>
                       </span>
                       <span className="muted small ellipsis">{it.signature || it.policy || "—"}</span>
                     </button>
