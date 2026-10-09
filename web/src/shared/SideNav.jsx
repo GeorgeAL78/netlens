@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import "./sidenav.css";
 
 // One side menu for both releases. v1 and v2 are separate bundles, so the only way to
@@ -28,6 +29,14 @@ export default function SideNav({
   timelineHref = "./v2/index.html",
 }) {
   const disabled = busy || warming;
+  // The running version (UU-C-084), from the health check — open even before login.
+  const [version, setVersion] = useState("");
+  useEffect(() => {
+    fetch("/healthz")
+      .then((r) => r.json())
+      .then((j) => setVersion(j.version || ""))
+      .catch(() => {});
+  }, []);
   return (
     <>
       {open && <div className="sn-scrim" onClick={onClose} />}
@@ -36,7 +45,9 @@ export default function SideNav({
           <span className="sn-mark" aria-hidden="true" />
           <div>
             <strong>NetLens</strong>
-            <span className="sn-dim">for UniFi</span>
+            <span className="sn-dim">
+              for UniFi{version ? ` · ${/^\d/.test(version) ? `v${version}` : version}` : ""}
+            </span>
           </div>
         </div>
 

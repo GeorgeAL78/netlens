@@ -160,11 +160,20 @@ function WifiDetail({ api, q, mac, onBack }) {
           <p>
             Now on <strong>{c.current.ap}</strong> · {c.current.band} ch {c.current.channel}
             {c.current.width ? ` (${c.current.width} MHz)` : ""} · <span className={sigClass(c.current.signal)}>{c.current.signal} dBm</span>
-            {c.current.noise != null ? <span className="muted"> (noise {c.current.noise})</span> : null} · link {fmtRate(c.current.txRate)} / {fmtRate(c.current.rxRate)}
+            {c.current.noise != null ? <span className="muted"> (noise {c.current.noise})</span> : null}
+            <span className="muted"> at {new Date(c.current.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+            {" "}· Tx {fmtRate(c.current.txRate)} · Rx {fmtRate(c.current.rxRate)}
             {c.current.satisfaction != null ? ` · experience ${c.current.satisfaction}%` : ""}
           </p>
         ) : (
           <p className="muted">No Wi-Fi samples for this device in this period.</p>
+        )}
+        {!c.wired && c.sampledSince > c.start && (
+          <p className="muted" style={{ marginTop: 0 }}>
+            NetLens started sampling Wi-Fi {new Date(c.sampledSince).toLocaleString()}: signal figures cover only the time since
+            then (one sample every 5 minutes, so a value can differ from UniFi's live view). Roams come from UniFi's own event
+            log and cover the whole period.
+          </p>
         )}
         <div className="stats" style={{ marginTop: 8 }}>
           <div className="card">
@@ -174,7 +183,7 @@ function WifiDetail({ api, q, mac, onBack }) {
           <div className="card">
             <div className="stat-label">Weak (below {c.thresholds.weak})</div>
             <div className="stat-value">{fmtMin(c.summary.weakMinutes)}</div>
-            <div className="muted">of {fmtMin(c.summary.minutes)} connected</div>
+            <div className="muted">of {fmtMin(c.summary.minutes)} sampled</div>
           </div>
           <div className="card">
             <div className="stat-label">Poor (below {c.thresholds.bad})</div>
@@ -183,7 +192,12 @@ function WifiDetail({ api, q, mac, onBack }) {
           <div className="card">
             <div className="stat-label">Roams</div>
             <div className="stat-value">{c.roams.length}</div>
-            <div className="muted">{c.favoriteAp ? `favourite AP: ${c.favoriteAp.ap} (${c.favoriteAp.hours} h / 30 days)` : ""}</div>
+            <div className="muted">
+              from UniFi's log
+              {c.favoriteAp
+                ? ` · favourite AP: ${c.favoriteAp.ap} (${c.favoriteAp.hours} h ${c.presence?.daysOfData >= 30 ? "in 30 days" : "sampled"})`
+                : ""}
+            </div>
           </div>
         </div>
       </div>

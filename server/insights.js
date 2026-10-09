@@ -309,6 +309,9 @@ export function wifiClient(start, end, mac, tz) {
     favoriteAp: fav ? { ap: nameOf(fav[0]), hours: Math.round((fav[1].minutes / 60) * 10) / 10 } : null,
     roams: roamsFor(start, end, m).slice(0, 100),
     presence: { minutes: presence, daysOfData, sufficient: daysOfData >= 7 },
+    // When this installation took its first sample: signal figures only cover time after it,
+    // while roams come from UniFi's event log and cover the whole period (UU-C-084).
+    sampledSince: firstTs,
   };
 }
 
