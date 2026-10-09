@@ -177,6 +177,41 @@ export function wifiList(start, end) {
   return { clients, thresholds: { weak: WEAK, bad: BAD } };
 }
 
+// Wired devices (UU-C-078): the same 5-minute samples, wired = 1. Which switch and port,
+// link speed now and the slowest seen (a cable or port renegotiating down shows up here),
+// how often the speed changed, and how long the device was connected.
+export function wiredList(start, end) {
+  const nameOf = names();
+  const byMac = new Map();
+  for (const r of db.queryClientSamples(start, end, null)) {
+    if (!r.wired) continue;
+    const list = byMac.get(r.mac);
+    if (list) list.push(r);
+    else byMac.set(r.mac, [r]);
+  }
+  const mbps = (r) => (r.tx_rate != null ? Math.round(r.tx_rate / 1000) : null);
+  const clients = [...byMac.entries()].map(([mac, list]) => {
+    const last = list[list.length - 1];
+    const speeds = list.map(mbps).filter((v) => v != null);
+    let changes = 0;
+    for (let i = 1; i < list.length; i += 1) if (mbps(list[i]) != null && mbps(list[i - 1]) != null && mbps(list[i]) !== mbps(list[i - 1])) changes += 1;
+    return {
+      mac,
+      name: nameOf(mac),
+      switch: last.ap_mac ? nameOf(last.ap_mac) : null,
+      port: last.port ?? null,
+      speed: mbps(last),
+      minSpeed: speeds.length ? Math.min(...speeds) : null,
+      speedChanges: changes,
+      lastSeen: last.ts,
+      minutes: list.length * SAMPLE_MIN,
+    };
+  });
+  // Slow links first (a gigabit device stuck at 100 Mbps is the thing worth seeing), then by name.
+  clients.sort((a, b) => (a.minSpeed ?? 1e9) - (b.minSpeed ?? 1e9) || String(a.name).localeCompare(String(b.name)));
+  return { clients };
+}
+
 export function wifiClient(start, end, mac, tz) {
   const nameOf = names();
   const m = String(mac).toLowerCase();
@@ -288,8 +323,12 @@ export function threats(start, end) {
     const firewall = /TRAFFIC_BLOCKED/.test(e.data?.key || "");
     const ips = sigs.get(e.uid) || null;
     return {
+      uid: e.uid,
       ts: e.ts,
       kind: firewall ? "Firewall block" : "Threat blocked",
+      severity: e.data?.severity || null,
+      // The blocked connection's full record (UU-C-077), for the detail panel.
+      detail: ips,
       title: e.name,
       source: p.SRC_CLIENT?.n || p.SRC_IP?.n || null,
       target: p.DST_CLIENT?.n || p.DST_IP?.n || null,

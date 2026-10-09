@@ -118,9 +118,10 @@ web UI is in charge: `UNIFI_HOST`, `UNIFI_API_KEY`, `UNIFI_SITE`, `UNIFI_SITE_ID
 
 ### Blocked-ad counts (optional)
 
-Network events come from UniFi's System Log automatically. Only ad-block hits need syslog: in
-Settings set the listen port to `5514`, publish that port, and point UniFi at it (CyberSecure → Traffic Logging →
-Activity Logging → SIEM Server), directly or through a relay such as syslog-ng.
+Network events come from UniFi's System Log automatically. Only ad-block hits need syslog. The
+container listens on port `5514` (TCP and UDP) by default: publish that port and point UniFi at
+this server (CyberSecure → Traffic Logging → Activity Logging → SIEM Server). Clear the port in
+Settings to turn the listener off.
 
 ## Security
 

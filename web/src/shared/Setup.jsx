@@ -160,6 +160,42 @@ export function SetupGate({ children }) {
   return children;
 }
 
+// ---- Settings dialog building blocks (UU-C-076) ----------------------------------------
+const ICONS = {
+  console: "M4 6h16v5H4zM4 13h16v5H4zM7 8.5h.01M7 15.5h.01",
+  clock: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2",
+  lock: "M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3",
+  archive: "M4 5h16v4H4zM5.5 9v10h13V9M10 13h4",
+  shield: "M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z",
+  sliders: "M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4",
+};
+
+export function SettingsIcon({ name, size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={ICONS[name] || ICONS.sliders} />
+    </svg>
+  );
+}
+
+// One titled block of the Settings dialog: icon, title, a one-line hint, then its fields.
+export function SettingsSection({ icon, title, hint, children }) {
+  return (
+    <section className="account set-section">
+      <div className="set-section-head">
+        <span className="set-icon">
+          <SettingsIcon name={icon} />
+        </span>
+        <div>
+          <h3>{title}</h3>
+          {hint && <p>{hint}</p>}
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 // Timezone, login password and log out — the account half of the Settings dialog.
 export function AccountSettings({ tz, onTz }) {
   const [info, setInfo] = useState(null);
@@ -195,12 +231,18 @@ export function AccountSettings({ tz, onTz }) {
   }
 
   return (
-    <div className="account">
-      <label>
-        Timezone
-        <TimezoneSelect value={tz || info?.tz || browserTz()} onChange={onTz} />
-      </label>
-      <h3>Login password</h3>
+    <>
+      <SettingsSection icon="clock" title="General" hint="Days, hours and charts follow this timezone.">
+        <label>
+          Timezone
+          <TimezoneSelect value={tz || info?.tz || browserTz()} onChange={onTz} />
+        </label>
+      </SettingsSection>
+      <SettingsSection
+        icon="lock"
+        title="Login"
+        hint={info?.hasPassword ? "Change the password or sign out of this browser." : "Set a password to protect the dashboard."}
+      >
       {info?.hasPassword && (
         <label>
           Current password
@@ -228,8 +270,9 @@ export function AccountSettings({ tz, onTz }) {
         )}
       </div>
       {msg && <p className="setup-dim">{msg}</p>}
+      </SettingsSection>
       <HistoryTransfer />
-    </div>
+    </>
   );
 }
 
@@ -271,13 +314,11 @@ function HistoryTransfer() {
   }
 
   return (
-    <>
-      <h3>History</h3>
-      <p className="setup-dim">
-        Export saves usage, connection records, events and Wi-Fi/equipment samples to one file. Import merges such a
-        file: missing days are added, a day is replaced only by a fuller copy. Settings, the API key and the password are
-        never included.
-      </p>
+    <SettingsSection
+      icon="archive"
+      title="History"
+      hint="Back up, restore or move everything this installation has saved. Import merges: missing days are added, a day is replaced only by a fuller copy. Settings, the API key and the password are never in the file."
+    >
       <div className="account-actions">
         <a className="btn ghost" href="/api/history/export" download>
           Export history
@@ -296,6 +337,6 @@ function HistoryTransfer() {
         </label>
       </div>
       {msg && <p className="setup-dim">{msg}</p>}
-    </>
+    </SettingsSection>
   );
 }

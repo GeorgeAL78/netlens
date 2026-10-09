@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import SideNav from "./shared/SideNav.jsx";
 import { useViewHistory } from "./shared/useViewHistory.js";
 import { GatewayStrip, InsightsPage, PageTabs } from "./Insights.jsx";
-import { AccountSettings } from "./shared/Setup.jsx";
+import { AccountSettings, SettingsSection, SettingsIcon } from "./shared/Setup.jsx";
 import {
   Bar,
   BarChart,
@@ -103,6 +103,14 @@ function formatCacheAge(ts) {
   return h === 1 ? "1 hour ago" : `${h} hours ago`;
 }
 
+// "05:55" + 5 -> "06:00": the end of the last 5-minute bar, in the server's own clock labels.
+function labelPlus(label, minutes) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(label || ""));
+  if (!m) return "";
+  const t = (Number(m[1]) * 60 + Number(m[2]) + minutes) % 1440;
+  return `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
+}
+
 function formatBytes(n) {
   const v = Number(n) || 0;
   if (v < 1024) return `${v} B`;
@@ -151,6 +159,9 @@ export default function App() {
   const [date, setDate] = useState("");
   const [category, setCategory] = useState("all");
   const [appId, setAppId] = useState("all");
+  // A clicked hour of the day chart, "fromMs-toMs" (UU-C-075); empty = the whole period.
+  const [span, setSpan] = useState("");
+  const barClicked = useRef(false);
   const [appOptions, setAppOptions] = useState([]);
   const [report, setReport] = useState(null);
   const [error, setError] = useState("");
@@ -170,7 +181,7 @@ export default function App() {
   // Back undoes the last filter change. `query` is remembered so the device box shows the
   // right name again, but not tracked — every keystroke would otherwise be a step.
   const { canGoBack, back } = useViewHistory(
-    { scope, selected, query, period, date, category, appId, page },
+    { scope, selected, query, period, date, category, appId, span, page },
     (v) => {
       setPage(v.page || "usage");
       setScope(v.scope);
@@ -180,15 +191,16 @@ export default function App() {
       setDate(v.date);
       setCategory(v.category);
       setAppId(v.appId);
+      setSpan(v.span || "");
     },
-    ["scope", "selected", "period", "date", "category", "appId", "page"]
+    ["scope", "selected", "period", "date", "category", "appId", "span", "page"]
   );
 
   const selectedClient = clients.find((c) => c.mac === selected);
 
   // Every control that narrows the report, with its default. Keep this in step with the
   // state declarations above, or Reset will silently miss a filter.
-  const FILTER_DEFAULTS = { scope: "online", selected: "all", query: "", period: "today", date: "", category: "all", appId: "all" };
+  const FILTER_DEFAULTS = { scope: "online", selected: "all", query: "", period: "today", date: "", category: "all", appId: "all", span: "" };
   const filtersActive =
     scope !== FILTER_DEFAULTS.scope ||
     selected !== FILTER_DEFAULTS.selected ||
@@ -196,7 +208,8 @@ export default function App() {
     period !== FILTER_DEFAULTS.period ||
     date !== FILTER_DEFAULTS.date ||
     category !== FILTER_DEFAULTS.category ||
-    appId !== FILTER_DEFAULTS.appId;
+    appId !== FILTER_DEFAULTS.appId ||
+    span !== FILTER_DEFAULTS.span;
 
   function resetFilters() {
     setScope(FILTER_DEFAULTS.scope);
@@ -206,6 +219,7 @@ export default function App() {
     setDate(FILTER_DEFAULTS.date);
     setCategory(FILTER_DEFAULTS.category);
     setAppId(FILTER_DEFAULTS.appId);
+    setSpan(FILTER_DEFAULTS.span);
     setOpen(false);
   }
 
@@ -274,6 +288,11 @@ export default function App() {
       if (selected !== "all") params.set("mac", selected);
       if (appId !== "all") params.set("appId", appId);
       if (period === "custom" && date) params.set("date", date);
+      if (span) {
+        const [from, to] = span.split("-");
+        params.set("from", from);
+        params.set("to", to);
+      }
       const data = await api(`/api/report?${params}`);
       setReport(data);
       if (data.cachedAt) {
@@ -342,7 +361,7 @@ export default function App() {
 
   useEffect(() => {
     loadReport().catch((err) => setError(err.message));
-  }, [selected, period, date, category, appId]);
+  }, [selected, period, date, category, appId, span]);
 
   useEffect(() => {
     api("/api/settings")
@@ -502,8 +521,22 @@ export default function App() {
         appChoices.find((a) => String(a.id) === String(appId))
       : null;
   const focusedName = focusedApp?.app || focusedApp?.name;
+  // A day bar opens that day; an hour bar opens that hour in 5-minute steps (UU-C-075).
+  function openBar(bar) {
+    if (!bar || !report) return;
+    if (report.grain === "day") {
+      setPeriod("custom");
+      setDate(bar.label);
+      setSpan("");
+    } else if (report.grain === "hour") {
+      setSpan(`${bar.t}-${bar.t + 3600000}`);
+    }
+  }
+
   const chartTitle =
-    focusedName && report?.grain === "hour"
+    report?.grain === "5min"
+      ? `${focusedName ? `${focusedName}, ` : ""}${report.timeline?.[0]?.label || ""}–${labelPlus(report.timeline?.[report.timeline.length - 1]?.label, 5)}, in 5-minute steps`
+      : focusedName && report?.grain === "hour"
       ? `${focusedName} by hour`
       : focusedName
         ? `${focusedName} by day`
@@ -543,65 +576,73 @@ export default function App() {
       <div className="main">
       {settingsOpen && (
         <div className="modal-back" onClick={() => setSettingsOpen(false)}>
-          <form className="modal" onClick={(e) => e.stopPropagation()} onSubmit={saveSettings}>
-            <h2>UniFi connection</h2>
-            <label>
-              UniFi IP or hostname
-              <input
-                value={settings.host}
-                onChange={(e) => setSettings({ ...settings, host: e.target.value })}
-                placeholder="192.168.1.1"
-                required
-              />
-            </label>
-            <label>
-              API key
-              <input
-                type="password"
-                value={settings.apiKey}
-                onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
-                placeholder={hasApiKey ? "Stored — leave blank to keep" : "UniFi API key"}
-                required={!hasApiKey}
-              />
-            </label>
-            <label>
-              Site
-              <input
-                value={settings.site}
-                onChange={(e) => setSettings({ ...settings, site: e.target.value })}
-                placeholder="default"
-              />
-            </label>
-            <AccountSettings tz={settings.tz} onTz={(tz) => setSettings({ ...settings, tz })} />
-            <h3 style={{ margin: "14px 0 4px" }}>Blocked-ad statistics (optional)</h3>
-            <p className="muted" style={{ margin: "0 0 8px" }}>
-              Device connects, disconnects, roams and threats come from UniFi's System Log automatically — nothing to
-              set up. Only ad-block counts need your syslog-ng server, forwarding UniFi's SIEM export to this PC on the
-              port below. Leave it blank if you don't want them.
-            </p>
-            <label>
-              Listen on port
-              <input
-                inputMode="numeric"
-                value={settings.siemPort || ""}
-                onChange={(e) => setSettings({ ...settings, siemPort: e.target.value.replace(/\D/g, "") })}
-                placeholder="e.g. 5514 — blank to turn off"
-              />
-            </label>
-            {siemStatus && siemStatus.port && (
-              <p className="muted" style={{ margin: "4px 0 0" }}>
-                {siemStatus.systemLog?.lastPulledAt
-                  ? `System Log pulled ${new Date(siemStatus.systemLog.lastPulledAt).toLocaleString()} · `
-                  : ""}
-                {siemStatus.error
-                  ? `Problem: ${siemStatus.error}`
-                  : siemStatus.listening
-                    ? `Listening on port ${siemStatus.port}${siemStatus.lastReceivedAt ? ` · last message ${new Date(siemStatus.lastReceivedAt).toLocaleString()}` : " · nothing received yet"}`
-                    : `Not listening on port ${siemStatus.port}`}
-                {` · ${siemStatus.events} events stored`}
-              </p>
-            )}
-            <div className="actions">
+          <form className="modal settings-modal" onClick={(e) => e.stopPropagation()} onSubmit={saveSettings}>
+            <div className="settings-head">
+              <span className="set-icon">
+                <SettingsIcon name="sliders" />
+              </span>
+              <h2>Settings</h2>
+              <button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="Close">
+                ×
+              </button>
+            </div>
+            <div className="settings-body">
+              <SettingsSection icon="console" title="UniFi console" hint="Where NetLens reads your network from, with a local API key.">
+                <label>
+                  Console address
+                  <input
+                    value={settings.host}
+                    onChange={(e) => setSettings({ ...settings, host: e.target.value })}
+                    placeholder="192.168.1.1"
+                    required
+                  />
+                </label>
+                <label>
+                  API key
+                  <input
+                    type="password"
+                    value={settings.apiKey}
+                    onChange={(e) => setSettings({ ...settings, apiKey: e.target.value })}
+                    placeholder={hasApiKey ? "Stored — leave blank to keep" : "UniFi API key"}
+                    required={!hasApiKey}
+                  />
+                </label>
+                <label>
+                  Site
+                  <input
+                    value={settings.site}
+                    onChange={(e) => setSettings({ ...settings, site: e.target.value })}
+                    placeholder="default"
+                  />
+                </label>
+              </SettingsSection>
+              <AccountSettings tz={settings.tz} onTz={(tz) => setSettings({ ...settings, tz })} />
+              <SettingsSection
+                icon="shield"
+                title="Ad-block counts (optional)"
+                hint="Only for counting ads UniFi's ad blocker stopped — everything else works without this. The container listens on 5514 by default; to get the counts, point UniFi's CyberSecure → Traffic Logging → SIEM Server at this server and port. Clear the port to turn the listener off."
+              >
+                <label>
+                  Listen on port
+                  <input
+                    inputMode="numeric"
+                    value={settings.siemPort || ""}
+                    onChange={(e) => setSettings({ ...settings, siemPort: e.target.value.replace(/\D/g, "") })}
+                    placeholder="e.g. 5514 — empty = off"
+                  />
+                </label>
+                {siemStatus && siemStatus.port && (
+                  <p className="setup-dim">
+                    {siemStatus.error
+                      ? `Problem: ${siemStatus.error}`
+                      : siemStatus.listening
+                        ? `Listening on port ${siemStatus.port}${siemStatus.lastReceivedAt ? ` · last message ${new Date(siemStatus.lastReceivedAt).toLocaleString()}` : " · nothing received yet"}`
+                        : `Not listening on port ${siemStatus.port}`}
+                  </p>
+                )}
+              </SettingsSection>
+            </div>
+            <div className="settings-foot">
               <button type="button" className="btn ghost" onClick={() => setSettingsOpen(false)}>
                 Cancel
               </button>
@@ -701,7 +742,13 @@ export default function App() {
         </div>
         <div className="field">
           <label>When</label>
-          <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+          <select
+            value={period}
+            onChange={(e) => {
+              setPeriod(e.target.value);
+              setSpan("");
+            }}
+          >
             <option value="today">Today</option>
             <option value="yesterday">Yesterday</option>
             <option value="7d">Last 7 days</option>
@@ -750,7 +797,10 @@ export default function App() {
               value={date}
               min={dateBounds.min}
               max={dateBounds.max}
-              onChange={(e) => setDate(e.target.value)}
+              onChange={(e) => {
+                setDate(e.target.value);
+                setSpan("");
+              }}
             />
           </div>
         ) : null}
@@ -812,12 +862,21 @@ export default function App() {
               <div className="row">
                 <h3>{chartTitle}</h3>
                 <span className="muted">
+                  {span && (
+                    <button className="btn ghost" onClick={() => setSpan("")} style={{ marginRight: 6 }}>
+                      ← Whole day
+                    </button>
+                  )}
                   {appId !== "all" ? (
                     <button className="btn ghost" onClick={() => setAppId("all")}>
                       Show all apps
                     </button>
+                  ) : report.grain === "day" ? (
+                    "click a day to open it"
+                  ) : report.grain === "hour" ? (
+                    "click an hour to zoom in"
                   ) : (
-                    `${report.timeline?.length || 0} buckets · click an app for times`
+                    `${report.timeline?.length || 0} × 5 minutes`
                   )}
                 </span>
               </div>
@@ -844,13 +903,26 @@ export default function App() {
               {report?.unplacedBytes > 0.002 * (report?.totals?.bytes || 0) && (
                 <p className="muted" style={{ marginTop: 0 }}>
                   {formatBytes(report.unplacedBytes)} of the {formatBytes(report.totals.bytes)} is not drawn: it is counted,
-                  but UniFi no longer had hourly detail for it when it was saved. The total is exact; only when it
-                  happened is unknown.
+                  but UniFi {report.grain === "5min" ? "only kept an hourly total for it" : "no longer had hourly detail for it when it was saved"}.
+                  The total is exact; only when it happened is unknown.
                 </p>
               )}
               <div style={{ height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={report.timeline || []}>
+                  <BarChart
+                    data={report.timeline || []}
+                    style={{ cursor: report.grain === "5min" ? "default" : "pointer" }}
+                    onClick={(state) => {
+                      // Anywhere in a bar's column (small bars are hard to hit); recharts 3 reports
+                      // the hovered column, not the data. A click on the bar itself is handled there.
+                      if (barClicked.current) {
+                        barClicked.current = false;
+                        return;
+                      }
+                      const index = Number(state?.activeIndex ?? state?.activeTooltipIndex);
+                      if (Number.isInteger(index)) openBar(report.timeline?.[index]);
+                    }}
+                  >
                     <CartesianGrid stroke={CHART.grid} vertical={false} />
                     <XAxis dataKey="label" stroke={CHART.axis} />
                     <YAxis stroke={CHART.axis} tickFormatter={(v) => formatBytes(v)} width={72} />
@@ -858,7 +930,18 @@ export default function App() {
                     {lostRuns(report.timeline || []).map(([a, b]) => (
                       <ReferenceArea key={a} x1={a} x2={b} fill={CHART.lost} fillOpacity={0.35} ifOverflow="extendDomain" />
                     ))}
-                    <Bar dataKey="totalBytes" name="Saved" stackId="day" fill={CHART.bar} radius={[6, 6, 0, 0]} />
+                    <Bar
+                      dataKey="totalBytes"
+                      name="Saved"
+                      stackId="day"
+                      fill={CHART.bar}
+                      radius={[6, 6, 0, 0]}
+                      isAnimationActive={false}
+                      onClick={(_, index) => {
+                        barClicked.current = true;
+                        openBar(report.timeline?.[index]);
+                      }}
+                    />
                     {report?.dailyFill?.totalBytes > 0 && (
                       <Bar dataKey="fillBytes" name="Device totals only (UniFi daily report)" stackId="day" fill="#64748b" radius={[6, 6, 0, 0]} />
                     )}
@@ -871,7 +954,22 @@ export default function App() {
               <div style={{ height: 280 }}>
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={report.categories?.slice(0, 8) || []} dataKey="totalBytes" nameKey="category" innerRadius={50} outerRadius={90}>
+                    <Pie
+                      data={report.categories?.slice(0, 8) || []}
+                      dataKey="totalBytes"
+                      nameKey="category"
+                      innerRadius={50}
+                      outerRadius={90}
+                      style={{ cursor: "pointer" }}
+                      isAnimationActive={false}
+                      onClick={(slice) => {
+                        // A slice filters the page to that category; the same slice again clears it.
+                        const id = slice?.catId ?? slice?.payload?.catId;
+                        if (id == null) return;
+                        setCategory(String(category) === String(id) ? "all" : String(id));
+                        setAppId("all");
+                      }}
+                    >
                       {(report.categories || []).slice(0, 8).map((_, i) => (
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}

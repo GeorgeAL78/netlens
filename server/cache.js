@@ -429,9 +429,12 @@ export function readDays(dayKeys) {
   }
   const buckets = [];
   const bucketSpans = [];
+  // Only real 5-minute detail (bucketSpans also counts hours kept as hourly totals).
+  const fineSpans = [];
   for (const entry of present) {
     for (const row of entry.buckets || []) buckets.push(row);
     for (const span of entry.bucketSpans || []) bucketSpans.push(span);
+    for (const span of entry.fineSpans || []) fineSpans.push(span);
   }
   return {
     traffic,
@@ -439,6 +442,7 @@ export function readDays(dayKeys) {
     flowDays: present.filter((e) => e.flowCount > 0).map((e) => e.dayKey),
     buckets,
     bucketSpans,
+    fineSpans,
     // Each day's own DPI totals, for a daily chart that adds up to the header exactly.
     perDay: present.map((e) => ({
       dayKey: e.dayKey,

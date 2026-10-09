@@ -396,17 +396,19 @@ export function siemNamesByMac(limit = 5000) {
 // password stay with the installation that owns them.
 export const HISTORY_TABLES = ["clients", "siem_events", "ips_details", "daily_device", "client_samples", "device_samples", "wan_samples"];
 
-// Threat events from the last `sinceMs` without a signature yet, oldest first; ones looked up
-// and not found are retried at most hourly.
-export function pendingIpsLookups(sinceMs, limit = 20, now = Date.now()) {
+// Security events (IPS threats and firewall blocks) from the last `sinceMs` without their
+// connection detail yet, oldest first; ones looked up and not found are retried at most hourly,
+// and ones saved in an older detail format are read again while the console still has them.
+export function pendingIpsLookups(sinceMs, limit = 20, now = Date.now(), version = 2) {
   return db
     .prepare(
       `SELECT e.uid, e.ts, e.data FROM siem_events e LEFT JOIN ips_details d ON d.uid = e.uid
-       WHERE e.kind = 'log' AND e.ts >= ? AND e.data LIKE '%"key":"THREAT_%'
-         AND (d.uid IS NULL OR (d.found = 0 AND d.checked_at < ?))
+       WHERE e.kind = 'log' AND e.ts >= ?
+         AND (e.data LIKE '%"key":"THREAT_%' OR e.data LIKE '%"key":"TRAFFIC_BLOCKED%')
+         AND (d.uid IS NULL OR (d.found = 0 AND d.checked_at < ?) OR (d.found = 1 AND d.data NOT LIKE ?))
        ORDER BY e.ts LIMIT ?`
     )
-    .all(sinceMs, now - 3600000, limit)
+    .all(sinceMs, now - 3600000, `%"v":${version}%`, limit)
     .map((r) => ({ uid: r.uid, ts: r.ts, data: JSON.parse(r.data || "{}") }));
 }
 
@@ -492,9 +494,13 @@ export function oldestSiemTs(kind) {
 
 // ---- live samples (UU-C-056) ---------------------------------------------------------
 
+// The switch port of a wired client (UU-C-078); added in place to databases made before it.
+if (!db.prepare(`PRAGMA table_info(client_samples)`).all().some((c) => c.name === "port")) {
+  db.exec(`ALTER TABLE client_samples ADD COLUMN port INTEGER`);
+}
 const insClient = db.prepare(`INSERT OR REPLACE INTO client_samples
-  (ts, mac, wired, ap_mac, radio, channel, width, essid, signal, noise, tx_rate, rx_rate, satisfaction, tx_retries, tx_attempts)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  (ts, mac, wired, ap_mac, radio, channel, width, essid, signal, noise, tx_rate, rx_rate, satisfaction, tx_retries, tx_attempts, port)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 const insDevice = db.prepare(`INSERT OR REPLACE INTO device_samples
   (ts, mac, name, type, model, state, cpu, mem, temp, uptime, clients, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 const insWan = db.prepare(`INSERT OR REPLACE INTO wan_samples
@@ -504,7 +510,7 @@ export function saveLiveSamples({ clients = [], devices = [], wan = null }) {
   db.exec("BEGIN");
   try {
     for (const c of clients) {
-      insClient.run(c.ts, c.mac, c.wired ? 1 : 0, c.apMac, c.radio, c.channel, c.width, c.essid, c.signal, c.noise, c.txRate, c.rxRate, c.satisfaction, c.txRetries, c.txAttempts);
+      insClient.run(c.ts, c.mac, c.wired ? 1 : 0, c.apMac, c.radio, c.channel, c.width, c.essid, c.signal, c.noise, c.txRate, c.rxRate, c.satisfaction, c.txRetries, c.txAttempts, c.port ?? null);
     }
     for (const d of devices) {
       insDevice.run(d.ts, d.mac, d.name, d.type, d.model, d.state, d.cpu, d.mem, d.temp, d.uptime, d.clients, JSON.stringify(d.data || {}));

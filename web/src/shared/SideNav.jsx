@@ -91,7 +91,7 @@ export default function SideNav({
           <p className="sn-label">Settings</p>
           {onOpenSettings && (
             <button className="sn-item" onClick={onOpenSettings}>
-              UniFi connection…
+              Settings…
             </button>
           )}
           {onToggleTray && (

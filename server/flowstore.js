@@ -170,12 +170,31 @@ export function groups(days, mac) {
   return db.prepare(sql).all(...days, ...(mac ? [mac] : []));
 }
 
+// The same groups, computed from the flows themselves for a stretch inside the days (a
+// clicked hour, UU-C-075): flow_groups only holds whole days.
+export function groupsInRange(days, mac, from, to) {
+  if (!days.length) return [];
+  const sql = `SELECT day, app, category, mac, CASE WHEN app = 'Local network' THEN domain END AS ldomain,
+      COALESCE(SUM(bytes), 0) AS bytes, MIN(seq) AS firstSeq
+    FROM flows WHERE day IN (${inList(days)}) AND t >= ? AND t < ?${mac ? " AND mac = ?" : ""}
+    GROUP BY day, app, category, mac, ldomain ORDER BY day, firstSeq`;
+  return db.prepare(sql).all(...days, from, to, ...(mac ? [mac] : []));
+}
+
+// `span` ({ from, to }) limits rows to a stretch inside the days; omitted = whole days.
+const spanSql = (span, args) => {
+  if (!span) return "";
+  args.push(span.from, span.to);
+  return " AND t >= ? AND t < ?";
+};
+
 // Rows of these days matching a filter, in the cache's own order (day, seq).
 //   apps: exact app names; localDomains: "Local network" rows by destination.
-export function rowsForApps(days, mac, apps, localDomains) {
+export function rowsForApps(days, mac, apps, localDomains, span) {
   if (!days.length || (!apps.length && !localDomains.length)) return [];
   const conds = [];
   const args = [...days];
+  const spanWhere = spanSql(span, args);
   if (mac) args.push(mac);
   if (apps.length) {
     conds.push(`app IN (${inList(apps)})`);
@@ -186,15 +205,16 @@ export function rowsForApps(days, mac, apps, localDomains) {
     args.push(...localDomains);
   }
   const sql = `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id
-    FROM flows WHERE day IN (${inList(days)})${mac ? " AND mac = ?" : ""} AND (${conds.join(" OR ")}) ORDER BY day, seq`;
+    FROM flows WHERE day IN (${inList(days)})${spanWhere}${mac ? " AND mac = ?" : ""} AND (${conds.join(" OR ")}) ORDER BY day, seq`;
   return db.prepare(sql).all(...args).map(toRow);
 }
 
 // The newest `limit` rows (t > 0), newest first; equal times keep the cache's order.
-export function latest(days, mac, filter, limit) {
+export function latest(days, mac, filter, limit, span) {
   if (!days.length) return [];
   const args = [...days];
   let where = `day IN (${inList(days)}) AND t > 0`;
+  where += spanSql(span, args);
   if (mac) {
     where += " AND mac = ?";
     args.push(mac);

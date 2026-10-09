@@ -96,6 +96,7 @@ export function PageTabs({ page, setPage }) {
   const tabs = [
     ["usage", "Usage"],
     ["wifi", "Wi-Fi"],
+    ["wired", "Wired"],
     ["equipment", "Equipment"],
     ["threats", "Threats"],
   ];
@@ -285,6 +286,7 @@ function WifiPage({ api, q, selected, setSelected }) {
   if (error) return <div className="error">{error}</div>;
   if (!data) return <div className="loading">Loading…</div>;
   return (
+    <>
     <div className="card">
       <h3>Wi-Fi devices</h3>
       <p className="muted" style={{ marginTop: 0 }}>
@@ -319,6 +321,62 @@ function WifiPage({ api, q, selected, setSelected }) {
             <tr>
               <td colSpan={6} className="muted">
                 No Wi-Fi samples in this period yet — they are collected every 5 minutes from now on.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+    </>
+  );
+}
+
+// Wired devices (UU-C-078), their own tab: switch and port, link speed now and the slowest seen.
+function WiredPage({ api, q }) {
+  const { data, error } = useJson(api, `/api/wifi?${q}`);
+  if (error) return <div className="error">{error}</div>;
+  if (!data) return <div className="loading">Loading…</div>;
+  return <WiredCard rows={data.wired || []} />;
+}
+
+const fmtSpeed = (m) => (m == null ? "—" : m >= 1000 ? `${m / 1000 >= 10 ? Math.round(m / 1000) : +(m / 1000).toFixed(1)} Gbps` : `${m} Mbps`);
+function WiredCard({ rows }) {
+  return (
+    <div className="card">
+      <h3>Wired devices</h3>
+      <p className="muted" style={{ marginTop: 0 }}>
+        Slowest link first. A device that dropped to a lower speed than it normally runs at points to a cable, port or
+        negotiation problem.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Device</th>
+            <th>Switch · port</th>
+            <th>Link now</th>
+            <th>Slowest</th>
+            <th>Speed changes</th>
+            <th>Connected</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((c) => (
+            <tr key={c.mac}>
+              <td>{c.name}</td>
+              <td className="muted">
+                {c.switch || "—"}
+                {c.port != null ? ` · port ${c.port}` : ""}
+              </td>
+              <td>{fmtSpeed(c.speed)}</td>
+              <td className={c.minSpeed != null && c.speed != null && c.minSpeed < c.speed ? "sig-weak" : "muted"}>{fmtSpeed(c.minSpeed)}</td>
+              <td className={c.speedChanges ? "sig-weak" : "muted"}>{c.speedChanges}</td>
+              <td className="muted">{fmtMin(c.minutes)}</td>
+            </tr>
+          ))}
+          {!rows.length && (
+            <tr>
+              <td colSpan={6} className="muted">
+                No wired samples in this period yet — they are collected every 5 minutes.
               </td>
             </tr>
           )}
@@ -455,8 +513,119 @@ function TopList({ title, rows }) {
   );
 }
 
+const fmtBytes = (n) => {
+  if (n == null) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let v = Number(n);
+  while (v >= 1000 && i < u.length - 1) {
+    v /= 1000;
+    i += 1;
+  }
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
+};
+const RISK = { high: "Dangerous", medium: "Suspicious", low: "Low", none: "None" };
+
+// One security event in full (UU-C-077): what the System Log says, plus the blocked
+// connection's record when NetLens caught it within UniFi's ~4 days.
+function ThreatDetail({ it, onClose }) {
+  const d = it.detail;
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const Row = ({ k, v, mono }) =>
+    v == null || v === "" ? null : (
+      <div className="dr-row">
+        <span>{k}</span>
+        <span className={mono ? "dr-mono" : ""} title={typeof v === "string" ? v : undefined}>
+          {v}
+        </span>
+      </div>
+    );
+  return (
+    <div className="drawer-back" onClick={onClose}>
+      <aside className="drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Security event">
+        <div className="drawer-head">
+          <strong>{new Date(it.ts).toLocaleString()}</strong>
+          <button className="settings-close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </div>
+        <div className="drawer-body">
+          <section className="dr-card">
+            <Row k="Event" v={it.title || it.kind} />
+            {d ? (
+              <>
+                <Row k="Risk" v={d.risk ? <span className={d.risk === "high" ? "sig-bad" : "sig-weak"}>{RISK[d.risk] || d.risk}</span> : null} />
+                <Row k="Action" v={d.action ? d.action[0].toUpperCase() + d.action.slice(1) : null} />
+                <Row k="Service" v={d.service} />
+                <Row k="Policy" v={d.policy || it.policy} />
+                <Row k="Policy type" v={d.policyType ? d.policyType.replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase()) : null} />
+                <Row k="Signature" v={d.signature} />
+                <Row k="Signature ID" v={d.signatureId} mono />
+                <Row k="Category" v={d.category} />
+                <Row k="CVE" v={d.cve} />
+                <Row k="Direction" v={d.direction ? d.direction[0].toUpperCase() + d.direction.slice(1) : null} />
+                <Row k="Incoming network" v={d.inNetwork} />
+                <Row k="Outgoing network" v={d.outNetwork} />
+                {d.note && <p className="dr-note">{d.note}</p>}
+                {d.advanced && <p className="dr-advanced">{d.advanced}</p>}
+              </>
+            ) : (
+              <>
+                <Row k="Severity" v={it.severity} />
+                <Row k="Policy" v={it.policy} />
+                <p className="dr-note">
+                  No connection details for this event: UniFi keeps connection records only about 4 days, and this one
+                  was gone before NetLens could read it.
+                </p>
+              </>
+            )}
+          </section>
+          <section className="dr-card">
+            <h4>Source</h4>
+            <Row k="Device" v={d?.source?.name || it.source} />
+            <Row k="IP address" v={d?.source?.ip} mono />
+            <Row k="MAC address" v={d?.source?.mac} mono />
+            <Row k="Hostname" v={d?.source?.hostname} />
+            <Row k="Manufacturer" v={d?.source?.manufacturer} />
+            <Row k="Port" v={d?.source?.port} mono />
+            <Row k="Region" v={d?.source?.region} />
+            <Row k="Zone" v={d?.source?.zone} />
+            <Row k="Network" v={d?.source?.network} />
+            <Row k="Subnet" v={d?.source?.subnet} mono />
+          </section>
+          <section className="dr-card">
+            <h4>Destination</h4>
+            <Row k="Device" v={d?.destination?.name} />
+            <Row k="Domain" v={d?.destination?.domain} />
+            <Row k="IP address" v={d?.destination?.ip || it.target} mono />
+            <Row k="Region" v={d?.destination?.region} />
+            <Row k="Port" v={d?.destination?.port} mono />
+            <Row k="Zone" v={d?.destination?.zone} />
+            <Row k="Network" v={d?.destination?.network} />
+          </section>
+          {d?.traffic && (
+            <section className="dr-card">
+              <h4>Traffic</h4>
+              <Row k="Protocol" v={d.protocol} />
+              <Row k="Duration" v={d.traffic.durationMs != null ? `${(d.traffic.durationMs / 1000).toFixed(1)} s` : null} />
+              <Row k="Attempts" v={d.traffic.count} />
+              <Row k="Packets sent / received" v={d.traffic.packetsTotal != null ? `${d.traffic.packetsTx ?? "—"} / ${d.traffic.packetsRx ?? "—"}` : null} />
+              <Row k="Data sent / received" v={d.traffic.bytesTotal != null ? `${fmtBytes(d.traffic.bytesTx)} / ${fmtBytes(d.traffic.bytesRx)}` : null} />
+            </section>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
 function ThreatsPage({ api, q }) {
   const { data, error } = useJson(api, `/api/threats?${q}`);
+  const [open, setOpen] = useState(null);
   if (error) return <div className="error">{error}</div>;
   if (!data) return <div className="loading">Loading…</div>;
   return (
@@ -501,7 +670,7 @@ function ThreatsPage({ api, q }) {
           </thead>
           <tbody>
             {data.items.slice(0, 150).map((it, i) => (
-              <tr key={`${it.ts}-${i}`} title={it.msg || ""}>
+              <tr key={`${it.ts}-${i}`} title={it.msg || "Click for details"} className="row-click" onClick={() => setOpen(it)}>
                 <td>{new Date(it.ts).toLocaleString()}</td>
                 <td className={it.kind === "Threat blocked" ? "sig-weak" : "muted"}>{it.kind}</td>
                 <td>{it.source || "—"}</td>
@@ -529,6 +698,7 @@ function ThreatsPage({ api, q }) {
           </tbody>
         </table>
       </div>
+      {open && <ThreatDetail it={open} onClose={() => setOpen(null)} />}
     </>
   );
 }
@@ -536,6 +706,7 @@ function ThreatsPage({ api, q }) {
 export function InsightsPage({ page, api, period, date, selected, setSelected }) {
   const q = `period=${encodeURIComponent(period)}${date ? `&date=${encodeURIComponent(date)}` : ""}`;
   if (page === "wifi") return <WifiPage api={api} q={q} selected={selected} setSelected={setSelected} />;
+  if (page === "wired") return <WiredPage api={api} q={q} />;
   if (page === "equipment") return <EquipmentPage api={api} q={q} />;
   if (page === "threats") return <ThreatsPage api={api} q={q} />;
   return null;

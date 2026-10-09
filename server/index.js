@@ -36,6 +36,12 @@ const SERVER_MODE = process.env.UNIFI_SERVER_MODE === "1";
 const BIND = process.env.UNIFI_BIND || (SERVER_MODE ? "0.0.0.0" : "127.0.0.1");
 
 if (process.env.SIEM_PORT && !db.getSetting("siem_port", "")) db.applyConnectionSettings({ siemPort: process.env.SIEM_PORT });
+// The container listens for UniFi's syslog (ad-block counts) on 5514 by default (UU-C-079), so
+// only UniFi's SIEM server needs pointing at it. Applied once: a port cleared in Settings stays off.
+if (SERVER_MODE && !db.metaGet("siem_default_applied")) {
+  if (!db.getSetting("siem_port", "")) db.applyConnectionSettings({ siemPort: 5514 });
+  db.metaSet("siem_default_applied", "1");
+}
 // Forgotten password: start once with NETLENS_RESET_PASSWORD=1, then set a new one in the UI.
 if (process.env.NETLENS_RESET_PASSWORD === "1" && auth.hasPassword()) {
   auth.clearPassword();
@@ -157,6 +163,12 @@ function rangeFor(query) {
   const now = Date.now();
   const period = query.period || "today";
   const todayKey = zonedDateKey(now);
+  // A stretch inside one day — a clicked hour (UU-C-075) — drawn in 5-minute bars.
+  const from = Number(query.from);
+  const to = Number(query.to);
+  if (Number.isFinite(from) && Number.isFinite(to) && to > from && to - from <= 86400000) {
+    return { start: from, end: Math.max(from, Math.min(to, now)), grain: "5min", label: `${from}-${to}`, partial: true };
+  }
   if (period === "custom" && query.date) {
     return {
       start: zonedMidnight(query.date),
@@ -354,6 +366,33 @@ function flattenTraffic(traffic, macFilter, maps) {
     }
   }
   return rows;
+}
+
+// The DPI rows of a stretch inside a day, from its 5-minute (and hourly) buckets, shaped like
+// flattenTraffic's. Day totals cannot be cut to an hour, so a stretch is counted from what the
+// chart draws (UU-C-075).
+function bucketTrafficRows(buckets, start, end, macFilter, maps, traffic) {
+  const names = new Map((traffic || []).map((i) => [i.client.mac, i.client.name]));
+  const rows = [];
+  for (const b of buckets) {
+    if (b[0] < start || b[0] >= end) continue;
+    if (macFilter && b[1] !== macFilter) continue;
+    rows.push({
+      mac: b[1],
+      name: names.get(b[1]),
+      appId: canonicalAppId(b[2], b[3], maps),
+      catId: b[3],
+      bytesRx: b[4],
+      bytesTx: b[5],
+      totalBytes: b[4] + b[5],
+      activitySeconds: b[6],
+    });
+  }
+  return rows;
+}
+
+function zonedClock(ms) {
+  return new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms));
 }
 
 function filterCategory(rows, category) {
@@ -717,7 +756,7 @@ app.get("/api/wifi", (req, res) => {
   try {
     const { start, end } = rangeFor(req.query);
     const mac = String(req.query.mac || "").toLowerCase();
-    res.json({ start, end, tz, ...(mac ? insights.wifiClient(start, end, mac, tz) : insights.wifiList(start, end)) });
+    res.json({ start, end, tz, ...(mac ? insights.wifiClient(start, end, mac, tz) : { ...insights.wifiList(start, end), wired: insights.wiredList(start, end).clients }) });
   } catch (err) {
     sendError(res, "GET /api/wifi", err);
   }
@@ -925,7 +964,11 @@ app.get("/api/report", async (req, res) => {
     const live = bundle.traffic;
     // Flows are queried from flows.db per need (UU-C-062), never loaded whole.
     const flowDays = bundle.flowDays;
-    let rows = flattenTraffic(live, mac || null, maps);
+    let rows = range.partial
+      ? bucketTrafficRows(bundle.buckets, start, end, mac || null, maps, live)
+      : flattenTraffic(live, mac || null, maps);
+    // Flow queries for a stretch inside the days only see that stretch.
+    const span = range.partial ? { from: start, to: end } : undefined;
 
     // ONE SOURCE PER SCREEN (UU-C-043). Every number on the page comes from the same
     // basis, so they add up by construction instead of by luck:
@@ -941,11 +984,13 @@ app.get("/api/report", async (req, res) => {
     const scopedRows = filterCategory(rows, category);
     rows = filterApp(scopedRows, appId, maps);
 
-    const step = grain === "hour" ? 3600000 : 86400000;
+    const step = grain === "5min" ? BUCKET_MS : grain === "hour" ? 3600000 : 86400000;
     const now = Date.now();
     // Where 5-minute detail exists. Outside these spans the day's total is known but not
     // when it happened, and the chart says so instead of drawing zero.
-    const spans = bundle.bucketSpans
+    // 5-minute bars count only real 5-minute detail; hours UniFi kept as one total are not
+    // "detail" at that scale (UU-C-075).
+    const spans = (grain === "5min" ? bundle.fineSpans : bundle.bucketSpans)
       .map(([a, b]) => [Math.max(a, start), Math.min(b, end)])
       .filter(([a, b]) => b > a)
       .sort((x, y) => x[0] - y[0]);
@@ -956,7 +1001,7 @@ app.get("/api/report", async (req, res) => {
       const until = Math.min(t + step, now);
       timelineMap.set(t, {
         t,
-        label: grain === "hour" ? `${String(zonedHour(t)).padStart(2, "0")}:00` : zonedDateKey(t),
+        label: grain === "hour" ? `${String(zonedHour(t)).padStart(2, "0")}:00` : grain === "5min" ? zonedClock(t) : zonedDateKey(t),
         totalBytes: 0,
         // Share of this bar's time that has 5-minute detail, 0..1. Daily bars come from
         // day totals and flow screens from flow timestamps, so both are always whole.
@@ -1005,7 +1050,7 @@ app.get("/api/report", async (req, res) => {
       return n ? { ...row, app: n } : row;
     };
     // Per day x app x device byte sums, in first-seen order, with local names applied.
-    const flowGroups = flowstore.groups(flowDays, mac || null).map((g) => ({
+    const flowGroups = (span ? flowstore.groupsInRange(flowDays, mac || null, span.from, span.to) : flowstore.groups(flowDays, mac || null)).map((g) => ({
       ...g,
       app: g.app === "Local network" ? localName(g.ldomain) || g.app : g.app,
       rawApp: g.app,
@@ -1027,7 +1072,7 @@ app.get("/api/report", async (req, res) => {
     // newest few as activity.
     const matchedFlows =
       basis === "flows"
-        ? flowstore.rowsForApps(flowDays, mac || null, selectedFilter.apps, selectedFilter.localDomains).map(named)
+        ? flowstore.rowsForApps(flowDays, mac || null, selectedFilter.apps, selectedFilter.localDomains, span).map(named)
         : [];
 
     // What a device talked to during a session, from flows.db by device and time.
@@ -1092,6 +1137,9 @@ app.get("/api/report", async (req, res) => {
         }
       } else {
         for (const r of selBuckets) {
+          // In 5-minute bars an hourly row (an hour UniFi only kept as one total) has no place:
+          // it stays in the header and is reported as not drawn, never spread into fake detail.
+          if (grain === "5min" && r.tEnd - r.t > step) continue;
           place(r.t, r.bytes);
           chartBytes += r.bytes;
         }
@@ -1190,7 +1238,7 @@ app.get("/api/report", async (req, res) => {
     // category is selected, and never added to `totals` / `timeline`: they travel as
     // `dailyFill` and are drawn apart.
     const dailyFill = { days: [], totalBytes: 0, devices: [] };
-    if (basis === "dpi" && !appSelected && (!category || category === "all") && lostSpans.length) {
+    if (basis === "dpi" && !range.partial && !appSelected && (!category || category === "all") && lostSpans.length) {
       const keys = dayKeysForRange(start, Math.min(end, now));
       const rowsDaily = keys.length ? db.queryDailyDevice(keys[0], keys[keys.length - 1], mac || null) : [];
       const dailyBy = new Map();
@@ -1248,7 +1296,7 @@ app.get("/api/report", async (req, res) => {
       // Share of this bar's time that UniFi had deleted before it was saved, 0..1. Such
       // time is never "detail": it is reported as lost, not as a quiet stretch.
       b.lost = Math.min(1, lostMs / step);
-      if (grain === "hour" && b.lost > 0) b.coverage = Math.max(0, Math.min(b.coverage, 1 - b.lost));
+      if (grain !== "day" && b.lost > 0) b.coverage = Math.max(0, Math.min(b.coverage, 1 - b.lost));
     }
     const timeline = [...timelineMap.values()];
     // What the header counts but the chart could not place in time: the part of a day
@@ -1286,7 +1334,7 @@ app.get("/api/report", async (req, res) => {
     };
 
     const activity = flowstore
-      .latest(flowDays, mac || null, selectedFilter, 80)
+      .latest(flowDays, mac || null, selectedFilter, 80, span)
       .map(named)
       .map((row) => ({
         t: row.t,
@@ -1421,6 +1469,8 @@ app.get("/api/report", async (req, res) => {
       start,
       end,
       grain,
+      // A stretch inside a day: everything on it comes from its 5-minute rows (UU-C-075).
+      partial: Boolean(range.partial),
       tz,
       appId: appSelected ? rawAppId : null,
       basis,

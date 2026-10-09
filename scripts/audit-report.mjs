@@ -82,9 +82,19 @@ const status = await get("/api/cache");
 const dayKeys = (status.keys || []).filter((k) => k.fetchedAt).map((k) => k.key).sort();
 const periods = [...dayKeys.map((d) => ({ q: `period=custom&date=${d}`, label: d })), { q: "period=7d", label: "7d" }, { q: "period=30d", label: "30d" }, { q: "period=90d", label: "90d" }];
 
+// A clicked hour (UU-C-075): the two busiest hours of every day get the same walk, and the
+// hour's header must equal that hour's bar in the day view.
+const hourChecks = [];
 for (const { q, label } of periods) {
   const net = await get(`/api/report?${q}`);
   check(`${label} network`, net, { appSelected: false });
+  if (net.grain === "hour" && !label.includes(":")) {
+    for (const bar of [...net.timeline].filter((b) => b.totalBytes > 0).sort((a, b) => b.totalBytes - a.totalBytes).slice(0, 2)) {
+      const hq = `${q}&from=${bar.t}&to=${bar.t + 3600000}`;
+      periods.push({ q: hq, label: `${label} ${bar.label}` });
+      hourChecks.push({ hq, label: `${label} ${bar.label}`, dayBar: bar.totalBytes });
+    }
+  }
   for (const app of net.apps.filter((a) => a.totalBytes >= 1048576)) {
     check(`${label} network / ${app.app}`, await get(`/api/report?${q}&appId=${encodeURIComponent(app.appId)}`), { appSelected: true });
   }
@@ -100,6 +110,11 @@ for (const { q, label } of periods) {
     }
   }
   process.stdout.write(`  ${label.padEnd(10)} ${String(stats.screens).padStart(6)} screens checked\n`);
+}
+
+for (const { hq, label, dayBar } of hourChecks) {
+  const r = await get(`/api/report?${hq}`);
+  if (Math.abs(r.totals.bytes - dayBar) > Math.max(1024, dayBar * 1e-6)) failures.push(`${label}: hour header ${r.totals.bytes} != day-view bar ${dayBar}`);
 }
 
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);

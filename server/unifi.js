@@ -205,27 +205,82 @@ async function fetchFlowPages({ startMs, endMs, mac, maxPages, onTruncate }) {
   return flows;
 }
 
-// The IPS signature behind a "Threat blocked" event (UU-C-071). The System Log entry has
-// only source, target and severity; the flow record of the same connection carries an
-// `ips` block (signature, id, category, UniFi's note) and the IPS policy that matched.
-// Flows last ~4 days on the console, so this has to be read while they still exist.
-// Narrow: the source device's flows in a few minutes around the event.
-export async function findIpsFlow({ ts, mac, dstIp }) {
+// The connection record behind a security event (UU-C-071, UU-C-077). The System Log entry
+// has only source, target and severity; the flow record of the same connection carries the
+// rest — for an IPS hit an `ips` block (signature, id, category, UniFi's note), for a
+// firewall block the policy — plus both ends and the traffic. Flows last ~4 days on the
+// console, so this has to be read while they still exist. Narrow: a few minutes around the
+// event, the source device's flows when its MAC is known.
+export const SECURITY_DETAIL_VERSION = 2;
+export async function findBlockedFlow({ ts, mac, srcIp, dstIp, ips = false }) {
   const flows = await fetchFlowPages({ startMs: Number(ts) - 180000, endMs: Number(ts) + 60000, mac: mac || undefined, maxPages: 10 });
-  const hit = flows.find((f) => f?.ips && (!dstIp || f.destination?.ip === dstIp));
-  if (!hit) return null;
-  const policy = (hit.policies || []).find((p) => p?.type === "INTRUSION_PREVENTION") || {};
+  const candidates = flows.filter(
+    (f) =>
+      f &&
+      (ips ? f.ips : f.action === "blocked") &&
+      (!dstIp || f.destination?.ip === dstIp) &&
+      (!srcIp || f.source?.ip === srcIp)
+  );
+  if (!candidates.length) return null;
+  // The one closest in time to the event.
+  const hit = candidates.reduce((best, f) => (Math.abs(Number(f.time || f.flow_start_time) - ts) < Math.abs(Number(best.time || best.flow_start_time) - ts) ? f : best));
+  const policy = (hit.policies || []).find((p) => p?.type && p.type !== "FIREWALL") || (hit.policies || []).find((p) => p?.name) || {};
+  const src = hit.source || {};
+  const dst = hit.destination || {};
+  const td = hit.traffic_data || {};
+  const x = hit.ips || {};
   return {
-    signature: hit.ips.signature || null,
-    signatureId: Number(hit.ips.signature_id) || null,
-    category: hit.ips.category_name || null,
-    policy: policy.name || null,
+    v: SECURITY_DETAIL_VERSION,
+    time: Number(hit.time || hit.flow_start_time) || null,
     risk: hit.risk || null,
-    domain: (hit.destination?.domains || [])[0] || null,
-    port: hit.destination?.port ?? null,
+    action: hit.action || null,
     service: hit.service || null,
-    note: hit.ips.alarm_category_potential_risk || null,
-    cve: hit.ips.relevant_cve || null,
+    protocol: hit.protocol || null,
+    direction: hit.direction || null,
+    policy: policy.name || null,
+    policyType: policy.type || null,
+    signature: x.signature || null,
+    signatureId: Number(x.signature_id) || null,
+    category: x.category_name || null,
+    note: x.alarm_category_potential_risk || null,
+    advanced: x.advanced_information || null,
+    cve: x.relevant_cve || null,
+    inNetwork: hit.in?.network_name || null,
+    outNetwork: hit.out?.network_name || null,
+    source: {
+      name: src.client_name || null,
+      ip: src.ip || null,
+      mac: src.mac ? String(src.mac).toLowerCase() : null,
+      hostname: src.host_name || null,
+      manufacturer: src.client_oui || null,
+      port: src.port ?? null,
+      zone: src.zone_name || null,
+      network: src.network_name || null,
+      subnet: src.subnet || null,
+      region: src.region || null,
+    },
+    destination: {
+      name: dst.client_name || null,
+      domain: (dst.domains || [])[0] || null,
+      ip: dst.ip || null,
+      port: dst.port ?? null,
+      region: dst.region || null,
+      zone: dst.zone_name || null,
+      network: dst.network_name || null,
+    },
+    traffic: {
+      durationMs: Number(hit.duration_milliseconds) || null,
+      bytesTotal: Number(td.bytes_total) || null,
+      bytesTx: Number(td.bytes_tx) || null,
+      bytesRx: Number(td.bytes_rx) || null,
+      packetsTotal: Number(td.packets_total) || null,
+      packetsTx: Number(td.packets_tx) || null,
+      packetsRx: Number(td.packets_rx) || null,
+      count: Number(hit.count) || null,
+    },
+    // Kept flat for the list view.
+    domain: (dst.domains || [])[0] || null,
+    port: dst.port ?? null,
   };
 }
 

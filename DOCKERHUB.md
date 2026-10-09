@@ -67,7 +67,7 @@ and imports such a file — for backups, restores or moving to another server.
 | Port | |
 | --- | --- |
 | `3780/tcp` | web UI |
-| `5514/tcp+udp` | optional syslog listener (turn it on in Settings) |
+| `5514/tcp+udp` | syslog listener for ad-block counts (on by default; point UniFi's SIEM server here) |
 
 Forgot the password? Start once with `NETLENS_RESET_PASSWORD=1`, set a new one in the
 browser, then remove the variable.

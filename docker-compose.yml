@@ -7,9 +7,9 @@ services:
     restart: unless-stopped
     ports:
       - "3780:3780"
-      # Optional: UniFi SIEM syslog for blocked-ad counts (turn it on in the app's Settings).
-      # - "5514:5514/tcp"
-      # - "5514:5514/udp"
+      # UniFi SIEM syslog for ad-block counts (listener on by default; point UniFi's SIEM server here).
+      - "5514:5514/tcp"
+      - "5514:5514/udp"
     environment:
       TZ: America/New_York             # optional; also changeable in the app's Settings
     # Console address, API key and login password are set in the web UI on first start.

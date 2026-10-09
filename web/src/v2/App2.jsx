@@ -3,7 +3,7 @@ import SideNav from "../shared/SideNav.jsx";
 
 const isDesktop = Boolean(typeof window !== "undefined" && window.unifiDesktop?.isDesktop);
 import { useViewHistory } from "../shared/useViewHistory.js";
-import { AccountSettings } from "../shared/Setup.jsx";
+import { AccountSettings, SettingsSection, SettingsIcon } from "../shared/Setup.jsx";
 
 // v2 leads with what actually happened rather than with totals: a time map of which
 // device was doing what, and a chronological feed underneath. Totals are context, not
@@ -422,10 +422,20 @@ export default function App2() {
 
       {settingsOpen && (
         <div className="v2-modal-back" onClick={() => setSettingsOpen(false)}>
-          <form className="v2-modal" onClick={(e) => e.stopPropagation()} onSubmit={saveSettings}>
-            <h2>UniFi connection</h2>
+          <form className="v2-modal settings-modal" onClick={(e) => e.stopPropagation()} onSubmit={saveSettings}>
+            <div className="settings-head">
+              <span className="set-icon">
+                <SettingsIcon name="sliders" />
+              </span>
+              <h2>Settings</h2>
+              <button type="button" className="settings-close" onClick={() => setSettingsOpen(false)} aria-label="Close">
+                ×
+              </button>
+            </div>
+            <div className="settings-body">
+            <SettingsSection icon="console" title="UniFi console" hint="Where NetLens reads your network from, with a local API key.">
             <label>
-              UniFi IP or hostname
+              Console address
               <input
                 value={settings.host}
                 onChange={(e) => setSettings({ ...settings, host: e.target.value })}
@@ -451,8 +461,10 @@ export default function App2() {
                 placeholder="default"
               />
             </label>
+            </SettingsSection>
             <AccountSettings tz={settings.tz} onTz={(tz) => setSettings({ ...settings, tz })} />
-            <div className="v2-modal-actions">
+            </div>
+            <div className="v2-modal-actions settings-foot">
               <button type="button" className="v2-btn v2-ghost" onClick={() => setSettingsOpen(false)}>
                 Cancel
               </button>
