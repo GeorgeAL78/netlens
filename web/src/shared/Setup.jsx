@@ -193,9 +193,9 @@ export function SettingsIcon({ name, size = 18 }) {
 }
 
 // One titled block of the Settings dialog: icon, title, a one-line hint, then its fields.
-export function SettingsSection({ icon, title, hint, children }) {
+export function SettingsSection({ icon, title, hint, children, id }) {
   return (
-    <section className="account set-section">
+    <section className="account set-section" id={id}>
       <div className="set-section-head">
         <span className="set-icon">
           <SettingsIcon name={icon} />
@@ -260,13 +260,14 @@ export function AccountSettings({ tz, onTz }) {
 
   return (
     <>
-      <SettingsSection icon="clock" title="General" hint="Days, hours and charts follow this timezone.">
+      <SettingsSection id="s-general" icon="clock" title="General" hint="Days, hours and charts follow this timezone.">
         <label>
           Timezone
           <TimezoneSelect value={tz || info?.tz || browserTz()} onChange={onTz} />
         </label>
       </SettingsSection>
       <SettingsSection
+        id="s-login"
         icon="lock"
         title="Login"
         hint={
@@ -354,6 +355,7 @@ function HistoryTransfer() {
 
   return (
     <SettingsSection
+      id="s-history"
       icon="archive"
       title="History"
       hint="Back up, restore or move everything this installation has saved. Import merges: missing days are added, a day is replaced only by a fuller copy. Settings, the API key and the password are never in the file."

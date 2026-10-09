@@ -205,6 +205,8 @@ export function wiredList(start, end) {
       speedChanges: changes,
       lastSeen: last.ts,
       minutes: list.length * SAMPLE_MIN,
+      // UniFi's own connection time at the last sample, not how long NetLens has watched.
+      uptime: last.uptime ?? null,
     };
   });
   // Slow links first (a gigabit device stuck at 100 Mbps is the thing worth seeing), then by name.

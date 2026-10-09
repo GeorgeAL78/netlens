@@ -13,32 +13,26 @@ which UniFi itself deletes after a day or a week.
 
 ## Features
 
-**Usage**
-- Traffic per device and per app (UniFi's own DPI counters), with hourly charts in 5-minute
-  detail and **sessions**: when each app was used, for how long, and which servers were involved.
-- **Every number on a screen comes from one source and adds up** — header, app table,
-  categories, devices, chart and sessions. A built-in audit (`npm run audit`) checks every
+- **Home** — what happened today, in plain language: the day's big transfers, devices on weak
+  Wi-Fi or slow wired links, blocked intrusions and firewall hits, repeat offenders, new
+  devices, equipment problems — each linking to the details.
+- **Day** — every device as a row, the day's hours as columns: when each device was busy, when it
+  roamed or reconnected, when something was blocked. Click any hour to see it in 5-minute steps.
+- **Network** — a live map: internet → gateway → switches and access points → devices. Click an
+  access point for its radios and clients, a switch for its ports (speed, PoE, errors).
+- **Devices** — per device: traffic, Wi-Fi signal or wired link speed, apps, sessions, events,
+  connection time, CSV export, block / unblock.
+- **Security** — intrusion attempts and firewall blocks with the blocked connection's full
+  record (IPS signature, policy, both ends, traffic); investigate an outside address; hide noisy
+  rules.
+- **Usage** — apps, categories and devices for a day, an hour or up to 90 days. **Every number on
+  a screen comes from one source and adds up**; a built-in audit (`npm run audit`) checks every
   day × device × app combination.
-- **Local-network traffic** (a media server, a NAS) shown separately — UniFi's usage counters
-  only cover internet traffic, so a TV streaming from Jellyfin is otherwise invisible.
-- **Missing data is marked, never shown as a quiet day**, and filled with per-device daily
-  totals from UniFi's daily report where those still exist. Views up to **90 days**.
-
-**Wi-Fi**
-- Every Wi-Fi device, worst signal first: access point, band, signal now and on average, time
-  spent below −80 dBm, roams.
-- Per device: signal over time, time per access point, favourite access point, roaming history
-  and a **presence heatmap** (when it is usually connected).
-
-**Equipment** — gateway, switches and access points: CPU, memory, temperature (now and peak),
-how busy each radio is, ports, uplinks, firmware updates.
-
-**Threats** — UniFi's security events: intrusion attempts blocked and your firewall rules
-firing, with top sources, targets and rules.
-
-**Also** — a live gateway/WAN strip (status, ISP, latency, availability), network events
-(connects, disconnects, roams with data used per connection), device blocking, an optional
-syslog listener for blocked-ad counts, and a second "Timeline" view.
+- **Local-network traffic** (a media server, a NAS) shown separately — UniFi's counters only
+  cover internet traffic.
+- **Missing data is marked, never shown as a quiet hour**, and filled from UniFi's daily
+  per-device totals where those still exist.
+- **History export / import**, an optional syslog listener for ad-block counts.
 
 ## Why it runs all the time
 
@@ -92,10 +86,11 @@ Open the web UI. A short setup asks for:
 
 - your **UniFi console** address and the **API key**,
 - the **site** (normally `default`) and your **timezone**,
-- a **login password** — required, because the dashboard can block devices.
+- a **login password** — recommended, because the dashboard can block devices (leave both
+  fields empty to run without one).
 
-It checks the connection before finishing. Everything can be changed later in **Settings**
-(the menu), including the password; **Log out** is there too. All data lives in `/data`.
+It checks the connection before finishing. Everything can be changed later in **Settings** (the
+icon top right), including the password; **Log out** is there too. All data lives in `/data`.
 
 **Forgot the password?** Start the container once with `NETLENS_RESET_PASSWORD=1`, set a new
 password in the browser, then remove the variable.

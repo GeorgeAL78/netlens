@@ -13,6 +13,7 @@ import * as db from "./db.js";
 import * as unifi from "./unifi.js";
 import * as cache from "./cache.js";
 import * as flowstore from "./flowstore.js";
+import * as views from "./views.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
 import * as health from "./health.js";
@@ -789,6 +790,67 @@ app.get("/api/threats", (req, res) => {
     res.json({ start, end, tz, ...insights.threats(start, end) });
   } catch (err) {
     sendError(res, "GET /api/threats", err);
+  }
+});
+
+// ---- Views of the redesigned interface (UU-C-087), read-only like /api/report -------------
+function dayContext(query) {
+  const todayKey = zonedDateKey(Date.now());
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(query.date || "")) ? String(query.date) : todayKey;
+  const range = rangeFor({ period: "custom", date });
+  const bundle = cache.readDays([date]);
+  return { date, today: date === todayKey, bundle, start: range.start, end: range.end, now: Date.now() };
+}
+
+app.get("/api/day", (req, res) => {
+  try {
+    const ctx = dayContext(req.query);
+    res.json({ date: ctx.date, today: ctx.today, tz, start: ctx.start, end: ctx.end, lostSpans: lostSpansFor(ctx.bundle, ctx.start, ctx.end), ...views.dayGrid(ctx) });
+  } catch (err) {
+    sendError(res, "GET /api/day", err);
+  }
+});
+
+app.get("/api/findings", (req, res) => {
+  try {
+    const ctx = dayContext(req.query);
+    const maps = db.dpiMaps();
+    const list = views.findings({
+      ...ctx,
+      lostSpans: lostSpansFor(ctx.bundle, ctx.start, ctx.end),
+      clock: (ms) => zonedClock(ms),
+      appName: (id, cat) => appName(canonicalAppId(id, cat, maps), cat, maps),
+    });
+    const totals = ctx.bundle.traffic.reduce((n, c) => n + c.usage.reduce((m, u) => m + (u.totalBytes || u.bytesRx + u.bytesTx), 0), 0);
+    const wan = db.latestWanSample();
+    const online = db.queryClientSamples(ctx.now - 15 * 60 * 1000, ctx.now + 1, null);
+    const onlineMacs = new Map();
+    for (const r of online) onlineMacs.set(r.mac, r.wired);
+    const blocked = insights.threats(ctx.start, ctx.end).total;
+    res.json({
+      date: ctx.date,
+      today: ctx.today,
+      tz,
+      findings: list,
+      now: {
+        internet: wan ? { status: wan.status, isp: wan.isp, latency: wan.latency } : null,
+        online: { total: onlineMacs.size, wired: [...onlineMacs.values()].filter(Boolean).length },
+        trafficBytes: totals,
+        blocked,
+      },
+    });
+  } catch (err) {
+    sendError(res, "GET /api/findings", err);
+  }
+});
+
+app.get("/api/network", (_req, res) => {
+  try {
+    const now = Date.now();
+    const bundle = cache.readDays([zonedDateKey(now)]);
+    res.json({ tz, ts: now, ...views.networkMap({ bundle, now }) });
+  } catch (err) {
+    sendError(res, "GET /api/network", err);
   }
 });
 

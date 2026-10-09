@@ -464,6 +464,15 @@ export function importRows(name, rows) {
   return added;
 }
 
+// Devices this installation first sampled at or after `since` (UU-C-087: "new device"
+// findings). Nothing until the installation has a day of history, or every device of a fresh
+// install would count as new.
+export function firstSeenSince(since) {
+  const first = db.prepare(`SELECT MIN(ts) t FROM client_samples`).get()?.t;
+  if (!first || first > since - 24 * 3600e3) return [];
+  return db.prepare(`SELECT mac, MIN(ts) ts, MAX(wired) wired FROM client_samples GROUP BY mac HAVING MIN(ts) >= ?`).all(since);
+}
+
 export function saveLocalNames(source, pairs, ts = Date.now()) {
   db.exec("BEGIN");
   try {
@@ -498,9 +507,12 @@ export function oldestSiemTs(kind) {
 if (!db.prepare(`PRAGMA table_info(client_samples)`).all().some((c) => c.name === "port")) {
   db.exec(`ALTER TABLE client_samples ADD COLUMN port INTEGER`);
 }
+if (!db.prepare(`PRAGMA table_info(client_samples)`).all().some((c) => c.name === "uptime")) {
+  db.exec(`ALTER TABLE client_samples ADD COLUMN uptime INTEGER`);
+}
 const insClient = db.prepare(`INSERT OR REPLACE INTO client_samples
-  (ts, mac, wired, ap_mac, radio, channel, width, essid, signal, noise, tx_rate, rx_rate, satisfaction, tx_retries, tx_attempts, port)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  (ts, mac, wired, ap_mac, radio, channel, width, essid, signal, noise, tx_rate, rx_rate, satisfaction, tx_retries, tx_attempts, port, uptime)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 const insDevice = db.prepare(`INSERT OR REPLACE INTO device_samples
   (ts, mac, name, type, model, state, cpu, mem, temp, uptime, clients, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
 const insWan = db.prepare(`INSERT OR REPLACE INTO wan_samples
@@ -510,7 +522,7 @@ export function saveLiveSamples({ clients = [], devices = [], wan = null }) {
   db.exec("BEGIN");
   try {
     for (const c of clients) {
-      insClient.run(c.ts, c.mac, c.wired ? 1 : 0, c.apMac, c.radio, c.channel, c.width, c.essid, c.signal, c.noise, c.txRate, c.rxRate, c.satisfaction, c.txRetries, c.txAttempts, c.port ?? null);
+      insClient.run(c.ts, c.mac, c.wired ? 1 : 0, c.apMac, c.radio, c.channel, c.width, c.essid, c.signal, c.noise, c.txRate, c.rxRate, c.satisfaction, c.txRetries, c.txAttempts, c.port ?? null, c.uptime ?? null);
     }
     for (const d of devices) {
       insDevice.run(d.ts, d.mac, d.name, d.type, d.model, d.state, d.cpu, d.mem, d.temp, d.uptime, d.clients, JSON.stringify(d.data || {}));

@@ -13,20 +13,14 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 
 ## Features
 
-- **Usage** — traffic per device and per app (UniFi's own DPI counters), hourly charts in
-  5-minute detail, and sessions: when each app was used, for how long, which servers were
-  involved. Every number on a screen comes from one source and adds up.
-- **Local-network traffic** (a media server, a NAS) shown separately — UniFi's counters only
-  cover internet traffic.
-- **Missing data is marked**, never shown as a quiet day, and filled from UniFi's daily
-  per-device totals where possible. Views up to 90 days.
-- **Wi-Fi** — every device worst signal first; per device signal history, time per access
-  point, roams and a presence heatmap.
-- **Equipment** — gateway, switches and access points: CPU, memory, temperature, radio load,
-  ports, uplinks, firmware updates.
-- **Threats** — blocked intrusions and firewall-rule hits, with top sources, targets and rules.
-- Live gateway/WAN strip, network events, device blocking, optional syslog listener for
-  blocked-ad counts.
+- **Home** — today's findings in plain language: big transfers, weak Wi-Fi, slow links, blocked
+  threats, new devices, equipment problems.
+- **Day** — devices × hours: when each device was busy, roamed or got blocked.
+- **Network** — live map of gateway, switches, access points and devices, with radio and port details.
+- **Devices** — traffic, signal or link speed, apps, sessions, events, block / unblock.
+- **Security** — blocked intrusions and firewall hits with the full connection record.
+- **Usage** — apps, categories and devices for a day, an hour or 90 days; every number adds up.
+- Local-network traffic shown separately; missing data marked, never shown as a quiet hour.
 
 ## Requirements
 

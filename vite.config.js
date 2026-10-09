@@ -5,9 +5,7 @@ import react from "@vitejs/plugin-react";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// Two entries, two releases. v1 (`/`) is the original dashboard and stays untouched;
-// v2 (`/v2`) is the session-timeline rebuild. Both are built into dist/ and both ship
-// in the image, so they can be compared against the same live data.
+// One interface (UU-C-087). web/v2/index.html only redirects old Timeline bookmarks to it.
 export default defineConfig({
   plugins: [react()],
   root: "web",

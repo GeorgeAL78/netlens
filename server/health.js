@@ -34,6 +34,8 @@ function clientRow(c, ts) {
     txRetries: num(c.tx_retries),
     txAttempts: num(c.wifi_tx_attempts),
     port: wired ? num(c.sw_port) : null,
+    // How long UniFi says the client has been connected, in seconds (UU-C-086).
+    uptime: num(c.uptime),
   };
 }
 
