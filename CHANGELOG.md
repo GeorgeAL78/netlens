@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.5 — 2026-10-09
+
+### Changed
+- Home: the previous/next day buttons and calendar are always shown next to the periods; the "Pick a day" button is gone.
+
 ## 2.0.4 — 2026-10-09
 
 ### Changed

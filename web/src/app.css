@@ -261,3 +261,5 @@ table.t tr.click:hover td { background: #141b26; }
 .cal-day[disabled] { color: #333b49; cursor: default; }
 .cal-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
 .cal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 4px; vertical-align: 1px; }
+.dimmed { opacity: 0.5; transition: opacity 0.15s; }
+.dimmed:hover, .dimmed:focus-within { opacity: 1; }
