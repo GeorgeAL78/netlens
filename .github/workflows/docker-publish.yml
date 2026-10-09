@@ -13,13 +13,13 @@ permissions:
   contents: read
 
 env:
-  GHCR_IMAGE: ghcr.io/georgeal78/unifi-netlens
-  HUB_IMAGE: gjergjk/unifi-netlens
+  GHCR_IMAGE: ghcr.io/georgeal78/netlens
+  HUB_IMAGE: gjergjk/netlens
 
 jobs:
   build:
     name: Build ${{ matrix.platform }}
-    if: github.repository == 'GeorgeAL78/unifi-netlens'
+    if: github.repository == 'GeorgeAL78/netlens'
     runs-on: ${{ matrix.runner }}
     permissions:
       contents: read

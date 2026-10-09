@@ -35,7 +35,7 @@ export default function SideNav({
         <div className="sn-brand">
           <span className="sn-mark" aria-hidden="true" />
           <div>
-            <strong>UniFi NetLens</strong>
+            <strong>NetLens</strong>
             <span className="sn-dim">for UniFi</span>
           </div>
         </div>

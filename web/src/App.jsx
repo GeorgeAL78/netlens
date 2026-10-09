@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import SideNav from "./shared/SideNav.jsx";
 import { useViewHistory } from "./shared/useViewHistory.js";
 import { GatewayStrip, InsightsPage, PageTabs } from "./Insights.jsx";
+import { AccountSettings } from "./shared/Setup.jsx";
 import {
   Bar,
   BarChart,
@@ -124,6 +125,11 @@ async function api(path, opts) {
     headers: { "Content-Type": "application/json" },
     ...opts,
   });
+  if (res.status === 401) {
+    // Logged out (or the password changed elsewhere): back to the login page.
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    throw new Error("login required");
+  }
   const json = await res.json();
   if (!res.ok) {
     // UniFi puts the useful part in the body; surfacing only `error` hid
@@ -429,6 +435,7 @@ export default function App() {
         apiKey: "",
         site: data.site || "default",
         siemPort: data.siemPort || "",
+        tz: data.tz || "",
       });
     } catch {
       setHasApiKey(false);
@@ -565,6 +572,7 @@ export default function App() {
                 placeholder="default"
               />
             </label>
+            <AccountSettings tz={settings.tz} onTz={(tz) => setSettings({ ...settings, tz })} />
             <h3 style={{ margin: "14px 0 4px" }}>Blocked-ad statistics (optional)</h3>
             <p className="muted" style={{ margin: "0 0 8px" }}>
               Device connects, disconnects, roams and threats come from UniFi's System Log automatically — nothing to
@@ -614,7 +622,7 @@ export default function App() {
             <span />
           </button>
           <div>
-            <h1>UniFi NetLens</h1>
+            <h1>NetLens</h1>
             <p>Traffic, Wi-Fi, equipment and security for your UniFi network</p>
           </div>
         </div>

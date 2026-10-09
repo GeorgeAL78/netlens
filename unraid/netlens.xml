@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>netlens</Name>
+  <Repository>gjergjk/netlens:latest</Repository>
+  <Registry>https://hub.docker.com/r/gjergjk/netlens</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/GeorgeAL78/netlens/issues</Support>
+  <Project>https://github.com/GeorgeAL78/netlens</Project>
+  <Overview>NetLens — a dashboard for UniFi networks. Self-hosted. Per-device and per-app traffic with time charts and sessions; Wi-Fi signal, roaming and presence per device; access point, switch and gateway health; security events; local-network traffic; WAN status. It samples your UniFi console around the clock, so history is kept beyond UniFi's own short retention (24 hours of 5-minute data, 7 days hourly). Needs a UniFi OS console (UDM, UCG, UDR, Cloud Key Gen2+) and a local API key. After installing, open the web UI: a short setup asks for your console address, the API key and a login password. Not affiliated with Ubiquiti.</Overview>
+  <Category>Network:Management Tools: Status:Stable</Category>
+  <WebUI>http://[IP]:[PORT:3780]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/unraid/netlens.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/icon.png</Icon>
+  <ExtraParams>--restart=unless-stopped</ExtraParams>
+  <Requires>A UniFi OS console reachable from this server, and a local API key (UniFi Network &gt; Settings &gt; Control Plane &gt; Integrations &gt; Create API Key).</Requires>
+
+  <Config Name="Web UI port" Target="3780" Default="3780" Mode="tcp" Description="Port for the dashboard in your browser." Type="Port" Display="always" Required="true" Mask="false">3780</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/netlens" Mode="rw" Description="Cache, settings and logs. Keep it on appdata so updates never lose history." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/netlens</Config>
+
+
+  <Config Name="Syslog TCP" Target="5514" Default="5514" Mode="tcp" Description="Optional: for blocked-ad counts. Turn the listener on in the app (Settings, port 5514)." Type="Port" Display="advanced" Required="false" Mask="false">5514</Config>
+  <Config Name="Syslog UDP" Target="5514" Default="5514" Mode="udp" Description="Optional: for blocked-ad counts. Turn the listener on in the app (Settings, port 5514)." Type="Port" Display="advanced" Required="false" Mask="false">5514</Config>
+</Container>

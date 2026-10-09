@@ -165,7 +165,9 @@ seedSetting("unifi_api_key", process.env.UNIFI_API_KEY);
 seedSetting("unifi_site_id", process.env.UNIFI_SITE_ID);
 seedSetting("unifi_site", process.env.UNIFI_SITE || "default");
 seedSetting("port", process.env.PORT || "3780");
-seedSetting("tz", process.env.TZ || "America/New_York");
+// Only an explicit TZ is stored; otherwise index.js falls back to the system timezone.
+// Defaulting to America/New_York here overrode that fallback on every fresh install.
+seedSetting("tz", process.env.TZ);
 seedSetting("snapshot_minutes", process.env.SNAPSHOT_MINUTES || "5");
 
 export const settingsFile = path.join(databaseDir, "unifi-settings.json");
@@ -177,7 +179,8 @@ function normalizeHost(host) {
     .replace(/\/.*$/, "");
 }
 
-export function applyConnectionSettings({ host, apiKey, site, siteId, trayMode, siemPort } = {}) {
+export function applyConnectionSettings({ host, apiKey, site, siteId, trayMode, siemPort, tz } = {}) {
+  if (tz) setSetting("tz", String(tz).trim());
   // Empty string clears these; undefined leaves them alone (v2's settings form omits them).
   if (siemPort != null) {
     const n = Number(siemPort);

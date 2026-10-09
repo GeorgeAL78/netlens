@@ -1,5 +1,5 @@
 import { exec } from "node:child_process";
-import crypto from "node:crypto";
+import * as auth from "./auth.js";
 import express from "express";
 import cors from "cors";
 import fs from "node:fs";
@@ -24,49 +24,47 @@ import { logError } from "./log.js";
 
 const app = express();
 
-// ---- Server mode (Docker on Unraid, UU-C-054) -----------------------------------------
-// The app now runs as a container with a web UI; the PC/Electron app is retired. In server
-// mode it listens on the LAN, so: a login (the UI can block devices), no remote shutdown,
-// and the Unraid template's variables applied at every start.
+// ---- Server mode (Docker, UU-C-054, UU-C-059) --------------------------------------------
+// The app runs as a container with a web UI. Connection settings and the login password are
+// managed in the UI (first-run setup, then Settings) and stored in the app's database.
+// Environment variables only seed empty settings on first start, for scripted installs.
 const SERVER_MODE = process.env.UNIFI_SERVER_MODE === "1";
 const BIND = process.env.UNIFI_BIND || (SERVER_MODE ? "0.0.0.0" : "127.0.0.1");
-const UI_PASSWORD = process.env.UI_PASSWORD || "";
 
-// Template variables win over values saved earlier, so editing the Unraid template and
-// restarting is how settings are changed. Unset variables leave saved settings alone.
-db.applyConnectionSettings({
-  host: process.env.UNIFI_HOST || undefined,
-  apiKey: process.env.UNIFI_API_KEY || undefined,
-  site: process.env.UNIFI_SITE || undefined,
-  siteId: process.env.UNIFI_SITE_ID || undefined,
-  siemPort: process.env.SIEM_PORT != null ? process.env.SIEM_PORT : undefined,
-});
+if (process.env.SIEM_PORT && !db.getSetting("siem_port", "")) db.applyConnectionSettings({ siemPort: process.env.SIEM_PORT });
+// Forgotten password: start once with NETLENS_RESET_PASSWORD=1, then set a new one in the UI.
+if (process.env.NETLENS_RESET_PASSWORD === "1" && auth.hasPassword()) {
+  auth.clearPassword();
+  console.warn("NETLENS_RESET_PASSWORD=1: the login password was cleared — set a new one in the UI, then remove the variable");
+}
+// Older installs set UI_PASSWORD in the environment; adopt it once, then the UI owns it.
+if (process.env.UI_PASSWORD && !auth.hasPassword()) auth.setPassword(process.env.UI_PASSWORD);
 
 // Container health check; deliberately before the login.
 app.get("/healthz", (_req, res) => res.json({ ok: true, version: process.env.APP_VERSION || "dev" }));
 
-// HTTP Basic login when UI_PASSWORD is set: the browser shows its own prompt, any user
-// name is accepted. Plain HTTP on the LAN — fine for a home network, not for the internet.
-if (UI_PASSWORD) {
-  const want = crypto.createHash("sha256").update(UI_PASSWORD).digest();
-  app.use((req, res, next) => {
-    const [type, b64] = String(req.headers.authorization || "").split(" ");
-    if (type === "Basic" && b64) {
-      const pass = Buffer.from(b64, "base64").toString("utf8").split(":").slice(1).join(":");
-      const got = crypto.createHash("sha256").update(pass).digest();
-      if (crypto.timingSafeEqual(want, got)) return next();
-    }
-    res.set("WWW-Authenticate", 'Basic realm="UniFi NetLens", charset="UTF-8"');
-    res.status(401).send("Login required");
-  });
-} else if (SERVER_MODE) {
-  console.warn("UI_PASSWORD is not set: anyone on the LAN can open this dashboard and block devices");
+// Login (UU-C-059). Until a password exists the app is open, so the first-run setup can set
+// one; after that every page and API call needs the session cookie. Plain HTTP on the LAN —
+// fine for a home network, not for the internet.
+const OPEN_PATHS = new Set(["/healthz", "/login", "/api/login", "/api/logout"]);
+app.use((req, res, next) => {
+  if (!auth.hasPassword() || OPEN_PATHS.has(req.path) || auth.hasSession(req)) return next();
+  if (req.path.startsWith("/api/")) return res.status(401).json({ error: "login required" });
+  return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
+});
+app.get("/login", (_req, res) => {
+  res.type("html").send(auth.LOGIN_PAGE);
+});
+if (SERVER_MODE && !auth.hasPassword()) {
+  console.warn("No login password yet: open the web UI and finish the setup to set one");
 }
 // UNIFI_PORT wins over the stored setting so a second instance can run alongside the
 // production instance for testing without editing its saved configuration.
 const port = Number(process.env.UNIFI_PORT || db.getSetting("port", process.env.PORT || 3780));
 // TZ from the container (Unraid passes the server's own); otherwise the system timezone.
-const tz = db.getSetting("tz", process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+// `let`: the timezone can be changed in Settings without a restart (UU-C-059).
+const systemTz = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+let tz = db.getSetting("tz", "") || systemTz();
 const snapshotMinutes = Number(db.getSetting("snapshot_minutes", process.env.SNAPSHOT_MINUTES || 5));
 
 // origin:true reflected ANY origin, so any page the owner visited could read
@@ -603,13 +601,57 @@ app.get("/api/apps", (req, res) => {
 const appShell = { hide: false, quit: false };
 
 app.get("/api/settings", (_req, res) => {
-  res.json(db.publicConnectionSettings());
+  const s = db.publicConnectionSettings();
+  res.json({
+    ...s,
+    tz,
+    hasPassword: auth.hasPassword(),
+    serverMode: SERVER_MODE,
+    // First run: no API key yet, or a LAN server without a login password.
+    needsSetup: !s.hasApiKey || (SERVER_MODE && !auth.hasPassword()),
+  });
+});
+
+app.post("/api/login", (req, res) => {
+  const ip = req.ip || req.socket.remoteAddress || "?";
+  if (auth.lockedOut(ip)) return res.status(429).json({ error: "Too many attempts — try again in 5 minutes" });
+  if (!auth.hasPassword() || !auth.checkPassword(req.body?.password)) {
+    auth.recordFailure(ip);
+    return res.status(401).json({ error: "Wrong password" });
+  }
+  auth.clearFailures(ip);
+  auth.startSession(res);
+  res.json({ ok: true });
+});
+
+app.post("/api/logout", (_req, res) => {
+  auth.endSession(res);
+  res.json({ ok: true });
+});
+
+// Set or change the login password. Changing needs the current one; setting the first one
+// does not (that is the first-run setup).
+app.post("/api/password", (req, res) => {
+  const { current, password } = req.body || {};
+  if (auth.hasPassword() && !auth.checkPassword(current)) return res.status(403).json({ error: "Current password is wrong" });
+  if (String(password || "").length < 8) return res.status(400).json({ error: "Use at least 8 characters" });
+  auth.setPassword(password);
+  auth.startSession(res);
+  res.json({ ok: true, hasPassword: true });
 });
 
 app.put("/api/settings", (req, res) => {
   try {
     const body = req.body || {};
+    if (body.tz) {
+      try {
+        new Intl.DateTimeFormat("en-US", { timeZone: body.tz });
+      } catch {
+        return res.status(400).json({ error: `Unknown timezone: ${body.tz}` });
+      }
+    }
     db.applyConnectionSettings(body);
+    if (body.tz) tz = body.tz;
     db.persistConnectionFile(db.readConnectionSettings());
     siem.configure();
     res.json({ ok: true, ...db.publicConnectionSettings() });
@@ -1375,15 +1417,20 @@ export function startHttpServer({ openBrowser = false } = {}) {
       return;
     }
     httpServer = app.listen(port, BIND, () => {
-      console.log(`UniFi NetLens on ${url}${BIND === "0.0.0.0" ? ` (listening on all interfaces, port ${port})` : ""}`);
+      console.log(`NetLens on ${url}${BIND === "0.0.0.0" ? ` (listening on all interfaces, port ${port})` : ""}`);
       console.log(`Database: ${databaseDir}`);
-      snapshot();
-      if (!snapshotTimer) snapshotTimer = setInterval(snapshot, snapshotMinutes * 60 * 1000);
+      // NETLENS_OFFLINE=1: serve the stored data without ever talking to UniFi — used to
+      // compare report output before and after a change on a frozen copy (UU-C-060).
+      const offline = process.env.NETLENS_OFFLINE === "1";
+      if (!offline) snapshot();
+      if (!offline && !snapshotTimer) snapshotTimer = setInterval(snapshot, snapshotMinutes * 60 * 1000);
       // SIEM logs forwarded by syslog-ng (UU-C-050): listen if a port is set.
       siem.configure();
-      cache
-        .warm(defaultCacheJobs(), { mode: "delta" })
-        .catch((err) => logError("cache warmup", err));
+      if (!offline) {
+        cache
+          .warm(defaultCacheJobs(), { mode: "delta" })
+          .catch((err) => logError("cache warmup", err));
+      }
       if (openBrowser) launchBrowser();
       resolve({ url, port, alreadyRunning: false, close: closeHttpServer });
     });

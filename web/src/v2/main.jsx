@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App2 from "./App2.jsx";
+import { SetupGate } from "../shared/Setup.jsx";
 import "./v2.css";
 
 class Boundary extends React.Component {
@@ -45,6 +46,8 @@ class Boundary extends React.Component {
 
 createRoot(document.getElementById("root")).render(
   <Boundary>
-    <App2 />
+    <SetupGate>
+      <App2 />
+    </SetupGate>
   </Boundary>
 );

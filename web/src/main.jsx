@@ -1,6 +1,7 @@
 import React, { Component } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
+import { SetupGate } from "./shared/Setup.jsx";
 import "./styles.css";
 
 class ErrorBoundary extends Component {
@@ -31,7 +32,7 @@ class ErrorBoundary extends Component {
     if (this.state.error) {
       return (
         <div className="app">
-          <h1>UniFi NetLens</h1>
+          <h1>NetLens</h1>
           <p className="error">{String(this.state.error.message || this.state.error)}</p>
           <button className="btn" onClick={() => window.location.reload()}>
             Reload
@@ -45,7 +46,9 @@ class ErrorBoundary extends Component {
 
 createRoot(document.getElementById("root")).render(
   <ErrorBoundary>
-    <App />
+    <SetupGate>
+      <App />
+    </SetupGate>
   </ErrorBoundary>
 );
 

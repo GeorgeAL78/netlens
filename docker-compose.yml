@@ -1,21 +1,17 @@
-# UniFi NetLens — example compose file. Copy, fill in the values, `docker compose up -d`,
-# then open http://<this-host>:3780.
+# NetLens — example compose file. `docker compose up -d`, then open
+# http://<this-host>:3780 and finish the short setup in the browser.
 services:
-  unifi-netlens:
-    image: gjergjk/unifi-netlens:latest
-    container_name: unifi-netlens
+  netlens:
+    image: gjergjk/netlens:latest
+    container_name: netlens
     restart: unless-stopped
     ports:
       - "3780:3780"
-      # Optional: UniFi SIEM syslog for blocked-ad counts (set SIEM_PORT=5514 below).
+      # Optional: UniFi SIEM syslog for blocked-ad counts (turn it on in the app's Settings).
       # - "5514:5514/tcp"
       # - "5514:5514/udp"
     environment:
-      UNIFI_HOST: 192.168.1.1          # your UniFi console
-      UNIFI_API_KEY: "change-me"       # UniFi Network > Settings > Control Plane > Integrations
-      UNIFI_SITE: default
-      UI_PASSWORD: "change-me"         # dashboard login (any user name) — strongly recommended
-      TZ: America/New_York             # your timezone: day boundaries and times
-      # SIEM_PORT: "5514"
+      TZ: America/New_York             # optional; also changeable in the app's Settings
+    # Console address, API key and login password are set in the web UI on first start.
     volumes:
       - ./data:/data

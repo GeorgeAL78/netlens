@@ -1,8 +1,10 @@
-<p align="center"><img src="assets/icon.png" width="96" alt="UniFi NetLens icon"></p>
+<p align="center"><img src="assets/icon.png" width="96" alt="NetLens icon"></p>
 
-# UniFi NetLens
+# NetLens
 
-A self-hosted dashboard for a UniFi network. It shows **who used how much, of what, and when**,
+**A dashboard for UniFi networks.**
+
+Self-hosted, it shows **who used how much, of what, and when**,
 how good each device's **Wi-Fi** is, how your **access points, switches and gateway** are doing,
 and what your firewall and intrusion prevention **blocked** — and it keeps that history,
 which UniFi itself deletes after a day or a week.
@@ -66,57 +68,57 @@ Wi-Fi/equipment samples 90 days, daily totals a year), so history survives.
 ### Unraid
 
 Search **NetLens** in Community Applications, or add the template from
-[`unraid/unifi-netlens.xml`](unraid/unifi-netlens.xml). Fill in the UniFi host, the API key and
-a login password, then open the web UI.
+[`unraid/netlens.xml`](unraid/netlens.xml). Start it and open the web UI.
 
 ### Docker
 
 ```bash
-docker run -d --name unifi-netlens --restart unless-stopped \
+docker run -d --name netlens --restart unless-stopped \
   -p 3780:3780 \
-  -e UNIFI_HOST=192.168.1.1 \
-  -e UNIFI_API_KEY=your-key \
-  -e UI_PASSWORD=choose-a-password \
-  -e TZ=America/New_York \
   -v /path/to/netlens-data:/data \
-  gjergjk/unifi-netlens:latest
+  gjergjk/netlens:latest
 ```
 
-Then open `http://<host>:3780`. Images: `gjergjk/unifi-netlens` (Docker Hub) and
-`ghcr.io/georgeal78/unifi-netlens`, for amd64 and arm64.
+Then open `http://<host>:3780`. Images: `gjergjk/netlens` (Docker Hub) and
+`ghcr.io/georgeal78/netlens`, for amd64 and arm64.
 
 ### Docker Compose
 
 See [`docker-compose.yml`](docker-compose.yml).
 
-## Configuration
+## First start
 
-| Variable | Default | |
-| --- | --- | --- |
-| `UNIFI_HOST` | `192.168.1.1` | IP or hostname of the console |
-| `UNIFI_API_KEY` | — | Local API key (required) |
-| `UNIFI_SITE` | `default` | Network site name; the site ID is looked up automatically |
-| `UNIFI_SITE_ID` | — | Optional override for the site ID |
-| `UI_PASSWORD` | — | Dashboard login (any user name). Strongly recommended |
-| `TZ` | container's | Timezone for day boundaries and times (Unraid sets it for you) |
-| `SIEM_PORT` | — | Optional syslog listener (e.g. `5514`, TCP and UDP) for blocked-ad counts |
-| `UNIFI_PORT` | `3780` | Port inside the container |
+Open the web UI. A short setup asks for:
 
-Settings from the environment are applied at every start; the UniFi connection can also be
-changed in the web UI. All data lives in `/data`.
+- your **UniFi console** address and the **API key**,
+- the **site** (normally `default`) and your **timezone**,
+- a **login password** — required, because the dashboard can block devices.
+
+It checks the connection before finishing. Everything can be changed later in **Settings**
+(the menu), including the password; **Log out** is there too. All data lives in `/data`.
+
+**Forgot the password?** Start the container once with `NETLENS_RESET_PASSWORD=1`, set a new
+password in the browser, then remove the variable.
+
+### Optional environment variables
+
+For scripted installs these seed empty settings on the very first start; after that the
+web UI is in charge: `UNIFI_HOST`, `UNIFI_API_KEY`, `UNIFI_SITE`, `UNIFI_SITE_ID`, `TZ`,
+`SIEM_PORT`, `UI_PASSWORD`. `UNIFI_PORT` (default `3780`) is the port inside the container.
 
 ### Blocked-ad counts (optional)
 
-Network events come from UniFi's System Log automatically. Only ad-block hits need syslog: set
-`SIEM_PORT=5514`, publish that port, and point UniFi at it (CyberSecure → Traffic Logging →
+Network events come from UniFi's System Log automatically. Only ad-block hits need syslog: in
+Settings set the listen port to `5514`, publish that port, and point UniFi at it (CyberSecure → Traffic Logging →
 Activity Logging → SIEM Server), directly or through a relay such as syslog-ng.
 
 ## Security
 
-- **Set `UI_PASSWORD`.** The dashboard can block devices on your network.
+- **The login password is required** on first start: the dashboard can block devices.
 - It is meant for your LAN. Do not expose it to the internet; use a VPN to reach it remotely.
 - The API key never leaves the server: the UI only learns whether one is stored.
-- Login is HTTP Basic over plain HTTP — fine on a home LAN, not across untrusted networks.
+- Passwords are stored as scrypt hashes; sessions are signed cookies; five wrong passwords lock
+  that address out for five minutes. Plain HTTP — fine on a home LAN, not across untrusted networks.
 
 ## Development
 

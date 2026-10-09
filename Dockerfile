@@ -1,5 +1,5 @@
-# UniFi NetLens — web UI + collector for a UniFi network.
-# Published as gjergjk/unifi-netlens (Docker Hub) and ghcr.io/georgeal78/unifi-netlens.
+# NetLens — a dashboard for UniFi networks (web UI + collector).
+# Published as gjergjk/netlens (Docker Hub) and ghcr.io/georgeal78/netlens.
 
 # --- build the web UI ---------------------------------------------------------------
 FROM node:24-alpine AS web
@@ -13,8 +13,9 @@ RUN npm run build
 # --- runtime ------------------------------------------------------------------------
 FROM node:24-alpine
 ARG VERSION=dev
-LABEL org.opencontainers.image.title="UniFi NetLens" \
-      org.opencontainers.image.source="https://github.com/GeorgeAL78/unifi-netlens" \
+LABEL org.opencontainers.image.title="NetLens" \
+      org.opencontainers.image.description="A dashboard for UniFi networks" \
+      org.opencontainers.image.source="https://github.com/GeorgeAL78/netlens" \
       org.opencontainers.image.licenses="GPL-3.0" \
       org.opencontainers.image.version="${VERSION}"
 WORKDIR /app

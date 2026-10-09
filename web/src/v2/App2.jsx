@@ -3,6 +3,7 @@ import SideNav from "../shared/SideNav.jsx";
 
 const isDesktop = Boolean(typeof window !== "undefined" && window.unifiDesktop?.isDesktop);
 import { useViewHistory } from "../shared/useViewHistory.js";
+import { AccountSettings } from "../shared/Setup.jsx";
 
 // v2 leads with what actually happened rather than with totals: a time map of which
 // device was doing what, and a chronological feed underneath. Totals are context, not
@@ -109,6 +110,10 @@ function formatAge(ts) {
 
 async function api(path, opts) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  if (res.status === 401) {
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    throw new Error("login required");
+  }
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || res.statusText);
   return json;
@@ -149,7 +154,7 @@ export default function App2() {
     try {
       const d = await api("/api/settings");
       setHasApiKey(Boolean(d.hasApiKey));
-      setSettings({ host: d.host || "", site: d.site || "default", apiKey: "" });
+      setSettings({ host: d.host || "", site: d.site || "default", apiKey: "", tz: d.tz || "" });
     } catch {
       setHasApiKey(false);
       setSettings({ host: "", site: "default", apiKey: "" });
@@ -446,6 +451,7 @@ export default function App2() {
                 placeholder="default"
               />
             </label>
+            <AccountSettings tz={settings.tz} onTz={(tz) => setSettings({ ...settings, tz })} />
             <div className="v2-modal-actions">
               <button type="button" className="v2-btn v2-ghost" onClick={() => setSettingsOpen(false)}>
                 Cancel
@@ -466,7 +472,7 @@ export default function App2() {
             <span />
             <span />
           </button>
-          <h1>UniFi NetLens</h1>
+          <h1>NetLens</h1>
           <span className="v2-pill">v2</span>
         </div>
         <div className="v2-top-actions">
