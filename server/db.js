@@ -91,6 +91,15 @@ db.exec(`
     data TEXT,
     PRIMARY KEY (mac, ts)
   );
+  -- IPS signature per "Threat blocked" event (UU-C-071), keyed by the siem_events uid.
+  -- found = 0: looked up and not (yet) found; retried while the console still has flows.
+  CREATE TABLE IF NOT EXISTS ips_details (
+    uid TEXT PRIMARY KEY,
+    ts INTEGER NOT NULL,
+    found INTEGER NOT NULL,
+    data TEXT,
+    checked_at INTEGER NOT NULL
+  );
   -- Names for local MACs and IPs that are not current clients (UU-F-052): UniFi devices by
   -- every interface MAC and network address, and known (also offline) clients. Rebuilt
   -- from UniFi by health.refreshLocalNames; read by the report to name LAN destinations.
@@ -351,7 +360,7 @@ export function saveSiemEvents(rows, { replace = false } = {}) {
 }
 
 export function querySiemEvents(start, end, mac) {
-  const sql = `SELECT ts, kind, name, category, mac, data FROM siem_events WHERE ts >= ? AND ts < ?${mac ? " AND mac = ?" : ""} ORDER BY ts DESC`;
+  const sql = `SELECT uid, ts, kind, name, category, mac, data FROM siem_events WHERE ts >= ? AND ts < ?${mac ? " AND mac = ?" : ""} ORDER BY ts DESC`;
   return (mac ? db.prepare(sql).all(start, end, mac) : db.prepare(sql).all(start, end)).map((r) => ({
     ...r,
     data: JSON.parse(r.data || "{}"),
@@ -363,6 +372,7 @@ export function siemStats() {
 }
 
 export function pruneSiemEvents(before) {
+  db.prepare(`DELETE FROM ips_details WHERE ts < ?`).run(before);
   return db.prepare(`DELETE FROM siem_events WHERE ts < ?`).run(before).changes;
 }
 
@@ -384,7 +394,34 @@ export function siemNamesByMac(limit = 5000) {
 
 // History that travels in an export (UU-C-066). Never settings: the API key and the login
 // password stay with the installation that owns them.
-export const HISTORY_TABLES = ["clients", "siem_events", "daily_device", "client_samples", "device_samples", "wan_samples"];
+export const HISTORY_TABLES = ["clients", "siem_events", "ips_details", "daily_device", "client_samples", "device_samples", "wan_samples"];
+
+// Threat events from the last `sinceMs` without a signature yet, oldest first; ones looked up
+// and not found are retried at most hourly.
+export function pendingIpsLookups(sinceMs, limit = 20, now = Date.now()) {
+  return db
+    .prepare(
+      `SELECT e.uid, e.ts, e.data FROM siem_events e LEFT JOIN ips_details d ON d.uid = e.uid
+       WHERE e.kind = 'log' AND e.ts >= ? AND e.data LIKE '%"key":"THREAT_%'
+         AND (d.uid IS NULL OR (d.found = 0 AND d.checked_at < ?))
+       ORDER BY e.ts LIMIT ?`
+    )
+    .all(sinceMs, now - 3600000, limit)
+    .map((r) => ({ uid: r.uid, ts: r.ts, data: JSON.parse(r.data || "{}") }));
+}
+
+export function saveIpsDetail(uid, ts, detail, now = Date.now()) {
+  db.prepare(
+    `INSERT INTO ips_details (uid, ts, found, data, checked_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(uid) DO UPDATE SET found = excluded.found, data = excluded.data, checked_at = excluded.checked_at`
+  ).run(uid, ts, detail ? 1 : 0, detail ? JSON.stringify(detail) : null, now);
+}
+
+export function ipsDetails(start, end) {
+  return new Map(
+    db.prepare(`SELECT uid, data FROM ips_details WHERE found = 1 AND ts >= ? AND ts < ?`).all(start, end).map((r) => [r.uid, JSON.parse(r.data)])
+  );
+}
 
 export function* exportTable(name, chunk = 5000) {
   if (!HISTORY_TABLES.includes(name)) throw new Error(`not exportable: ${name}`);

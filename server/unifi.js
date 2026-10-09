@@ -205,6 +205,30 @@ async function fetchFlowPages({ startMs, endMs, mac, maxPages, onTruncate }) {
   return flows;
 }
 
+// The IPS signature behind a "Threat blocked" event (UU-C-071). The System Log entry has
+// only source, target and severity; the flow record of the same connection carries an
+// `ips` block (signature, id, category, UniFi's note) and the IPS policy that matched.
+// Flows last ~4 days on the console, so this has to be read while they still exist.
+// Narrow: the source device's flows in a few minutes around the event.
+export async function findIpsFlow({ ts, mac, dstIp }) {
+  const flows = await fetchFlowPages({ startMs: Number(ts) - 180000, endMs: Number(ts) + 60000, mac: mac || undefined, maxPages: 10 });
+  const hit = flows.find((f) => f?.ips && (!dstIp || f.destination?.ip === dstIp));
+  if (!hit) return null;
+  const policy = (hit.policies || []).find((p) => p?.type === "INTRUSION_PREVENTION") || {};
+  return {
+    signature: hit.ips.signature || null,
+    signatureId: Number(hit.ips.signature_id) || null,
+    category: hit.ips.category_name || null,
+    policy: policy.name || null,
+    risk: hit.risk || null,
+    domain: (hit.destination?.domains || [])[0] || null,
+    port: hit.destination?.port ?? null,
+    service: hit.service || null,
+    note: hit.ips.alarm_category_potential_risk || null,
+    cve: hit.ips.relevant_cve || null,
+  };
+}
+
 // Raw UniFi flow objects carry ~40 fields; only these are ever read (classify.js
 // hostsFromFlow / bytesFromFlow / timeFromFlow / annotateFlow, cache.js flowId).
 // Projecting here keeps the cache an order of magnitude smaller on disk.

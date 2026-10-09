@@ -479,11 +479,15 @@ function ThreatsPage({ api, q }) {
         <TopList title="Top sources" rows={data.topSources} />
         <TopList title="Top targets" rows={data.topTargets} />
         <TopList title="Rules that fired" rows={data.topPolicies} />
+        {data.topSignatures?.length > 0 && <TopList title="IPS signatures" rows={data.topSignatures} />}
       </div>
       <div className="card">
         <h3>Events</h3>
         <p className="muted" style={{ marginTop: 0 }}>
-          From UniFi's System Log, kept 90 days. UniFi does not include the IPS signature name in these events.
+          From UniFi's System Log, kept 90 days. IPS signatures come from the blocked connection's record, which UniFi
+          keeps only about 4 days, so they are saved as soon as the event is seen.
+          {data.threatsWithoutSignature > 0 &&
+            ` ${data.threatsWithoutSignature} threat event(s) here have no signature: older than that, or still being looked up.`}
         </p>
         <table>
           <thead>
@@ -501,8 +505,18 @@ function ThreatsPage({ api, q }) {
                 <td>{new Date(it.ts).toLocaleString()}</td>
                 <td className={it.kind === "Threat blocked" ? "sig-weak" : "muted"}>{it.kind}</td>
                 <td>{it.source || "—"}</td>
-                <td className="muted">{it.target || "—"}</td>
-                <td className="muted">{it.policy || "—"}</td>
+                <td className="muted">
+                  {it.target || "—"}
+                  {it.domain && <div className="muted" style={{ fontSize: 12 }}>{it.domain}</div>}
+                </td>
+                <td className="muted">
+                  {it.policy || "—"}
+                  {it.signature && (
+                    <div style={{ fontSize: 12 }} title={[it.note, it.signatureId && `Signature ${it.signatureId}`].filter(Boolean).join(" · ")}>
+                      {it.signature}
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
             {!data.items.length && (

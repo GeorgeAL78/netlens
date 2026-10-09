@@ -163,6 +163,37 @@ function knownClientNames(users) {
   return out;
 }
 
+// ---- IPS signatures for threat events (UU-C-071) ----------------------------------------
+//
+// Each "Threat blocked" System Log event is matched to its flow record (same source device,
+// same target address, within minutes) while the console still keeps flows (~4 days), and
+// the signature is stored next to the event. At most 20 lookups per run, each one narrow
+// (one device, four minutes), so the console barely notices.
+const IPS_REACH_MS = 4 * 24 * 60 * 60 * 1000;
+export const ips = { lastRunAt: 0, found: 0, missed: 0, error: null };
+
+export async function refreshIpsDetails() {
+  const now = Date.now();
+  try {
+    let found = 0;
+    let missed = 0;
+    for (const ev of db.pendingIpsLookups(now - IPS_REACH_MS, 20, now)) {
+      const p = ev.data?.params || {};
+      const mac = lower(p.SRC_CLIENT?.i) || null;
+      const dstIp = p.DST_IP?.i || p.DST_CLIENT?.i || null;
+      const detail = await unifi.findIpsFlow({ ts: ev.ts, mac: mac && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac) ? mac : null, dstIp: dstIp && /^[\d.:a-f]+$/i.test(dstIp) ? dstIp : null });
+      db.saveIpsDetail(ev.uid, ev.ts, detail, now);
+      if (detail) found += 1;
+      else missed += 1;
+    }
+    Object.assign(ips, { lastRunAt: now, found: ips.found + found, missed: ips.missed + missed, error: null });
+    return { found, missed };
+  } catch (err) {
+    ips.error = err.message;
+    throw err;
+  }
+}
+
 export const names = { lastFetchedAt: 0, error: null };
 
 export async function refreshLocalNames({ force = false } = {}) {

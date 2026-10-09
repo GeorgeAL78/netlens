@@ -281,16 +281,25 @@ export function wifiClient(start, end, mac, tz) {
 
 export function threats(start, end) {
   const rows = db.querySiemEvents(start, end, null).filter((e) => e.kind === "log" && /security/i.test(e.category || ""));
+  // Signatures read from the matching flow records (UU-C-071); none for firewall blocks.
+  const sigs = db.ipsDetails(start, end);
   const items = rows.map((e) => {
     const p = e.data?.params || {};
     const firewall = /TRAFFIC_BLOCKED/.test(e.data?.key || "");
+    const ips = sigs.get(e.uid) || null;
     return {
       ts: e.ts,
       kind: firewall ? "Firewall block" : "Threat blocked",
       title: e.name,
       source: p.SRC_CLIENT?.n || p.SRC_IP?.n || null,
       target: p.DST_CLIENT?.n || p.DST_IP?.n || null,
-      policy: p.TRIGGER?.n || null,
+      policy: p.TRIGGER?.n || ips?.policy || null,
+      signature: ips?.signature || null,
+      signatureId: ips?.signatureId || null,
+      ipsCategory: ips?.category || null,
+      domain: ips?.domain || null,
+      risk: ips?.risk || null,
+      note: ips?.note || null,
       msg: e.data?.msg || null,
     };
   });
@@ -306,6 +315,9 @@ export function threats(start, end) {
     topSources: top("source"),
     topTargets: top("target"),
     topPolicies: top("policy"),
+    topSignatures: top("signature"),
+    // Threat events still waiting for (or past the reach of) a signature lookup.
+    threatsWithoutSignature: items.filter((i) => i.kind === "Threat blocked" && !i.signature).length,
     items: items.slice(0, 300),
   };
 }

@@ -1493,6 +1493,7 @@ async function snapshot() {
     // UniFi's per-device daily totals: fills lost days, 90+ days of history (UU-C-057).
     await health.refreshDaily(zonedDateKey).catch((err) => logError("health refreshDaily", err));
     await health.refreshLocalNames().catch((err) => logError("health refreshLocalNames", err));
+    await health.refreshIpsDetails().catch((err) => logError("health refreshIpsDetails", err));
     db.metaSet("last_snapshot", end);
     console.log(`snapshot ${new Date(end).toISOString()} clients=${online.length} buckets=+${rows}`);
   } catch (err) {
