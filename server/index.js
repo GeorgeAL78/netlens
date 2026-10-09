@@ -9,6 +9,7 @@ import { appRoot, databaseDir } from "./paths.js";
 import * as db from "./db.js";
 import * as unifi from "./unifi.js";
 import * as cache from "./cache.js";
+import * as flowstore from "./flowstore.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
 import * as health from "./health.js";
@@ -818,7 +819,8 @@ app.get("/api/report", async (req, res) => {
     const maps = db.dpiMaps();
     const bundle = cache.readDays(dayKeysForRange(start, end));
     const live = bundle.traffic;
-    const flows = bundle.flows;
+    // Flows are queried from flows.db per need (UU-C-062), never loaded whole.
+    const flowDays = bundle.flowDays;
     let rows = flattenTraffic(live, mac || null, maps);
 
     // ONE SOURCE PER SCREEN (UU-C-043). Every number on the page comes from the same
@@ -885,46 +887,45 @@ app.get("/api/report", async (req, res) => {
         return byMac.get(d) || byIp.get(d) || null;
       };
     })();
-    const annotated = flows
-      .filter((row) => !mac || row.mac === mac)
-      .map((row) => {
-        if (row.app !== "Local network") return row;
-        const n = localName(row.domain);
-        return n ? { ...row, app: n } : row;
-      });
-    const matchedFlows = annotated.filter((row) => flowMatchesSelectedApp(row, appId, maps, svcName));
+    const named = (row) => {
+      if (row.app !== "Local network") return row;
+      const n = localName(row.domain);
+      return n ? { ...row, app: n } : row;
+    };
+    // Per day x app x device byte sums, in first-seen order, with local names applied.
+    const flowGroups = flowstore.groups(flowDays, mac || null).map((g) => ({
+      ...g,
+      app: g.app === "Local network" ? localName(g.ldomain) || g.app : g.app,
+      rawApp: g.app,
+    }));
+    // The selection as a database filter: the stored app names, and the "Local network"
+    // destinations, whose (named) app matches. null = everything.
+    const selectedFilter = (() => {
+      if (!svcName && (appId == null || appId === "" || appId === "all")) return null;
+      const apps = new Set();
+      const localDomains = new Set();
+      for (const g of flowGroups) {
+        if (!flowMatchesSelectedApp(g, appId, maps, svcName)) continue;
+        if (g.rawApp === "Local network") localDomains.add(g.ldomain);
+        else apps.add(g.rawApp);
+      }
+      return { apps: [...apps], localDomains: [...localDomains] };
+    })();
+    // Only a flow screen needs the matched rows themselves; a DPI screen only shows the
+    // newest few as activity.
+    const matchedFlows =
+      basis === "flows"
+        ? flowstore.rowsForApps(flowDays, mac || null, selectedFilter.apps, selectedFilter.localDomains).map(named)
+        : [];
 
-    // Flows per device, sorted, for naming what a device talked to during a session.
-    const flowsByMac = new Map();
-    for (const f of annotated) {
-      if (!f.t) continue;
-      const list = flowsByMac.get(f.mac);
-      if (list) list.push(f);
-      else flowsByMac.set(f.mac, [f]);
-    }
-    for (const list of flowsByMac.values()) list.sort((a, b) => a.t - b.t);
+    // What a device talked to during a session, from flows.db by device and time.
     const destinationsFor = (s) => {
-      const list = flowsByMac.get(s.mac) || [];
-      let lo = 0;
-      let hi = list.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (list[mid].t < s.start - BUCKET_MS) lo = mid + 1;
-        else hi = mid;
-      }
-      const all = new Map();
-      for (let i = lo; i < list.length && list[i].t <= s.end; i += 1) {
-        const f = list[i];
-        all.set(f.domain, (all.get(f.domain) || 0) + f.bytes);
-      }
       // Ranked by bytes, not by whether the name looks like the app. Preferring
       // name-matches put apple-dns.net (a few KB) ahead of the 570 MB that actually went
       // to aaplimg.com during an App Store download — the same name-matching trap this
       // redesign removes. These are what the device talked to at the time, labelled so.
-      return {
-        domains: [...all.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([d]) => d),
-        domainsBasis: all.size ? "device" : null,
-      };
+      const top = flowstore.destinations(flowDays, s.mac, s.start - BUCKET_MS, s.end, 3);
+      return { domains: top.domains, domainsBasis: top.any ? "device" : null };
     };
 
     const SESSION_GAP = 10 * 60 * 1000;
@@ -996,7 +997,6 @@ app.get("/api/report", async (req, res) => {
         activeSeconds: s.rows.reduce((n, r) => n + r.activitySeconds, 0),
         flowCount: null,
         source: "dpi",
-        ...destinationsFor(s),
       }));
       apps = aggregateApps(rows, maps);
       const devicesByApp = new Map();
@@ -1147,7 +1147,8 @@ app.get("/api/report", async (req, res) => {
     const listed = rawSessions.filter((s) => s.bytes >= SESSION_LIST_MIN);
     const small = rawSessions.filter((s) => s.bytes < SESSION_LIST_MIN);
     const sessionCount = listed.length;
-    const sessions = capSessions(listed).map((s) => ({
+    // Destinations only for the sessions actually listed: one indexed query each.
+    const sessions = capSessions(listed).map((s) => (s.source === "dpi" ? { ...s, ...destinationsFor(s) } : s)).map((s) => ({
       app: s.app,
       category: s.category,
       mac: s.mac,
@@ -1172,10 +1173,9 @@ app.get("/api/report", async (req, res) => {
         small.reduce((n, s) => n + s.bytes, 0) + (listedBytes - shownBytes) + trickle.reduce((n, r) => n + r.bytes, 0),
     };
 
-    const activity = matchedFlows
-      .filter((row) => row.t)
-      .sort((a, b) => b.t - a.t)
-      .slice(0, 80)
+    const activity = flowstore
+      .latest(flowDays, mac || null, selectedFilter, 80)
+      .map(named)
       .map((row) => ({
         t: row.t,
         at: formatClock(row.t, tz),
@@ -1195,7 +1195,7 @@ app.get("/api/report", async (req, res) => {
     // numbers, and mixing the two sources is what UU-C-043 removed (UU-F-051).
     const localByApp = new Map();
     let localBytes = 0;
-    for (const row of annotated) {
+    for (const row of flowGroups) {
       if (row.category !== "Local network") continue;
       localBytes += row.bytes;
       const cur = localByApp.get(row.app) || { app: row.app, bytes: 0, byMac: new Map() };
@@ -1277,7 +1277,7 @@ app.get("/api/report", async (req, res) => {
       choiceByKey.set(normName(a.app), { value: String(a.appId), app: a.app, totalBytes: a.totalBytes, source: "unifi" });
     }
     const detected = new Map();
-    for (const row of annotated) {
+    for (const row of flowGroups) {
       if (!row.app || row.app === "Unidentified" || row.app === "DNS" || row.app === "Local network") continue; // "Local network" is the unnamed bucket; named LAN hosts pass
       detected.set(row.app, (detected.get(row.app) || 0) + Number(row.bytes || 0));
     }

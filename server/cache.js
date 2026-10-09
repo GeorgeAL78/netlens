@@ -5,6 +5,7 @@ import * as unifi from "./unifi.js";
 import { annotateFlow, reclassifyCachedRow, nameBareIpFlows, CLASSIFIER_VERSION } from "./classify.js";
 import { logError } from "./log.js";
 import { fetchBuckets, fetchHourly, BUCKET_REACH_MS, HOUR_MS } from "./buckets.js";
+import * as flowstore from "./flowstore.js";
 
 const BUCKET_SETTLE_MS = 30 * 60 * 1000;
 // Bumped when 5-minute buckets on disk are known to be wrong, forcing one full re-read of
@@ -33,7 +34,8 @@ function dayEntry(dayKey, start, end) {
     start,
     end,
     traffic: [],
-    flows: [],
+    // Flows live in flows.db (server/flowstore.js); only their count is kept here.
+    flowCount: 0,
     // 5-minute DPI rows [t, mac, appId, catId, rx, tx, act] and the [from, to) spans they
     // cover. Outside a span there is no time detail for that part of the day.
     buckets: [],
@@ -154,7 +156,10 @@ function persistDay(entry) {
         classifierVersion: CLASSIFIER_VERSION,
         closedTrafficRead: Boolean(entry.closedTrafficRead),
         traffic: entry.traffic,
-        flows: entry.flows,
+        // In flows.db since UU-C-062. An old file that still has a non-empty array is
+        // migrated on restore.
+        flows: [],
+        flowsInDb: true,
         buckets: entry.buckets || [],
         bucketSpans: entry.bucketSpans || [],
         hourlyRead: Number(entry.hourlyRead) || 0,
@@ -176,6 +181,8 @@ function restore() {
     const cutoff = Date.now() - RETAIN_DAYS * 86400000;
     let evicted = 0;
     let upgradedDays = 0;
+    let migratedDays = 0;
+    const flowDays = flowstore.dayInfo();
     for (const name of fs.readdirSync(cacheDir)) {
       const match = /^day-(\d{4}-\d{2}-\d{2})\.json$/.exec(name);
       if (!match) continue;
@@ -184,6 +191,7 @@ function restore() {
         const entry = JSON.parse(fs.readFileSync(file, "utf8"));
         if (!entry?.fetchedAt || Number(entry.end) < cutoff) {
           fs.rmSync(file, { force: true });
+          flowstore.deleteDay(match[1]);
           evicted += 1;
           continue;
         }
@@ -194,24 +202,52 @@ function restore() {
         // row's stored `domain`; the whole-day pass that follows also names bare-IP rows
         // from other flows in the same day where UniFi resolved that address.
         let upgraded = false;
-        const stale = Number(entry.classifierVersion || 0) !== CLASSIFIER_VERSION;
-        const flows = (entry.flows || []).map((f) => {
-          let row = toCachedFlow(f);
-          if (row !== f) upgraded = true;
-          if (stale) {
-            const re = reclassifyCachedRow(row);
-            if (re !== row) { row = re; upgraded = true; }
+        const dayKey = match[1];
+        const stored = flowDays.get(dayKey);
+        // Flows still in the JSON (written before UU-C-062) move into flows.db now; the file
+        // is then rewritten without them. A file whose flows are already in the database
+        // only needs them back when the classifier has moved on.
+        const inFile = !entry.flowsInDb && (entry.flows || []).length > 0;
+        const fileClassifier = Number(entry.classifierVersion || 0);
+        let flowCount = stored?.count || 0;
+        let source = null;
+        let classifier = CLASSIFIER_VERSION;
+        if (inFile) {
+          source = entry.flows;
+          classifier = fileClassifier;
+        } else if (stored && stored.classifier !== CLASSIFIER_VERSION) {
+          source = flowstore.readDay(dayKey);
+          classifier = stored.classifier;
+        }
+        if (source) {
+          const stale = classifier !== CLASSIFIER_VERSION;
+          let changed = inFile;
+          const flows = source.map((f) => {
+            let row = toCachedFlow(f);
+            if (row !== f) changed = true;
+            if (stale) {
+              const re = reclassifyCachedRow(row);
+              if (re !== row) row = re;
+            }
+            return row;
+          });
+          if (stale) changed = true;
+          const flows2 = stale ? nameBareIpFlows(flows) : flows;
+          if (changed || !stored) {
+            flowstore.writeDay(dayKey, flows2, CLASSIFIER_VERSION);
+            upgraded = true;
+            if (inFile) migratedDays += 1;
           }
-          return row;
-        });
-        if (stale && (entry.flows || []).length) upgraded = true;
-        const flows2 = stale ? nameBareIpFlows(flows) : flows;
+          flowCount = flows2.length;
+        } else if (!entry.flowsInDb) {
+          upgraded = true;
+        }
         const restored = {
           dayKey: match[1],
           start: Number(entry.start),
           end: Number(entry.end),
           traffic: entry.traffic || [],
-          flows: flows2,
+          flowCount,
           buckets: entry.buckets || [],
           bucketSpans: entry.bucketSpans || [],
           hourlyRead: Number(entry.hourlyRead) || 0,
@@ -224,7 +260,7 @@ function restore() {
           warming: false,
           pending: null,
         };
-        days.set(match[1], restored);
+        days.set(dayKey, restored);
         if (upgraded) {
           persistDay(restored);
           upgradedDays += 1;
@@ -233,11 +269,13 @@ function restore() {
         // One corrupt day must not cost the others.
         logError("cache restore day", err, { file: name });
         fs.rmSync(file, { force: true });
+        try { flowstore.deleteDay(match[1]); } catch { /* the next write replaces it */ }
       }
     }
     console.log(
       `cache restored days=${days.size} from ${cacheDir}` +
         (upgradedDays ? ` (re-annotated ${upgradedDays} day file(s) in place, classifier v${CLASSIFIER_VERSION})` : "") +
+        (migratedDays ? ` (moved the flows of ${migratedDays} day(s) into flows.db)` : "") +
         (evicted ? ` (evicted ${evicted} past ${RETAIN_DAYS}d)` : "")
     );
     if (fs.existsSync(legacyFile)) {
@@ -245,6 +283,8 @@ function restore() {
         `cache: legacy ${legacyFile} is superseded by per-day files and is no longer read — safe to delete`
       );
     }
+    // Flows of a day that no longer has a day file (evicted while stopped, or removed).
+    for (const day of flowDays.keys()) if (!days.has(day)) flowstore.deleteDay(day);
   } catch (err) {
     logError("cache restore", err);
   }
@@ -267,7 +307,7 @@ export function status() {
     warming: Boolean(entry.warming),
     coveredThrough: entry.coveredThrough || null,
     trafficClients: entry.traffic?.length || 0,
-    flows: entry.flows?.length || 0,
+    flows: entry.flowCount || 0,
   }));
   const fetched = keys.filter((k) => k.fetchedAt).map((k) => k.fetchedAt);
   return {
@@ -284,14 +324,9 @@ export function status() {
 export function readDays(dayKeys) {
   const present = (dayKeys || []).map((k) => days.get(k)).filter(Boolean);
   let traffic = [];
-  const flows = [];
   let fetchedAt = 0;
   for (const entry of present) {
     traffic = mergeTraffic(traffic, entry.traffic);
-    // Not push(...entry.flows): spreading becomes one argument per element and V8
-    // throws "Maximum call stack size exceeded" past ~100k. A single day now holds
-    // 125k+ flows since the page cap was raised (UU-C-007), which is well past that.
-    for (const flow of entry.flows) flows.push(flow);
     if (entry.fetchedAt > fetchedAt) fetchedAt = entry.fetchedAt;
   }
   const buckets = [];
@@ -302,7 +337,8 @@ export function readDays(dayKeys) {
   }
   return {
     traffic,
-    flows,
+    // The days whose flows the report may query from flows.db, in order.
+    flowDays: present.filter((e) => e.flowCount > 0).map((e) => e.dayKey),
     buckets,
     bucketSpans,
     // Each day's own DPI totals, for a daily chart that adds up to the header exactly.
@@ -371,13 +407,15 @@ export async function loadDay(dayKey, start, end, { mode = "read" } = {}) {
     // it drops DPI traffic — a full replace of 2026-09-15 turned 36k flows into 7k from
     // the last three hours of that day and emptied the timeline. Traffic for a closed
     // day still replaces (the whole-day read is the accurate total).
-    const flows = nameBareIpFlows(clampFlows(mergeFlows(cur.flows, flowDelta), start, end));
+    const curFlows = cur.flowCount ? flowstore.readDay(dayKey) : [];
+    const flows = nameBareIpFlows(clampFlows(mergeFlows(curFlows, flowDelta), start, end));
+    flowstore.writeDay(dayKey, flows, CLASSIFIER_VERSION);
     const entry = {
       dayKey,
       start,
       end,
       traffic,
-      flows,
+      flowCount: flows.length,
       buckets: cur.buckets || [],
       bucketSpans: cur.bucketSpans || [],
       hourlyRead: Number(cur.hourlyRead) || 0,
@@ -398,8 +436,8 @@ export async function loadDay(dayKey, start, end, { mode = "read" } = {}) {
     persistDay(entry);
     console.log(
       `cache ${full ? "full" : "delta"} ${dayKey} +${flowDelta.length} flows now=${flows.length}` +
-        (full && cur.flows?.length > flowDelta.length
-          ? ` (kept ${cur.flows.length - flowDelta.length} flows UniFi no longer returned)`
+        (full && curFlows.length > flowDelta.length
+          ? ` (kept ${curFlows.length - flowDelta.length} flows UniFi no longer returned)`
           : "")
     );
     return entry;
@@ -425,7 +463,7 @@ export async function warm(jobs, { mode = "delta" } = {}) {
         await loadDay(job.dayKey, job.start, job.end, { mode });
         const entry = days.get(job.dayKey);
         console.log(
-          `cache ready ${job.dayKey} traffic=${entry?.traffic.length || 0} flows=${entry?.flows.length || 0}`
+          `cache ready ${job.dayKey} traffic=${entry?.traffic.length || 0} flows=${entry?.flowCount || 0}`
         );
       } catch (err) {
         lastError = err.message;
