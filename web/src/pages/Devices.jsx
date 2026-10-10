@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ago, api, href, isUnnamed, useApi } from "../lib.js";
 import { Failed, Loading } from "../ui.jsx";
 
@@ -16,10 +16,22 @@ function vendorText(d) {
   return d.privateMac ? "Private address — the device hides its maker" : "Unknown maker";
 }
 
-function NameEditor({ d, onSaved, autoFocus = false }) {
+// Cancel by button, Esc, or a click anywhere outside the box; only Save writes (UU-C-120).
+function NameEditor({ d, onSaved, onCancel, autoFocus = false }) {
   const [name, setName] = useState(d.name || "");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const box = useRef(null);
+  const cancel = useRef(onCancel);
+  cancel.current = onCancel;
+  useEffect(() => {
+    const out = (e) => box.current && !box.current.contains(e.target) && cancel.current?.();
+    const t = setTimeout(() => document.addEventListener("mousedown", out), 0); // not the opening click
+    return () => {
+      clearTimeout(t);
+      document.removeEventListener("mousedown", out);
+    };
+  }, []);
   async function save(e) {
     e?.preventDefault();
     setBusy(true);
@@ -34,9 +46,14 @@ function NameEditor({ d, onSaved, autoFocus = false }) {
     }
   }
   return (
-    <form onSubmit={save} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+    <form ref={box} onSubmit={save} onKeyDown={(e) => e.key === "Escape" && onCancel?.()} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
       <input className="field" style={{ minWidth: 0, flex: "1 1 160px" }} value={name} placeholder="Give it a name" aria-label={`Name for ${d.label}`} autoFocus={autoFocus} onChange={(e) => setName(e.target.value)} />
       <button className="btn small primary" disabled={busy || name.trim() === (d.name || "")}>{busy ? "Saving…" : "Save"}</button>
+      {onCancel && (
+        <button type="button" className="btn small" disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+      )}
       {msg && <span className="bad small" role="alert" style={{ flexBasis: "100%" }}>{msg}</span>}
     </form>
   );
@@ -45,7 +62,7 @@ function NameEditor({ d, onSaved, autoFocus = false }) {
 export default function Devices({ route }) {
   const { data, error, loading, reload } = useApi("/api/devices");
   const [q, setQ] = useState("");
-  const [editing, setEditing] = useState(route.query.mac || null);
+  const [editing, setEditing] = useState(route.query.mac ? `all:${route.query.mac}` : null); // "new:<mac>" or "all:<mac>"
   const [showOld, setShowOld] = useState(false);
   const [saved, setSaved] = useState({}); // names set this visit, shown before the reload lands
 
@@ -94,7 +111,7 @@ export default function Devices({ route }) {
             {!fresh.length && <div className="empty">No new devices this week.</div>}
             <div className="rows">
               {fresh.map((d) => (
-                <div key={d.mac} className="row" style={{ gridTemplateColumns: "minmax(0, 1.1fr) minmax(0, 1fr) minmax(200px, 1fr)", cursor: "default", alignItems: "center" }}>
+                <div key={d.mac} className="row" style={{ gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr) minmax(150px, auto)", cursor: "default", alignItems: "center" }}>
                   <span className="stack">
                     <a href={href("device", d.mac)} className="ellipsis">{d.label}</a>
                     <span className="dim small ellipsis">{vendorText(d)}</span>
@@ -103,7 +120,13 @@ export default function Devices({ route }) {
                     <span className="small ellipsis">{where(d)}</span>
                     <span className="dim small">first seen {ago(d.firstSeen)}{d.ip ? ` · ${d.ip}` : ""}{d.online ? " · online" : ""}</span>
                   </span>
-                  <NameEditor d={d} onSaved={onSaved(d)} />
+                  {editing === `new:${d.mac}` ? (
+                    <NameEditor d={d} onSaved={onSaved(d)} onCancel={() => setEditing(null)} autoFocus />
+                  ) : (
+                    <button className="btn small" style={{ justifySelf: "end" }} onClick={() => setEditing(`new:${d.mac}`)}>
+                      {d.name ? "Rename" : "Name it"}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -127,10 +150,10 @@ export default function Devices({ route }) {
                     <span className="dim small mono ellipsis">{d.ip || d.mac}</span>
                   </span>
                   <span className="dim small">{d.online ? "online now" : d.lastSeen ? `seen ${ago(d.lastSeen)}` : "—"}</span>
-                  {editing === d.mac ? (
-                    <NameEditor d={d} onSaved={onSaved(d)} autoFocus />
+                  {editing === `all:${d.mac}` ? (
+                    <NameEditor d={d} onSaved={onSaved(d)} onCancel={() => setEditing(null)} autoFocus />
                   ) : (
-                    <button className="btn small" style={{ justifySelf: "end" }} onClick={() => setEditing(d.mac)}>
+                    <button className="btn small" style={{ justifySelf: "end" }} onClick={() => setEditing(`all:${d.mac}`)}>
                       {d.name ? "Rename" : "Name it"}
                     </button>
                   )}

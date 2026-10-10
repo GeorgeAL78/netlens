@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.1 — 2026-10-10
+
+### Changed
+- Devices: new devices show a Rename button like the rest instead of an open name box.
+- Devices: the name box closes without saving on Cancel, Esc, or a click outside it.
+
 ## 2.3.0 — 2026-10-09
 
 ### Added
