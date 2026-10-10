@@ -22,6 +22,7 @@ export default function Device({ route }) {
   const report = useApi(`/api/report?${period}&mac=${encodeURIComponent(mac)}`);
   const wifi = useApi(`/api/wifi?${period}&mac=${encodeURIComponent(mac)}`);
   const day = useApi(`/api/day?date=${date}`);
+  const seen = useApi(`/api/devices/${encodeURIComponent(mac)}/presence?days=7`); // UU-C-124
   // Blocked state lives in UniFi's full client list (a blocked device is usually offline).
   const clients = useApi("/api/clients?scope=all");
   const [blockedNow, setBlocked] = useState(null);
@@ -254,6 +255,28 @@ export default function Device({ route }) {
               </p>
             )}
           </div>
+
+          {/* Online / on the network / off over the last 7 days, from the 5-minute checks (UU-C-124). */}
+          {seen.data?.log?.length > 0 && (
+            <div className="card">
+              <div className="card-head">
+                <h2>Online history</h2>
+                <span className="dim small">last 7 days · checked every 5 minutes</span>
+              </div>
+              <div className="rows">
+                {[...seen.data.log].reverse().slice(0, 40).map((e) => (
+                  <div key={e.ts} className="row" style={{ gridTemplateColumns: "150px 14px minmax(0, 1fr)", cursor: "default" }}>
+                    <span className="mono small dim">{shortDate(e.ts)}</span>
+                    <span className={`status-dot ${e.state === "online" ? "" : e.state === "lan" ? "warn" : "off"}`} />
+                    <span className="small">
+                      {e.state === "online" ? "Online in UniFi" : e.state === "lan" ? "On the network, not in UniFi" : "Offline — no answer"}
+                      {e.method && e.state !== "online" ? <span className="dim"> · {e.method}</span> : null}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="grid g2">
             <div className="card">

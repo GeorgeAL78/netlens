@@ -5,6 +5,7 @@
 // are ever probed, and only one device's own address at a time.
 import net from "node:net";
 import { execFile } from "node:child_process";
+import fs from "node:fs";
 
 const PRIVATE = /^(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})$/;
 export const isPrivateIp = (ip) => PRIVATE.test(String(ip || ""));
@@ -48,4 +49,31 @@ export async function probe(ip) {
   const hit = knocks.filter((k) => k.answer).sort((a, b) => a.ms - b.ms)[0];
   if (hit) return { up: true, method: hit.answer === "open" ? `port ${hit.port}` : `port ${hit.port} (refused, but it answered)`, ms: hit.ms };
   return { up: false, method: p.ok === null ? "ports" : "ping and ports", ms: null };
+}
+
+// The MAC that answered at an address (UU-C-124), from the kernel's neighbour table. Only
+// works when NetLens sits on the LAN itself (host network, or its own address on br0 /
+// macvlan, as on Unraid); in a Docker bridge network LAN MACs are not visible, so null.
+export function arpMac(ip) {
+  try {
+    for (const line of fs.readFileSync("/proc/net/arp", "utf8").split("\n").slice(1)) {
+      const [addr, , flags, mac] = line.trim().split(/\s+/);
+      if (addr === ip && flags !== "0x0" && mac && !/^(0{2}:){5}0{2}$/.test(mac)) return mac.toLowerCase(); // skip incomplete (all-zero) entries
+    }
+  } catch {
+    /* not Linux, or no access */
+  }
+  return null;
+}
+
+// probe() plus "is it the right device?" — the answering MAC against the expected one, or,
+// where MACs cannot be seen, whether UniFi has the address on another device right now.
+export async function probeDevice(ip, mac, { ipOwner } = {}) {
+  const owner = ipOwner?.get(ip);
+  if (owner && owner !== mac) return { up: false, method: "address now used by another device", verify: "mismatch", seenMac: owner };
+  const r = await probe(ip);
+  if (!r.up) return { ...r, verify: null };
+  const seen = arpMac(ip);
+  if (seen) return { ...r, verify: seen === mac ? "match" : "mismatch", seenMac: seen, up: seen === mac };
+  return { ...r, verify: "unknown" };
 }

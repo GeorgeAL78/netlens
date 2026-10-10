@@ -238,8 +238,20 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, t
   for (const c of insights.wiredList(start, end).clients) {
     if (c.speed != null && c.speed <= 100) {
       out.push({ id: `link-${c.mac}`, kind: "wired", level: "warn", ts: c.lastSeen, title: `${c.name} links at only ${c.speed} Mbps`, text: `${c.switch || "Switch"}${c.port != null ? ` port ${c.port}` : ""}. Many TVs and small devices top out at 100 Mbps; a cable or port can cause it too.`, mac: c.mac });
-    } else if (c.minSpeed != null && c.speed != null && c.minSpeed < c.speed) {
-      out.push({ id: `drop-${c.mac}`, kind: "wired", level: "warn", ts: c.lastSeen, title: `${c.name} dropped to ${c.minSpeed} Mbps`, text: `It normally runs at ${c.speed} Mbps (${c.speedChanges} speed changes). Check the cable and port.`, mac: c.mac });
+    } else if (c.lowSpans?.length && c.topSpeed != null) {
+      // Asleep or a bad link? A sleeping PC keeps its link at 10 Mbps (Wake-on-LAN) and moves
+      // next to nothing; a real cable or port problem shows up while the device is busy.
+      const bytesIn = (a, b) => bundle.buckets.reduce((n, r) => (r[1] === c.mac && r[0] >= a && r[0] < b ? n + r[4] + r[5] : n), 0);
+      const spans = c.lowSpans.map((sp) => ({ ...sp, perHour: bytesIn(sp.from, sp.to) / Math.max(1, (sp.to - sp.from) / HOUR) }));
+      const busy = spans.filter((sp) => sp.perHour > 5e6);
+      if (busy.length) {
+        const b = busy[0];
+        out.push({ id: `drop-${c.mac}`, kind: "wired", level: "warn", ts: b.from, title: `${c.name} dropped to ${b.speed} Mbps while in use`, text: `It normally runs at ${c.topSpeed} Mbps and was moving data at ${clock(b.from)} at the lower speed (${c.speedChanges} speed change${c.speedChanges === 1 ? "" : "s"}). Check the cable and port.`, mac: c.mac });
+      } else {
+        const last = spans[spans.length - 1];
+        const when = spans.map((sp) => `${clock(sp.from)}${sp.recovered ? `–${clock(sp.to)}` : " on"}`).join(", ");
+        out.push({ id: `sleep-${c.mac}`, kind: "wired", level: "info", ts: last.from, title: `${c.name} slept ${when}`, text: `Its link drops to ${Math.min(...spans.map((sp) => sp.speed))} Mbps while it sleeps, which is normal for a PC that can be woken over the network; it runs at ${c.topSpeed} Mbps when awake.`, mac: c.mac });
+      }
     }
   }
 

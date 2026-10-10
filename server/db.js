@@ -124,6 +124,24 @@ db.exec(`
     fired_at INTEGER NOT NULL,
     PRIMARY KEY (rule_id, day)
   );
+  -- Presence (UU-C-124): each device's current state and every change. "online" = UniFi has
+  -- it connected; "lan" = UniFi does not, but it answers on the network; "off" = neither.
+  CREATE TABLE IF NOT EXISTS presence_now (
+    mac TEXT PRIMARY KEY,
+    state TEXT NOT NULL,
+    since INTEGER NOT NULL,
+    checked_at INTEGER NOT NULL,
+    ip TEXT,
+    method TEXT,
+    verify TEXT
+  );
+  CREATE TABLE IF NOT EXISTS presence_log (
+    mac TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    state TEXT NOT NULL,
+    method TEXT,
+    PRIMARY KEY (mac, ts)
+  );
   CREATE TABLE IF NOT EXISTS local_names (
     key TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -674,4 +692,32 @@ export function alertEvents(sinceDay) {
   return db
     .prepare(`SELECT rule_id AS ruleId, day, value, fired_at AS firedAt FROM alert_events WHERE day >= ? ORDER BY fired_at DESC`)
     .all(sinceDay);
+}
+
+// ---- presence (UU-C-124) -------------------------------------------------------------------
+const presenceNowRow = (r) => r && { mac: r.mac, state: r.state, since: r.since, checkedAt: r.checked_at, ip: r.ip, method: r.method, verify: r.verify };
+
+export function presenceNow() {
+  return new Map(db.prepare(`SELECT * FROM presence_now`).all().map((r) => [r.mac, presenceNowRow(r)]));
+}
+
+// Writes the current state; a change of state also goes into the log. Returns true on change.
+export function savePresence(mac, state, { ts, ip = null, method = null, verify = null }) {
+  const cur = db.prepare(`SELECT state FROM presence_now WHERE mac = ?`).get(mac);
+  const changed = !cur || cur.state !== state;
+  if (changed) {
+    db.prepare(`INSERT OR REPLACE INTO presence_now (mac, state, since, checked_at, ip, method, verify) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(mac, state, ts, ts, ip, method, verify);
+    db.prepare(`INSERT OR IGNORE INTO presence_log (mac, ts, state, method) VALUES (?, ?, ?, ?)`).run(mac, ts, state, method);
+  } else {
+    db.prepare(`UPDATE presence_now SET checked_at = ?, ip = ?, method = ?, verify = ? WHERE mac = ?`).run(ts, ip, method, verify, mac);
+  }
+  return changed;
+}
+
+export function presenceLog(mac, since) {
+  return db.prepare(`SELECT ts, state, method FROM presence_log WHERE mac = ? AND ts >= ? ORDER BY ts`).all(String(mac).toLowerCase(), since);
+}
+
+export function prunePresence(before) {
+  db.prepare(`DELETE FROM presence_log WHERE ts < ?`).run(before);
 }

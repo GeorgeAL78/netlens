@@ -1,7 +1,7 @@
 {
   "name": "netlens",
   "private": true,
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "NetLens — a dashboard for UniFi networks: traffic, Wi-Fi quality, equipment health and security for a UniFi network, as a self-hosted web app",
   "type": "module",
   "scripts": {

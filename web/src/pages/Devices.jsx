@@ -60,15 +60,35 @@ function NameEditor({ d, onSaved, onCancel, autoFocus = false }) {
 }
 
 // UniFi says offline, but is it on the network? A ping, then a few common ports (UU-C-122).
+const VERIFY = { match: "MAC verified", unknown: "address not verified", mismatch: "another device has its address" };
+
 function CheckResult({ d, result, onCheck }) {
   if (!d.ip) return null;
+  // Nothing checked by hand this visit: show what the 5-minute background check found.
+  if (!result && d.presence && d.presence.state !== "online") {
+    const p = d.presence;
+    return (
+      <span className="stack" style={{ gap: 2 }}>
+        {p.state === "lan" ? (
+          <span className="ok small" title={`${p.method || ""} at ${p.ip || d.ip}`}>on the network since {ago(p.since)}</span>
+        ) : (
+          <span className="dim small" title={p.method || ""}>{p.verify === "mismatch" ? VERIFY.mismatch : "no answer"} · checked {ago(p.checkedAt)}</span>
+        )}
+        {p.state === "lan" && p.verify && <span className="dim small">{VERIFY[p.verify]}</span>}
+        <button className="linkish small" onClick={onCheck}>Check now</button>
+      </span>
+    );
+  }
   if (result === "checking") return <span className="dim small">checking…</span>;
   if (result?.error) return <span className="bad small" title={result.error}>check failed</span>;
   if (result)
     return result.up ? (
-      <span className="ok small" title={`Answered at ${d.ip}`}>answers on the network · {result.method}{result.ms != null ? ` ${result.ms} ms` : ""}</span>
+      <span className="stack" style={{ gap: 2 }}>
+        <span className="ok small" title={`Answered at ${d.ip}`}>answers on the network · {result.method}{result.ms != null ? ` ${result.ms} ms` : ""}</span>
+        {result.verify && <span className="dim small">{VERIFY[result.verify]}</span>}
+      </span>
     ) : (
-      <span className="dim small" title={`No answer at ${d.ip}`}>no answer — off or asleep</span>
+      <span className="dim small" title={`No answer at ${d.ip}`}>{result.verify === "mismatch" ? VERIFY.mismatch : "no answer — off or asleep"}</span>
     );
   return (
     <button className="linkish small" onClick={onCheck}>
@@ -134,7 +154,9 @@ export default function Devices({ route }) {
           <h1>Your devices</h1>
           {data && (
             <span className="muted">
-              {list.length} known to UniFi · {list.filter((d) => d.online).length} online now · names are saved in UniFi
+              {list.length} known to UniFi · {list.filter((d) => d.online).length} online now
+              {list.some((d) => !d.online && d.presence?.state === "lan") ? ` · ${list.filter((d) => !d.online && d.presence?.state === "lan").length} more answer on the network` : ""}
+              {data.checks?.lastRunAt ? ` · offline devices checked every 5 min, last ${ago(data.checks.lastRunAt)}` : ""}
             </span>
           )}
         </div>
@@ -182,7 +204,7 @@ export default function Devices({ route }) {
             <div className="rows">
               {all.map((d) => (
                 <div key={d.mac} id={`dev-${d.mac}`} className={`row ${route.query.mac === d.mac ? "sel" : ""}`} style={{ gridTemplateColumns: "14px minmax(0, 1.2fr) minmax(0, 1fr) 170px minmax(150px, auto)", cursor: "default", alignItems: "center" }}>
-                  <span className={`status-dot ${d.online ? "" : "off"}`} title={d.online ? "online" : "offline"} />
+                  <span className={`status-dot ${d.online ? "" : d.presence?.state === "lan" ? "warn" : "off"}`} title={d.online ? "online in UniFi" : d.presence?.state === "lan" ? "on the network, not in UniFi" : "offline"} />
                   <span className="stack">
                     <a href={href("device", d.mac)} className="ellipsis">{d.label}</a>
                     <span className="dim small ellipsis">{vendorText(d)}</span>

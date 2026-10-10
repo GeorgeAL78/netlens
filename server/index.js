@@ -15,6 +15,7 @@ import * as cache from "./cache.js";
 import * as flowstore from "./flowstore.js";
 import * as views from "./views.js";
 import * as probe from "./probe.js";
+import * as presence from "./presence.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
 import * as health from "./health.js";
@@ -1663,6 +1664,7 @@ app.get("/api/devices", async (_req, res) => {
     const [known, online] = await Promise.all([unifi.getKnownClients(), unifi.listConnectedClients().catch(() => [])]);
     const onlineMacs = new Set(online.map((c) => c.mac));
     const nameOf = insights.names();
+    const seen = db.presenceNow();
     const devices = known
       .filter((u) => u.mac)
       .map((u) => {
@@ -1686,10 +1688,12 @@ app.get("/api/devices", async (_req, res) => {
           band: u.is_wired ? null : RADIO[u.last_radio] || null,
           network: u.last_connection_network_name || null,
           blocked: Boolean(u.blocked),
+          // Background presence (UU-C-124): online in UniFi, answering on the LAN, or off.
+          presence: seen.get(mac) || null,
         };
       })
       .sort((a, b) => (b.firstSeen || 0) - (a.firstSeen || 0));
-    res.json({ devices, ts: now });
+    res.json({ devices, ts: now, checks: { ...presence.state } });
   } catch (err) {
     sendError(res, "GET /api/devices", err);
   }
@@ -1709,6 +1713,17 @@ app.post("/api/devices/:mac/name", async (req, res) => {
   }
 });
 
+// A device's online / on-network / off changes, newest last (UU-C-124).
+app.get("/api/devices/:mac/presence", (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 7));
+    const mac = String(req.params.mac || "").toLowerCase();
+    res.json({ mac, days, now: db.presenceNow().get(mac) || null, log: db.presenceLog(mac, Date.now() - days * 86400e3) });
+  } catch (err) {
+    sendError(res, "GET /api/devices/:mac/presence", err);
+  }
+});
+
 // Network check for one device (UU-C-122): its last address from UniFi, LAN only.
 app.post("/api/devices/:mac/probe", async (req, res) => {
   try {
@@ -1717,7 +1732,12 @@ app.post("/api/devices/:mac/probe", async (req, res) => {
     const ip = user?.last_ip || user?.fixed_ip || db.listStoredClients().find((c) => String(c.mac).toLowerCase() === mac)?.ip || null;
     if (!ip) return res.status(404).json({ error: "No known address for this device." });
     if (!probe.isPrivateIp(ip)) return res.status(400).json({ error: "Only addresses on your own network are checked." });
-    res.json({ mac, ip, ...(await probe.probe(ip)), checkedAt: Date.now() });
+    const online = await unifi.listConnectedClients().catch(() => []);
+    const ipOwner = new Map(online.filter((c) => c.ip).map((c) => [c.ip, c.mac]));
+    const r = await probe.probeDevice(ip, mac, { ipOwner });
+    const checkedAt = Date.now();
+    if (!online.some((c) => c.mac === mac)) db.savePresence(mac, r.up ? "lan" : "off", { ts: checkedAt, ip, method: r.method, verify: r.verify });
+    res.json({ mac, ip, ...r, checkedAt });
   } catch (err) {
     sendError(res, "POST /api/devices/:mac/probe", err);
   }
@@ -1842,6 +1862,12 @@ async function snapshot() {
     await health.refreshDaily(zonedDateKey).catch((err) => logError("health refreshDaily", err));
     await health.refreshLocalNames().catch((err) => logError("health refreshLocalNames", err));
     await health.refreshIpsDetails().catch((err) => logError("health refreshIpsDetails", err));
+    // Known devices (new ones appear here) and network checks of the offline ones, in the
+    // background — the snapshot does not wait, and an unfinished run skips the next (UU-C-124).
+    unifi
+      .getKnownClients()
+      .then((known) => presence.refresh({ known, online, now: end }))
+      .catch((err) => logError("presence", err));
     // Alert rules against today's fresh numbers (UU-C-114).
     try {
       evaluateAlerts(end);

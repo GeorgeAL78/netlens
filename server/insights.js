@@ -299,7 +299,27 @@ export function wiredList(start, end) {
     const speeds = list.map(mbps).filter((v) => v != null);
     let changes = 0;
     for (let i = 1; i < list.length; i += 1) if (mbps(list[i]) != null && mbps(list[i - 1]) != null && mbps(list[i]) !== mbps(list[i - 1])) changes += 1;
+    // Stretches below the device's top speed (UU-C-125): a sleeping PC drops its link to
+    // 10 Mbps on purpose (Wake-on-LAN), so the caller compares them with traffic.
+    const top = speeds.length ? Math.max(...speeds) : null;
+    const lowSpans = [];
+    for (let i = 0; i < list.length; i += 1) {
+      const v = mbps(list[i]);
+      if (v == null || top == null || v >= top) continue;
+      const cur = lowSpans[lowSpans.length - 1];
+      if (cur && cur.lastIdx === i - 1) {
+        cur.lastIdx = i;
+        cur.speed = Math.min(cur.speed, v);
+      } else lowSpans.push({ from: list[i].ts, lastIdx: i, speed: v });
+    }
+    for (const sp of lowSpans) {
+      sp.to = list[sp.lastIdx + 1]?.ts ?? Math.min(end, list[sp.lastIdx].ts + SAMPLE_MIN * 60e3);
+      sp.recovered = Boolean(list[sp.lastIdx + 1]);
+      delete sp.lastIdx;
+    }
     return {
+      topSpeed: top,
+      lowSpans,
       mac,
       name: nameOf(mac),
       switch: last.ap_mac ? nameOf(last.ap_mac) : null,
