@@ -62,6 +62,15 @@ function check(label, r, { appSelected }) {
     problems.push(`local services ${MB(sum(r.localServices, (l) => l.bytes))} > localBytes ${MB(r.localBytes)}`);
   }
   if (r.basis === "flows" && r.localBytes) problems.push("flow-basis screen also reports localBytes");
+  // Time in use (UU-C-108): sessions merged on the clock — never longer than the period, never
+  // longer than the listed sessions back to back, never zero when there are sessions.
+  if (r.time) {
+    const span = r.end - r.start;
+    const listedMs = sum(r.sessions, (s) => s.end - s.start);
+    if (r.time.inUseMs > span + 1000) problems.push(`time in use ${r.time.inUseMs} ms > period ${span} ms`);
+    if (r.time.sessions === r.sessionCount && r.sessions.length === r.sessionCount && r.time.inUseMs > listedMs + 1000) problems.push("time in use > its sessions back to back");
+    if (r.time.sessions > 0 && !(r.time.inUseMs > 0)) problems.push("sessions but no time in use");
+  }
   // UniFi daily totals fill only days with lost time, never per app or category (UU-C-057).
   if (r.timeline.some((b) => b.fillBytes > 0 && !(b.lost > 0))) problems.push("daily totals drawn on a day with no lost time");
   if (r.dailyFill?.totalBytes && (r.basis !== "dpi" || appSelected)) problems.push("daily totals on an app or flow screen");

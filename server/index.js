@@ -1395,6 +1395,20 @@ app.get("/api/report", async (req, res) => {
     // Shown, never hidden, so chart + unplaced = header.
     const unplacedBytes = Math.max(0, totals.bytes - chartBytes);
 
+    // Time in use (UU-C-108): every session of the selection merged on the clock, so two
+    // overlapping sessions count once. Background trickle never opens a session.
+    let inUseMs = 0;
+    {
+      let cur = null;
+      for (const s of [...rawSessions].sort((a, b) => a.start - b.start)) {
+        if (cur && s.start <= cur.end) cur.end = Math.max(cur.end, s.end);
+        else {
+          if (cur) inUseMs += cur.end - cur.start;
+          cur = { start: s.start, end: s.end };
+        }
+      }
+      if (cur) inUseMs += cur.end - cur.start;
+    }
     const listed = rawSessions.filter((s) => s.bytes >= SESSION_LIST_MIN);
     const small = rawSessions.filter((s) => s.bytes < SESSION_LIST_MIN);
     const sessionCount = listed.length;
@@ -1590,6 +1604,7 @@ app.get("/api/report", async (req, res) => {
       sessions,
       sessionCount,
       sessionsOmitted,
+      time: { inUseMs, sessions: rawSessions.length },
       apps,
       appChoices,
       categories,

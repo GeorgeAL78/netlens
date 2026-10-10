@@ -1,4 +1,4 @@
-import { bytes, clock, dayLabel, go, href, todayKey, useApi } from "../lib.js";
+import { bytes, clock, dayLabel, duration, go, href, todayKey, useApi } from "../lib.js";
 import { Bars, DayStep, Failed, Loading, Meter } from "../ui.jsx";
 
 // Usage (UU-C-087): apps, categories, devices and sessions for a day, an hour or a range.
@@ -130,16 +130,29 @@ export default function Usage({ route }) {
               <span className="value">{bytes(r.totals.bytes)}</span>
               <span className="sub">↓ {bytes(r.totals.rx)} · ↑ {bytes(r.totals.tx)}</span>
             </div>
-            <div className="card tight stat">
-              <span className="label">{q.mac ? "Busiest app" : "Busiest device"}</span>
-              <span className="value small ellipsis">{(q.mac ? r.apps[0]?.app : r.clients[0]?.name) || "—"}</span>
-              <span className="sub">{bytes(q.mac ? r.apps[0]?.totalBytes : r.clients[0]?.totalBytes)}</span>
-            </div>
-            <div className="card tight stat">
-              <span className="label">Busiest app</span>
-              <span className="value small ellipsis">{r.apps[0]?.app || "—"}</span>
-              <span className="sub">{r.apps[0] ? `${bytes(r.apps[0].totalBytes)} · ${r.apps[0].category}` : ""}</span>
-            </div>
+            {/* Filtered to a device or an app: how long it was in use (UU-C-108). The busiest
+                device / app cards drop out when the filter already names it. */}
+            {(q.mac || q.app) && r.time && (
+              <div className="card tight stat">
+                <span className="label">Time in use</span>
+                <span className="value">{r.time.inUseMs ? duration(r.time.inUseMs / 1000) : "—"}</span>
+                <span className="sub">{r.time.sessions} session{r.time.sessions === 1 ? "" : "s"}, overlaps counted once</span>
+              </div>
+            )}
+            {!q.mac && (
+              <div className="card tight stat">
+                <span className="label">Busiest device</span>
+                <span className="value small ellipsis">{r.clients[0]?.name || "—"}</span>
+                <span className="sub">{bytes(r.clients[0]?.totalBytes)}</span>
+              </div>
+            )}
+            {!q.app && (
+              <div className="card tight stat">
+                <span className="label">Busiest app</span>
+                <span className="value small ellipsis">{r.apps[0]?.app || "—"}</span>
+                <span className="sub">{r.apps[0] ? `${bytes(r.apps[0].totalBytes)} · ${r.apps[0].category}` : ""}</span>
+              </div>
+            )}
             <div className="card tight stat">
               <span className="label">Inside your network</span>
               <span className="value">{bytes(r.localBytes)}</span>
