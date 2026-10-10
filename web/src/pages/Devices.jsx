@@ -59,12 +59,51 @@ function NameEditor({ d, onSaved, onCancel, autoFocus = false }) {
   );
 }
 
+// UniFi says offline, but is it on the network? A ping, then a few common ports (UU-C-122).
+function CheckResult({ d, result, onCheck }) {
+  if (!d.ip) return null;
+  if (result === "checking") return <span className="dim small">checking…</span>;
+  if (result?.error) return <span className="bad small" title={result.error}>check failed</span>;
+  if (result)
+    return result.up ? (
+      <span className="ok small" title={`Answered at ${d.ip}`}>answers on the network · {result.method}{result.ms != null ? ` ${result.ms} ms` : ""}</span>
+    ) : (
+      <span className="dim small" title={`No answer at ${d.ip}`}>no answer — off or asleep</span>
+    );
+  return (
+    <button className="linkish small" onClick={onCheck}>
+      Check on network
+    </button>
+  );
+}
+
 export default function Devices({ route }) {
   const { data, error, loading, reload } = useApi("/api/devices");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState(route.query.mac ? `all:${route.query.mac}` : null); // "new:<mac>" or "all:<mac>"
   const [showOld, setShowOld] = useState(false);
   const [saved, setSaved] = useState({}); // names set this visit, shown before the reload lands
+  // Network checks (UU-C-122): mac -> "checking" | { up, method, ms }.
+  const [checks, setChecks] = useState({});
+  const [checkingAll, setCheckingAll] = useState(false);
+  async function check(d) {
+    setChecks((m) => ({ ...m, [d.mac]: "checking" }));
+    try {
+      const r = await api(`/api/devices/${encodeURIComponent(d.mac)}/probe`, { method: "POST" });
+      setChecks((m) => ({ ...m, [d.mac]: r }));
+    } catch (err) {
+      setChecks((m) => ({ ...m, [d.mac]: { error: err.message || String(err) } }));
+    }
+  }
+  async function checkAll(list) {
+    setCheckingAll(true);
+    const queue = list.filter((d) => !d.online && d.ip);
+    const worker = async () => {
+      while (queue.length) await check(queue.shift());
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]); // four at a time
+    setCheckingAll(false);
+  }
 
   const list = useMemo(() => (data?.devices || []).map((d) => (saved[d.mac] != null ? { ...d, name: saved[d.mac] || null, label: saved[d.mac] || d.hostname || d.mac } : d)), [data, saved]);
   const fresh = list.filter((d) => d.isNew);
@@ -135,11 +174,14 @@ export default function Devices({ route }) {
           <div className="card">
             <div className="card-head" style={{ gap: 12, flexWrap: "wrap" }}>
               <h2>All devices</h2>
+              <button className="btn small" disabled={checkingAll} onClick={() => checkAll(all)} title="Ping or knock on every offline device in this list">
+                {checkingAll ? "Checking…" : "Check offline devices"}
+              </button>
               <input className="field" style={{ marginLeft: "auto", minWidth: 220 }} placeholder="Search name, IP, MAC, maker" aria-label="Search devices" value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
             <div className="rows">
               {all.map((d) => (
-                <div key={d.mac} id={`dev-${d.mac}`} className={`row ${route.query.mac === d.mac ? "sel" : ""}`} style={{ gridTemplateColumns: "14px minmax(0, 1.2fr) minmax(0, 1fr) 120px minmax(150px, auto)", cursor: "default", alignItems: "center" }}>
+                <div key={d.mac} id={`dev-${d.mac}`} className={`row ${route.query.mac === d.mac ? "sel" : ""}`} style={{ gridTemplateColumns: "14px minmax(0, 1.2fr) minmax(0, 1fr) 170px minmax(150px, auto)", cursor: "default", alignItems: "center" }}>
                   <span className={`status-dot ${d.online ? "" : "off"}`} title={d.online ? "online" : "offline"} />
                   <span className="stack">
                     <a href={href("device", d.mac)} className="ellipsis">{d.label}</a>
@@ -149,7 +191,10 @@ export default function Devices({ route }) {
                     <span className="small ellipsis">{where(d)}</span>
                     <span className="dim small mono ellipsis">{d.ip || d.mac}</span>
                   </span>
-                  <span className="dim small">{d.online ? "online now" : d.lastSeen ? `seen ${ago(d.lastSeen)}` : "—"}</span>
+                  <span className="stack" style={{ gap: 2 }}>
+                    <span className="dim small">{d.online ? "online now" : d.lastSeen ? `seen ${ago(d.lastSeen)}` : "—"}</span>
+                    {!d.online && <CheckResult d={d} result={checks[d.mac]} onCheck={() => check(d)} />}
+                  </span>
                   {editing === `all:${d.mac}` ? (
                     <NameEditor d={d} onSaved={onSaved(d)} onCancel={() => setEditing(null)} autoFocus />
                   ) : (

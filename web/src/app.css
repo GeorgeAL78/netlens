@@ -64,6 +64,8 @@ button { font: inherit; color: inherit; }
 .search-results .grp { padding: 8px 10px 4px; font-size: 11px; letter-spacing: 0.04em; color: var(--dim); text-transform: uppercase; }
 .search-results a.picked { color: var(--accent-strong); }
 .finder { min-width: 300px; }
+.linkish { background: none; border: 0; padding: 0; color: var(--accent-strong); cursor: pointer; font: inherit; text-align: left; }
+.linkish:hover { text-decoration: underline; }
 .field {
   height: 38px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line-2);
   background: var(--panel); color: var(--text); font: inherit; outline: none;

@@ -1,3 +1,2 @@
-### Changed
-- Devices: new devices show a Rename button like the rest instead of an open name box.
-- Devices: the name box closes without saving on Cancel, Esc, or a click outside it.
+### Added
+- Devices: "Check on network" for any device UniFi shows as offline, and "Check offline devices" for the whole list. NetLens pings the device's last address and, if pings are blocked, knocks on a few common ports — so a device that is on your network but not using the internet shows as "answers on the network". Only addresses on your own network are checked.

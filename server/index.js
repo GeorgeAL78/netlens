@@ -14,6 +14,7 @@ import * as unifi from "./unifi.js";
 import * as cache from "./cache.js";
 import * as flowstore from "./flowstore.js";
 import * as views from "./views.js";
+import * as probe from "./probe.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
 import * as health from "./health.js";
@@ -1705,6 +1706,20 @@ app.post("/api/devices/:mac/name", async (req, res) => {
     res.json({ ok: true, mac, name });
   } catch (err) {
     sendError(res, "POST /api/devices/:mac/name", err);
+  }
+});
+
+// Network check for one device (UU-C-122): its last address from UniFi, LAN only.
+app.post("/api/devices/:mac/probe", async (req, res) => {
+  try {
+    const mac = String(req.params.mac || "").toLowerCase();
+    const user = (await unifi.getKnownClients()).find((u) => String(u.mac || "").toLowerCase() === mac);
+    const ip = user?.last_ip || user?.fixed_ip || db.listStoredClients().find((c) => String(c.mac).toLowerCase() === mac)?.ip || null;
+    if (!ip) return res.status(404).json({ error: "No known address for this device." });
+    if (!probe.isPrivateIp(ip)) return res.status(400).json({ error: "Only addresses on your own network are checked." });
+    res.json({ mac, ip, ...(await probe.probe(ip)), checkedAt: Date.now() });
+  } catch (err) {
+    sendError(res, "POST /api/devices/:mac/probe", err);
   }
 });
 
