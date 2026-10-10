@@ -61,6 +61,11 @@ button { font: inherit; color: inherit; }
   background: var(--panel); color: var(--text); font: inherit; outline: none;
 }
 .search input:focus { border-color: var(--accent-strong); }
+.picker {
+  height: 38px; max-width: 260px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line-2);
+  background: var(--panel); color: var(--text); font: inherit; outline: none;
+}
+.picker:focus { border-color: var(--accent-strong); }
 .search svg { position: absolute; left: 11px; top: 11px; color: var(--dim); }
 .search-results {
   position: absolute; top: 44px; left: 0; right: 0; background: var(--panel); border: 1px solid var(--line-2);

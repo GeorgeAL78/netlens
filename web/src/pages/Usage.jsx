@@ -83,6 +83,30 @@ export default function Usage({ route }) {
             </button>
           ))}
         </div>
+        {/* Every app UniFi counted, plus the ones found only in connection records and the
+            services on your own network — the old app picker (UU-C-106). */}
+        {r?.appChoices?.length > 0 && (
+          <select className="picker" aria-label="App" value={q.app || ""} onChange={(e) => set({ app: e.target.value || null, cat: null })}>
+            <option value="">All apps</option>
+            {[
+              ["unifi", "Counted by UniFi"],
+              ["detected", "Found in connection records"],
+              ["local", "On your network"],
+            ].map(([src, label]) => {
+              const list = r.appChoices.filter((a) => a.source === src);
+              return list.length ? (
+                <optgroup key={src} label={label}>
+                  {list.map((a) => (
+                    <option key={a.value} value={a.value}>
+                      {a.app} · {bytes(a.totalBytes)}
+                    </option>
+                  ))}
+                </optgroup>
+              ) : null;
+            })}
+            {q.app && !r.appChoices.some((a) => String(a.value) === String(q.app)) && <option value={q.app}>{appLabel}</option>}
+          </select>
+        )}
         {range === "day" && <DayStep date={date} onDate={(d) => set({ d: d === todayKey() ? null : d, from: null, to: null })} />}
       </div>
 

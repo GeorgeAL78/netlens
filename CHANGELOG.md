@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.9 — 2026-10-09
+
+### Added
+- A Usage tab in the top bar.
+- Usage: an app picker again, listing apps counted by UniFi, apps found in connection records, and services on your own network.
+
 ## 2.0.8 — 2026-10-09
 
 ### Added

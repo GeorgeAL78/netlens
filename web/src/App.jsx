@@ -13,6 +13,7 @@ import Settings from "./pages/Settings.jsx";
 const TABS = [
   ["home", "Home"],
   ["day", "Day"],
+  ["usage", "Usage"], // apps, categories and the app picker (UU-C-106)
   ["network", "Network"],
   ["security", "Security"],
 ];

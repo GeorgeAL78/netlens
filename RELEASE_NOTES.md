@@ -1,2 +1,3 @@
 ### Added
-- Device page: the device's IP address that day (or the last one known, marked as such).
+- A Usage tab in the top bar.
+- Usage: an app picker again, listing apps counted by UniFi, apps found in connection records, and services on your own network.
