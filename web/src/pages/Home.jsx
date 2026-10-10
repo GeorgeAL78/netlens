@@ -13,10 +13,15 @@ const FILTERS = [
   ["security", "Security"],
   ["equipment", "Equipment"],
 ];
-const TAG = { usage: "USAGE", wifi: "WI-FI", wired: "WIRED", security: "SECURITY", device: "NEW DEVICE", equipment: "EQUIPMENT", data: "DATA" };
+const TAG = { alert: "ALERT", usage: "USAGE", wifi: "WI-FI", wired: "WIRED", security: "SECURITY", device: "NEW DEVICE", equipment: "EQUIPMENT", data: "DATA" };
 
 function actionsFor(f, date) {
   const a = [];
+  if (f.alert) {
+    a.push({ label: "Open in Usage", to: href("usage", null, { d: f.alert.day, mac: f.alert.mac, app: f.alert.app, cat: f.alert.cat }) });
+    a.push({ label: "Alerts", to: href("alerts") });
+    return a;
+  }
   if (f.span) a.push({ label: `See ${clock(f.span.from)} – ${clock(f.span.to)}`, to: href("usage", null, { d: date, from: f.span.from, to: f.span.to }) });
   if (f.mac) a.push({ label: f.kind === "wifi" ? "Signal history" : "Open device", to: href("device", f.mac, { d: date }) });
   if (f.uid) a.push({ label: "Event details", to: href("security", null, { e: f.uid }) });

@@ -8,6 +8,7 @@ import Security from "./pages/Security.jsx";
 import Device from "./pages/Device.jsx";
 import Usage from "./pages/Usage.jsx";
 import Settings from "./pages/Settings.jsx";
+import Alerts from "./pages/Alerts.jsx";
 
 // The shell of the redesigned interface (UU-C-087): one top bar — home, the three views,
 // search and settings — and the page the URL names.
@@ -17,6 +18,7 @@ const TABS = [
   ["usage", "Usage"], // apps, categories and the app picker (UU-C-106)
   ["network", "Network"],
   ["security", "Security"],
+  ["alerts", "Alerts"], // daily limits per app / device (UU-C-114)
 ];
 
 // Top-bar search (UU-C-112): devices, plus apps and categories of the last 7 days — an app or
@@ -100,6 +102,23 @@ function useVersion() {
   return v;
 }
 
+// How many alert rules fired today, for the tab's count (UU-C-114). Light: no rule is
+// re-evaluated, it only counts what the 5-minute check recorded.
+function useFiredToday(page) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const load = () => api("/api/alerts?light=1").then((d) => alive && setN(d.fired || 0)).catch(() => {});
+    load();
+    const t = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [page]);
+  return n;
+}
+
 export default function App() {
   const route = useRoute();
   const version = useVersion();
@@ -114,8 +133,10 @@ export default function App() {
     device: Device,
     usage: Usage,
     settings: Settings,
+    alerts: Alerts,
   };
   const Page = pages[route.page] || Home;
+  const fired = useFiredToday(route.page);
   // Bumped by Refresh: remounts the page so it loads everything again.
   const [refreshKey, setRefreshKey] = useState(0);
   return (
@@ -130,6 +151,7 @@ export default function App() {
           {TABS.map(([id, label]) => (
             <a key={id} href={href(id)} className={route.page === id ? "on" : ""}>
               {label}
+              {id === "alerts" && fired > 0 && <span className="count" title="Alerts that fired today">{fired}</span>}
             </a>
           ))}
         </nav>

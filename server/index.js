@@ -834,12 +834,38 @@ app.get("/api/findings", (req, res) => {
     const onlineMacs = new Map();
     for (const r of online) onlineMacs.set(r.mac, r.wired);
     const blocked = insights.threats(ctx.start, ctx.end).total;
+    // Alert rules that fired in the period lead the feed (UU-C-114).
+    let alerts = [];
+    try {
+      const rulesById = new Map(db.listAlertRules().map((r) => [r.id, r]));
+      const firstDay = zonedDateKey(ctx.start);
+      const lastDay = zonedDateKey(ctx.end - 1);
+      const amount = (metric, v) =>
+        metric === "time" ? (v >= 60 ? `${Math.floor(v / 60)}h${v % 60 ? ` ${v % 60}m` : ""}` : `${v}m`) : v >= 1e9 ? `${(v / 1e9).toFixed(1)} GB` : `${Math.round(v / 1e6)} MB`;
+      alerts = db
+        .alertEvents(firstDay)
+        .filter((e) => e.day <= lastDay && rulesById.has(e.ruleId))
+        .map((e) => {
+          const rule = rulesById.get(e.ruleId);
+          return {
+            id: `alert-${e.ruleId}-${e.day}`,
+            kind: "alert",
+            level: "warn",
+            ts: e.firedAt,
+            title: `${ruleLabel(rule)} passed ${amount(rule.metric, rule.limit)}${rule.metric === "time" ? " of use" : ""}`,
+            text: `${amount(rule.metric, e.value)} when NetLens checked at ${zonedClock(e.firedAt)}.`,
+            alert: { mac: rule.mac, app: rule.app, cat: rule.cat, day: e.day },
+          };
+        });
+    } catch (err) {
+      logError("findings alerts", err); // never let alerts take the feed down
+    }
     res.json({
       date: ctx.date,
       days: ctx.days || 1,
       today: ctx.today,
       tz,
-      findings: list,
+      findings: [...alerts, ...list],
       now: {
         internet: wan ? { status: wan.status, isp: wan.isp, latency: wan.latency } : null,
         online: { total: onlineMacs.size, wired: [...onlineMacs.values()].filter(Boolean).length },
@@ -1034,17 +1060,19 @@ app.post("/api/log", (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/report", async (req, res) => {
-  try {
-    const mac = (req.query.mac || "").toLowerCase();
-    const category = req.query.category || "all";
-    const rawAppId = String(req.query.appId || "all");
+// The usage report (UU-C-114: a function so alert rules reuse exactly what Usage shows).
+// Synchronous and UniFi-free by rule — see scripts/check-report-isolation.mjs.
+function buildReport(query) {
+  {
+    const mac = (query.mac || "").toLowerCase();
+    const category = query.category || "all";
+    const rawAppId = String(query.appId || "all");
     // Two kinds of selection: a UniFi DPI application id, or "svc:<name>" for a service
     // only our own flow classification knows about (steamcontent.com, real-debrid.com).
     const svcName = rawAppId.startsWith("svc:") ? rawAppId.slice(4) : null;
     const appId = svcName ? "all" : rawAppId;
     const appSelected = rawAppId !== "all";
-    const range = rangeFor(req.query);
+    const range = rangeFor(query);
     const { start, end, grain } = range;
     // db.dpiMaps(), not ensureDpi(): the latter calls unifi.listDpiCatalog() when the
     // local catalog is >12 h old, which would make a report request hit the console
@@ -1570,7 +1598,7 @@ app.get("/api/report", async (req, res) => {
       .sort((a, b) => b.totalBytes - a.totalBytes)
       .slice(0, APP_CHOICE_LIMIT);
 
-    res.json({
+    return {
       start,
       end,
       grain,
@@ -1609,9 +1637,99 @@ app.get("/api/report", async (req, res) => {
       appChoices,
       categories,
       clients,
-    });
+    };
+  }
+}
+
+app.get("/api/report", (req, res) => {
+  try {
+    res.json(buildReport(req.query));
   } catch (err) {
     sendError(res, "GET /api/report", err);
+  }
+});
+
+// ---- alerts (UU-C-114) ---------------------------------------------------------------------
+// A rule: a device (or every device), an app or category (or everything), and a daily limit
+// on time in use (minutes) or data (bytes). Checked from the same report Usage shows, so an
+// alert never disagrees with the screen; reads only SQLite and the cache (no UniFi).
+function ruleLabel(r) {
+  const what = r.appLabel || r.catLabel || "All traffic";
+  const who = r.macLabel || (r.mac ? r.mac : "any device");
+  return `${what} on ${who}`;
+}
+
+function evaluateAlerts(now = Date.now()) {
+  const day = zonedDateKey(now);
+  return db.listAlertRules().map((rule) => {
+    let value = 0;
+    try {
+      const r = buildReport({ period: "today", mac: rule.mac || "", appId: rule.app || "all", category: rule.cat || "all" });
+      value = rule.metric === "time" ? Math.round((r.time?.inUseMs || 0) / 60000) : r.totals?.bytes || 0;
+    } catch (err) {
+      logError("alerts evaluate", err);
+    }
+    const over = rule.enabled && value >= rule.limit;
+    if (over) db.recordAlertEvent(rule.id, day, value, now);
+    return { ...rule, label: ruleLabel(rule), today: { day, value, over } };
+  });
+}
+
+app.get("/api/alerts", (req, res) => {
+  try {
+    // ?light=1 — the tab's count: today's recorded firings, no rule re-evaluated.
+    if (req.query.light) {
+      const today = zonedDateKey(Date.now());
+      return res.json({ fired: db.alertEvents(today).filter((e) => e.day === today).length });
+    }
+    const rules = evaluateAlerts();
+    const byId = new Map(rules.map((r) => [r.id, r]));
+    const since = zonedDateKey(Date.now() - 30 * 86400e3);
+    const events = db.alertEvents(since).map((e) => ({ ...e, label: byId.get(e.ruleId)?.label || "deleted rule", metric: byId.get(e.ruleId)?.metric, limit: byId.get(e.ruleId)?.limit }));
+    res.json({ rules, events, today: zonedDateKey(Date.now()) });
+  } catch (err) {
+    sendError(res, "GET /api/alerts", err);
+  }
+});
+
+app.post("/api/alerts", (req, res) => {
+  try {
+    const b = req.body || {};
+    const metric = b.metric === "bytes" ? "bytes" : b.metric === "time" ? "time" : null;
+    const limit = Math.round(Number(b.limit));
+    if (!metric || !(limit > 0)) return res.status(400).json({ error: "Choose time or data and a limit above zero." });
+    const str = (v, n = 200) => (v == null || v === "" ? null : String(v).slice(0, n));
+    const id = db.addAlertRule({
+      mac: str(b.mac, 17)?.toLowerCase() || null,
+      macLabel: str(b.macLabel),
+      app: str(b.app),
+      appLabel: str(b.appLabel),
+      cat: b.app ? null : str(b.cat),
+      catLabel: b.app ? null : str(b.catLabel),
+      metric,
+      limit,
+    });
+    res.json({ ok: true, id });
+  } catch (err) {
+    sendError(res, "POST /api/alerts", err);
+  }
+});
+
+app.post("/api/alerts/:id", (req, res) => {
+  try {
+    const n = db.setAlertRuleEnabled(Number(req.params.id), Boolean(req.body?.enabled));
+    res.status(n ? 200 : 404).json({ ok: Boolean(n) });
+  } catch (err) {
+    sendError(res, "POST /api/alerts/:id", err);
+  }
+});
+
+app.delete("/api/alerts/:id", (req, res) => {
+  try {
+    const n = db.deleteAlertRule(Number(req.params.id));
+    res.status(n ? 200 : 404).json({ ok: Boolean(n) });
+  } catch (err) {
+    sendError(res, "DELETE /api/alerts/:id", err);
   }
 });
 
@@ -1650,6 +1768,12 @@ async function snapshot() {
     await health.refreshDaily(zonedDateKey).catch((err) => logError("health refreshDaily", err));
     await health.refreshLocalNames().catch((err) => logError("health refreshLocalNames", err));
     await health.refreshIpsDetails().catch((err) => logError("health refreshIpsDetails", err));
+    // Alert rules against today's fresh numbers (UU-C-114).
+    try {
+      evaluateAlerts(end);
+    } catch (err) {
+      logError("alerts", err);
+    }
     db.metaSet("last_snapshot", end);
     console.log(`snapshot ${new Date(end).toISOString()} clients=${online.length} buckets=+${rows}`);
   } catch (err) {

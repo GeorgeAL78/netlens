@@ -136,6 +136,11 @@ export default function Usage({ route }) {
           {q.app && <span className="chip">App: {appLabel}<button aria-label="Remove app filter" onClick={() => set({ app: null })}>×</button></span>}
           {q.cat && <span className="chip">Category: {catLabel}<button aria-label="Remove category filter" onClick={() => set({ cat: null })}>×</button></span>}
           {q.mac && <a className="btn small" href={href("device", q.mac, { d: q.d })}>Open device</a>}
+          {(q.mac || q.app || q.cat) && (
+            <a className="btn small" href={href("alerts", null, { mac: q.mac, macLabel: device, app: q.app, appLabel: appLabel, cat: q.cat, catLabel: catLabel })}>
+              Alert me…
+            </a>
+          )}
         </div>
       )}
 

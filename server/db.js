@@ -103,6 +103,27 @@ db.exec(`
   -- Names for local MACs and IPs that are not current clients (UU-F-052): UniFi devices by
   -- every interface MAC and network address, and known (also offline) clients. Rebuilt
   -- from UniFi by health.refreshLocalNames; read by the report to name LAN destinations.
+  -- Alerts (UU-C-114): "YouTube on the iPad over 2 h a day". A rule fires at most once a day.
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mac TEXT,
+    mac_label TEXT,
+    app TEXT,
+    app_label TEXT,
+    cat TEXT,
+    cat_label TEXT,
+    metric TEXT NOT NULL,
+    limit_value INTEGER NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS alert_events (
+    rule_id INTEGER NOT NULL,
+    day TEXT NOT NULL,
+    value INTEGER NOT NULL,
+    fired_at INTEGER NOT NULL,
+    PRIMARY KEY (rule_id, day)
+  );
   CREATE TABLE IF NOT EXISTS local_names (
     key TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -317,11 +338,9 @@ export function metaSet(key, value) {
   setMeta.run(key, String(value));
 }
 
-try {
-  db.exec(`DROP TABLE IF EXISTS alert_events; DROP TABLE IF EXISTS alert_rules;`);
-} catch {
-  /* ignore */
-}
+// (Until UU-C-114 the tables alert_events / alert_rules of a long-removed feature were dropped
+// here on every start; every install has long since lost them, and the names now belong to
+// the new alerts, so the drop is gone.)
 
 export function searchApps(query, limit = 40) {
   if (query) {
@@ -603,4 +622,50 @@ export function queryDailyDevice(firstDay, lastDay, mac) {
 
 export function pruneDailyDevice(beforeDay) {
   db.prepare(`DELETE FROM daily_device WHERE day < ?`).run(beforeDay);
+}
+
+// ---- alerts (UU-C-114) ---------------------------------------------------------------------
+const ruleRow = (r) => ({
+  id: r.id,
+  mac: r.mac,
+  macLabel: r.mac_label,
+  app: r.app,
+  appLabel: r.app_label,
+  cat: r.cat,
+  catLabel: r.cat_label,
+  metric: r.metric,
+  limit: r.limit_value,
+  enabled: Boolean(r.enabled),
+  createdAt: r.created_at,
+});
+
+export function listAlertRules() {
+  return db.prepare(`SELECT * FROM alert_rules ORDER BY id`).all().map(ruleRow);
+}
+
+export function addAlertRule(r) {
+  const info = db
+    .prepare(`INSERT INTO alert_rules (mac, mac_label, app, app_label, cat, cat_label, metric, limit_value, enabled, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`)
+    .run(r.mac || null, r.macLabel || null, r.app || null, r.appLabel || null, r.cat || null, r.catLabel || null, r.metric, r.limit, Date.now());
+  return Number(info.lastInsertRowid);
+}
+
+export function setAlertRuleEnabled(id, enabled) {
+  return db.prepare(`UPDATE alert_rules SET enabled = ? WHERE id = ?`).run(enabled ? 1 : 0, id).changes;
+}
+
+export function deleteAlertRule(id) {
+  db.prepare(`DELETE FROM alert_events WHERE rule_id = ?`).run(id);
+  return db.prepare(`DELETE FROM alert_rules WHERE id = ?`).run(id).changes;
+}
+
+// Once per rule per day; a later, higher reading the same day does not fire again.
+export function recordAlertEvent(ruleId, day, value, firedAt) {
+  return db.prepare(`INSERT OR IGNORE INTO alert_events (rule_id, day, value, fired_at) VALUES (?, ?, ?, ?)`).run(ruleId, day, Math.round(value), firedAt).changes;
+}
+
+export function alertEvents(sinceDay) {
+  return db
+    .prepare(`SELECT rule_id AS ruleId, day, value, fired_at AS firedAt FROM alert_events WHERE day >= ? ORDER BY fired_at DESC`)
+    .all(sinceDay);
 }

@@ -33,11 +33,14 @@ if (start < 0) {
   console.error("check-report-isolation: could not find the /api/report handler");
   process.exit(2);
 }
-const body = sliceBalanced(start);
+// Since UU-C-114 the handler is a thin wrapper over buildReport(), which alert checks reuse;
+// both must stay synchronous and UniFi-free.
+const builder = src.indexOf("function buildReport(");
+const body = sliceBalanced(start) + (builder >= 0 ? sliceBalanced(builder) : "");
 
 const problems = [];
 const awaits = (body.match(/\bawait\b/g) || []).length;
-if (awaits) problems.push(`${awaits} await(s) in the handler — it should be fully synchronous`);
+if (awaits) problems.push(`${awaits} await(s) in the handler / buildReport — the report must be fully synchronous`);
 if (/\bunifi\./.test(body)) problems.push("handler references unifi.* directly");
 
 for (const name of new Set([...body.matchAll(/\b([a-zA-Z_$][\w$]*)\s*\(/g)].map((m) => m[1]))) {
