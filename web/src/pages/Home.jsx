@@ -15,14 +15,17 @@ const FILTERS = [
 ];
 const TAG = { alert: "ALERT", usage: "USAGE", wifi: "WI-FI", wired: "WIRED", security: "SECURITY", device: "NEW DEVICE", equipment: "EQUIPMENT", data: "DATA" };
 
-function actionsFor(f, date) {
+function actionsFor(f, date, days) {
   const a = [];
+  // Usage has 7 / 30 / 90 days: a 3- or 14-day view opens the next larger one.
+  if (f.list) return [{ label: "Open in Usage", to: href("usage", null, days ? { r: Number(days) <= 7 ? "7d" : "30d" } : { d: date }) }];
   if (f.alert) {
     a.push({ label: "Open in Usage", to: href("usage", null, { d: f.alert.day, mac: f.alert.mac, app: f.alert.app, cat: f.alert.cat }) });
     a.push({ label: "Alerts", to: href("alerts") });
     return a;
   }
-  if (f.span) a.push({ label: `See ${clock(f.span.from)} – ${clock(f.span.to)}`, to: href("usage", null, { d: date, from: f.span.from, to: f.span.to }) });
+  // The burst's own day, which in a 3–30 day view is not necessarily today.
+  if (f.span) a.push({ label: `See ${clock(f.span.from)} – ${clock(f.span.to)}`, to: href("usage", null, { d: new Date(f.span.from).toLocaleDateString("en-CA"), from: f.span.from, to: f.span.to }) });
   if (f.mac) a.push({ label: f.kind === "wifi" ? "Signal history" : "Open device", to: href("device", f.mac, { d: date }) });
   if (f.kind === "device" && f.mac) a.push({ label: "Name it", to: href("devices", null, { mac: f.mac }) }); // UU-C-118
   if (f.uid) a.push({ label: "Event details", to: href("security", null, { e: f.uid }) });
@@ -102,18 +105,33 @@ export default function Home({ route }) {
                 </div>
                 <h3>{f.title}</h3>
                 {f.text && <p>{f.text}</p>}
+                {f.list && (
+                  <div className="rows">
+                    {f.list.map((x, i) => (
+                      <div key={i} className="row" style={{ gridTemplateColumns: "22px minmax(0, 1fr) auto", cursor: "default" }}>
+                        <span className="dim small mono">{i + 1}</span>
+                        <span className="stack">
+                          {x.mac ? <a href={href("device", x.mac, { d: date })} className="ellipsis">{x.label}</a> : <span className="ellipsis">{x.label}</span>}
+                          {x.sub && <span className="dim small ellipsis">{x.sub}</span>}
+                        </span>
+                        <span className="mono small">{x.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {f.hourly && (
                   <Bars
                     short
                     items={f.hourly.map((v, i) => ({
                       value: v,
-                      tip: `${String(i).padStart(2, "0")}:00 · ${bytes(v)}`,
-                      color: f.span && new Date(f.span.from).getHours() === i ? "var(--cell-5)" : "var(--cell-2)",
+                      // One bar per hour for a day, per day for a range (UU-C-127).
+                      tip: f.barDays ? `day ${i + 1} of ${f.barDays} · ${bytes(v)}` : `${String(i).padStart(2, "0")}:00 · ${bytes(v)}`,
+                      color: !f.barDays && f.span && new Date(f.span.from).getHours() === i ? "var(--cell-5)" : "var(--cell-2)",
                     }))}
                   />
                 )}
                 <div className="chips">
-                  {actionsFor(f, date).map((a) => (
+                  {actionsFor(f, date, days).map((a) => (
                     <a key={a.label} className="btn small" href={a.to}>
                       {a.label}
                     </a>

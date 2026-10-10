@@ -187,11 +187,117 @@ export function networkMap({ bundle, now }) {
 const GB = 1e9;
 const fmtGB = (b) => (b >= GB ? `${(b / GB).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`);
 
-export function findings({ bundle, start, end, now, lostSpans, clock, appName, today, days }) {
+export function findings({ bundle, start, end, now, lostSpans, clock, appName, catName = () => "", dayKey, today, days }) {
   const when = today ? "today" : days ? `in these ${days} days` : "that day";
   const nameOf = insights.names();
   const out = [];
   const totalDay = bundle.traffic.reduce((n, c) => n + c.usage.reduce((m, u) => m + (u.totalBytes || u.bytesRx + u.bytesTx), 0), 0);
+
+  // Plumbing (protocols, CDNs, unclassified) is not "an app" in a sentence (UU-C-127).
+  const plumbing = (app, cat) =>
+    !/^Calls\b/.test(app) && (/^(Network protocols|Unknown)$/.test(cat || "") || /^(HTTPS?|SSL\/TLS|DTLS|QUIC|DNS|Unidentified)$|\b(CDN|Akamai|CloudFront|Cloudflare|Fastly|Static Content|User Content|APIs?)\b/i.test(app));
+  const nDays = days ? Number(days) : 1; // a range runs from midnight days-1 ago to now
+  // Bars for a card: hours for one day, days for a range (UU-C-127).
+  const barsFor = (mac) => {
+    const n = days ? nDays : 24;
+    const step = days ? 24 * HOUR : HOUR;
+    const v = new Array(n).fill(0);
+    for (const b of bundle.buckets) if (b[1] === mac && b[0] >= start && b[0] < end) v[Math.max(0, Math.min(n - 1, Math.floor((b[0] - start) / step)))] += b[4] + b[5];
+    return v;
+  };
+
+  // Per device and per app over the period, from UniFi's usage (the Usage page's numbers).
+  const byDevice = new Map();
+  const byApp = new Map();
+  for (const c of bundle.traffic) {
+    const mac = c.client.mac;
+    for (const u of c.usage) {
+      const b = u.totalBytes || u.bytesRx + u.bytesTx;
+      const app = appName(u.appId, u.catId);
+      const cat = catName(u.catId);
+      const d = byDevice.get(mac) || { mac, bytes: 0, apps: new Map(), other: new Map() };
+      d.bytes += b;
+      (plumbing(app, cat) ? d.other : d.apps).set(app, (d.apps.get(app) || d.other.get(app) || 0) + b);
+      byDevice.set(mac, d);
+      if (!plumbing(app, cat)) {
+        const a = byApp.get(app) || { app, cat, bytes: 0, devices: new Map() };
+        a.bytes += b;
+        a.devices.set(mac, (a.devices.get(mac) || 0) + b);
+        byApp.set(app, a);
+      }
+    }
+  }
+  const mainApp = (d) => [...(d?.apps || new Map()).entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+  // No real app: say what the traffic is — unidentified usually means a VPN (WireGuard).
+  const whatItIs = (d) => {
+    const top = [...(d?.other || new Map()).entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
+    return top === "Unidentified" || !top ? "unidentified — VPN or encrypted" : top;
+  };
+  const pct = (b) => (totalDay ? Math.round((b / totalDay) * 100) : 0);
+  const topDevices = [...byDevice.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 5);
+  if (topDevices.length > 1) {
+    out.push({
+      id: `top-devices-${start}`,
+      kind: "usage",
+      level: "info",
+      ts: start,
+      title: `Top devices ${when}: ${nameOf(topDevices[0].mac)} ${fmtGB(topDevices[0].bytes)}, ${nameOf(topDevices[1].mac)} ${fmtGB(topDevices[1].bytes)}${topDevices[2] ? ", …" : ""}`,
+      text: null,
+      // A device with no recognisable app is usually encrypted end to end (a VPN).
+      list: topDevices.map((d) => ({ label: nameOf(d.mac), sub: [mainApp(d) || whatItIs(d), `${pct(d.bytes)}%`].join(" · "), value: fmtGB(d.bytes), mac: d.mac })),
+    });
+  }
+  const topApps = [...byApp.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 5);
+  if (topApps.length > 1) {
+    out.push({
+      id: `top-apps-${start}`,
+      kind: "usage",
+      level: "info",
+      ts: start,
+      title: `Top apps ${when}: ${topApps[0].app} ${fmtGB(topApps[0].bytes)}, ${topApps[1].app} ${fmtGB(topApps[1].bytes)}${topApps[2] ? ", …" : ""}`,
+      text: "Protocols and unclassified traffic left out.",
+      list: topApps.map((a) => {
+        const dev = [...a.devices.entries()].sort((x, y) => y[1] - x[1])[0];
+        return { label: a.app, sub: dev ? `mostly ${nameOf(dev[0])}` : a.cat, value: fmtGB(a.bytes), app: a.app };
+      }),
+    });
+  }
+
+  // Unusual: a device far above its own normal, from UniFi's daily totals of the 14 days
+  // before the period (UU-C-127). Today is compared while still under way, so only a device
+  // already past 3x a whole normal day is flagged.
+  if (dayKey) {
+    const firstDay = dayKey(start - 14 * 24 * HOUR);
+    const lastDay = dayKey(start - 1);
+    const history = new Map();
+    for (const r of db.queryDailyDevice(firstDay, lastDay, null)) {
+      const list = history.get(r.mac) || [];
+      list.push((r.rx || 0) + (r.tx || 0));
+      history.set(r.mac, list);
+    }
+    const median = (xs) => {
+      const v = [...xs].sort((a, b) => a - b);
+      return v.length ? v[Math.floor(v.length / 2)] : 0;
+    };
+    for (const d of byDevice.values()) {
+      const h = history.get(d.mac);
+      if (!h || h.length < 5) continue; // too little history to know "usual"
+      const usual = median(h) * nDays;
+      if (usual > 0 && d.bytes > 3 * usual && d.bytes - usual > 2 * GB) {
+        out.push({
+          id: `unusual-${d.mac}-${start}`,
+          kind: "usage",
+          level: "warn",
+          ts: start,
+          title: `${nameOf(d.mac)} used ${(d.bytes / usual).toFixed(1)}× its usual ${when}`,
+          text: `${fmtGB(d.bytes)}, against about ${fmtGB(usual)} on a normal ${days ? `${nDays} days` : "day"}${mainApp(d) ? `; mostly ${mainApp(d)}` : ""}.`,
+          mac: d.mac,
+          hourly: barsFor(d.mac),
+          barDays: days ? nDays : null,
+        });
+      }
+    }
+  }
 
   // The day's biggest burst: the largest session of 5-minute rows, any device and app.
   const rows = bundle.buckets
@@ -200,8 +306,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, t
   const sessions = sessionize(rows, { gapMs: 10 * 60 * 1000, minBytes: 0, keyBy: "mac+app" }).sort((a, b) => b.bytes - a.bytes);
   const top = sessions[0];
   if (top && top.bytes > 2 * GB) {
-    const hourly = new Array(24).fill(0);
-    for (const r of rows) if (r.mac === top.mac) hourly[Math.max(0, Math.min(23, Math.floor((r.t - start) / HOUR)))] += r.bytes;
+    const hourly = barsFor(top.mac);
     const minutes = Math.max(1, Math.round((top.end - top.start) / 60000));
     const share = totalDay ? ` — ${Math.round((top.bytes / totalDay) * 100)}% of ${days ? "all" : "the day's"} traffic` : "";
     // A burst reads as one; a device busy all day (a torrent box) reads as the day's total.
@@ -211,10 +316,18 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, t
       kind: "usage",
       level: "info",
       ts: top.start,
-      title: burst ? `${nameOf(top.mac)} moved ${fmtGB(top.bytes)} in ${minutes} minutes` : `${nameOf(top.mac)} used ${fmtGB(top.bytes)} of ${top.app} ${when}`,
-      text: burst ? `${clock(top.start)} – ${clock(top.end)}, ${top.app}${share}.` : `Busy for ${Math.round(minutes / 60)} hours${share}.`,
+      // Name the app only when it is one (not "of Unidentified", UU-C-127).
+      title: burst
+        ? `${nameOf(top.mac)} moved ${fmtGB(top.bytes)} in ${minutes} minutes`
+        : plumbing(top.app, "")
+          ? `${nameOf(top.mac)} moved ${fmtGB(top.bytes)} in one long stretch ${when}`
+          : `${nameOf(top.mac)} used ${fmtGB(top.bytes)} of ${top.app} ${when}`,
+      text:
+        (burst ? `${clock(top.start)} – ${clock(top.end)}${plumbing(top.app, "") ? "" : `, ${top.app}`}${share}.` : `Busy for ${Math.round(minutes / 60)} hours${share}.`) +
+        (top.app === "Unidentified" ? " UniFi can't see what it is — encrypted traffic, for example a WireGuard VPN." : ""),
       mac: top.mac,
       hourly,
+      barDays: days ? nDays : null,
       span: burst ? { from: Math.floor(top.start / HOUR) * HOUR, to: Math.floor(top.start / HOUR) * HOUR + HOUR } : null,
     });
   }

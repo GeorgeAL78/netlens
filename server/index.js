@@ -829,6 +829,8 @@ app.get("/api/findings", (req, res) => {
       lostSpans: lostSpansFor(ctx.bundle, ctx.start, ctx.end),
       clock: (ms) => zonedClock(ms),
       appName: (id, cat) => appName(canonicalAppId(id, cat, maps), cat, maps),
+      catName: (cat) => catName(cat, maps),
+      dayKey: zonedDateKey,
     });
     const totals = ctx.bundle.traffic.reduce((n, c) => n + c.usage.reduce((m, u) => m + (u.totalBytes || u.bytesRx + u.bytesTx), 0), 0);
     const wan = db.latestWanSample();
