@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ago, api, href, go, isPlumbing, useRoute } from "./lib.js";
+import { ago, api, deviceGroups, href, go, isPlumbing, useRoute } from "./lib.js";
 import { Finder } from "./ui.jsx";
 import Home from "./pages/Home.jsx";
 import Day from "./pages/Day.jsx";
@@ -35,10 +35,7 @@ function Search() {
   const app = (a) => ({ key: `a${a.value}`, label: a.app, sub: "app", pick: () => go("usage", null, { r: "7d", app: a.value }) });
   const choices = week?.appChoices || [];
   const groups = [
-    {
-      label: "Devices",
-      items: (devices || []).map((c) => ({ key: `d${c.mac}`, label: c.name || c.hostname || c.mac, sub: c.online ? "online" : "offline", searchable: [c.hostname, c.mac, c.ip], pick: () => go("device", c.mac) })),
-    },
+    ...deviceGroups(devices, (c) => go("device", c.mac)),
     { label: "Apps", items: choices.filter((a) => !isPlumbing(a)).map(app) },
     {
       label: "Categories",

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, bytes, duration, go, href, isPlumbing, useApi } from "../lib.js";
+import { api, bytes, deviceGroups, duration, go, href, isPlumbing, useApi } from "../lib.js";
 import { Failed, Finder, Loading, Meter } from "../ui.jsx";
 
 // Alerts (UU-C-114): a daily limit on time in use or data, for one app or category on one
@@ -51,18 +51,7 @@ export default function Alerts({ route }) {
     },
     { label: "Protocols and background", items: choices.filter((a) => a.source !== "local" && isPlumbing(a)).map(appItem) },
   ];
-  const deviceGroups = [
-    {
-      label: "Devices",
-      items: (clients.data?.clients || []).map((c) => ({
-        key: c.mac,
-        label: c.name || c.hostname || c.mac,
-        sub: c.online ? "online" : "",
-        searchable: [c.hostname, c.mac, c.ip],
-        pick: () => setDevice({ mac: c.mac, label: c.name || c.hostname || c.mac }),
-      })),
-    },
-  ];
+  const devicePick = deviceGroups(clients.data?.clients, (c) => setDevice({ mac: c.mac, label: c.name || c.hostname || c.mac }));
 
   const limitValue = () => {
     const n = Number(String(amountIn).replace(",", "."));
@@ -131,7 +120,7 @@ export default function Alerts({ route }) {
             label="Device"
             value={device?.label}
             onClear={() => setDevice(null)}
-            finder={<Finder className="finder" browse placeholder="Any device — or pick one" groups={deviceGroups} />}
+            finder={<Finder className="finder" browse placeholder="Any device — or pick one" groups={devicePick} />}
           />
           <Pick
             label="App or category"

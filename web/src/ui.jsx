@@ -171,6 +171,7 @@ export function Finder({ groups, placeholder, browse = false, className = "" }) 
     const s = q.trim().toLowerCase();
     if (!s && !browse) return [];
     return groups
+      .filter((g) => s || !g.searchOnly) // e.g. old unnamed addresses: only when typed for
       .map((g) => ({ ...g, items: g.items.filter((i) => !s || [i.label, i.sub, ...(i.searchable || [])].join(" ").toLowerCase().includes(s)).slice(0, s ? 12 : 40) }))
       .filter((g) => g.items.length);
   }, [q, groups, browse]);
@@ -207,6 +208,14 @@ export function Finder({ groups, placeholder, browse = false, className = "" }) 
         <div className="search-results" role="listbox">
           {!groups.some((g) => g.items.length) && <div className="dim small" style={{ padding: 10 }}>Loading…</div>}
           {groups.some((g) => g.items.length) && !flat.length && <div className="dim small" style={{ padding: 10 }}>Nothing matches “{q}”.</div>}
+          {!q.trim() &&
+            groups
+              .filter((g) => g.searchOnly && g.items.length)
+              .map((g) => (
+                <div key={`more-${g.label}`} className="dim small" style={{ padding: "8px 10px" }}>
+                  +{g.items.length} {g.label.toLowerCase()} — type to search
+                </div>
+              ))}
           {shown.map((g) => (
             <div key={g.label}>
               <div className="grp">{g.label}</div>

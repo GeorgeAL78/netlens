@@ -140,3 +140,27 @@ const PLUMBING_CATS = /^(Network protocols|Unknown)$/;
 const PLUMBING_NAMES = /^(HTTPS?|SSL\/TLS|DTLS|QUIC|DNS|Unidentified)$|\b(CDN|Akamai|CloudFront|Cloudflare|Fastly|Static Content|User Content|APIs?)\b/i;
 export const isPlumbing = (c) =>
   !/^Calls\b/.test(c.app || "") && Boolean(c.infrastructure || PLUMBING_CATS.test(c.category || "") || PLUMBING_NAMES.test(c.app || ""));
+
+// Device groups for pickers (UU-C-116). Phones and watches use a made-up "private" MAC per
+// network and change it now and then; every old one stays in UniFi's client list without a
+// name. Named devices first (online ones on top), unnamed ones online now next, and old
+// unnamed addresses only when you type.
+const MAC_RE = /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
+export const isUnnamed = (c) => !c.name || MAC_RE.test(String(c.name).trim()) || String(c.name).toLowerCase() === String(c.mac).toLowerCase();
+export function deviceGroups(clients, pick) {
+  const item = (c) => ({
+    key: `d${c.mac}`,
+    label: c.name || c.hostname || c.mac,
+    sub: c.online ? "online" : "",
+    searchable: [c.hostname, c.mac, c.ip],
+    pick: () => pick(c),
+  });
+  const byName = (a, b) => Number(Boolean(b.online)) - Number(Boolean(a.online)) || String(a.name || a.mac).localeCompare(String(b.name || b.mac));
+  const list = [...(clients || [])].sort(byName);
+  const unnamed = list.filter(isUnnamed);
+  return [
+    { label: "Devices", items: list.filter((c) => !isUnnamed(c)).map(item) },
+    { label: "Unnamed, online now", items: unnamed.filter((c) => c.online).map(item) },
+    { label: "Unnamed and offline", searchOnly: true, items: unnamed.filter((c) => !c.online).map((c) => ({ ...item(c), sub: "old private address?" })) },
+  ];
+}
