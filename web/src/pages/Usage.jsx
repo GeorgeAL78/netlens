@@ -1,5 +1,5 @@
-import { bytes, clock, dayLabel, duration, go, href, todayKey, useApi } from "../lib.js";
-import { Bars, DayStep, Failed, Loading, Meter } from "../ui.jsx";
+import { bytes, clock, dayLabel, duration, go, href, isPlumbing, todayKey, useApi } from "../lib.js";
+import { Bars, DayStep, Failed, Finder, Loading, Meter } from "../ui.jsx";
 
 // Usage (UU-C-087): apps, categories, devices and sessions for a day, an hour or a range.
 // Every figure on the page comes from one basis and adds up — header = apps = categories =
@@ -52,6 +52,36 @@ export default function Usage({ route }) {
           ? () => set({ from: b.t, to: b.t + HOUR })
           : undefined,
   }));
+  // Finder groups and the top-apps row (UU-C-112). Plumbing (protocols, CDNs, unclassified)
+  // stays pickable, last, under its own heading.
+  const choices = r?.appChoices || [];
+  const appItem = (a) => ({
+    key: `a${a.value}`,
+    label: a.app,
+    sub: bytes(a.totalBytes),
+    on: String(q.app) === String(a.value),
+    pick: () => set({ app: a.value, cat: null }),
+  });
+  // UniFi's own app names only: a connection-record name (steamcontent.com) is often the same
+  // traffic as an app already listed.
+  const topApps = choices.filter((a) => a.source === "unifi" && !isPlumbing(a)).slice(0, 6);
+  const finderGroups = [
+    { label: "Apps", items: choices.filter((a) => a.source === "unifi" && !isPlumbing(a)).map(appItem) },
+    { label: "Found in connection records", items: choices.filter((a) => a.source === "detected" && !isPlumbing(a)).map(appItem) },
+    { label: "On your network", items: choices.filter((a) => a.source === "local").map(appItem) },
+    {
+      label: "Categories",
+      items: (r?.categories || [])
+        .filter((c) => c.catId != null)
+        .map((c) => ({ key: `c${c.catId}`, label: c.category, sub: bytes(c.totalBytes), on: String(q.cat) === String(c.catId), pick: () => set({ cat: c.catId, app: null }) })),
+    },
+    {
+      label: "Devices",
+      items: (r?.clients || []).map((c) => ({ key: `d${c.mac}`, label: c.name || c.mac, sub: bytes(c.totalBytes), on: q.mac === c.mac, pick: () => set({ mac: c.mac }) })),
+    },
+    { label: "Protocols and background", items: choices.filter((a) => a.source !== "local" && isPlumbing(a)).map(appItem) },
+  ];
+  const busiest = (r?.apps || []).find((a) => !isPlumbing(a)) || r?.apps?.[0]; // a real app, not SSL/TLS
   const appsMax = Math.max(1, ...(r?.apps || []).map((a) => a.totalBytes));
   const catTotal = Math.max(1, (r?.categories || []).reduce((n, c) => n + c.totalBytes, 0));
 
@@ -83,32 +113,21 @@ export default function Usage({ route }) {
             </button>
           ))}
         </div>
-        {/* Every app UniFi counted, plus the ones found only in connection records and the
-            services on your own network — the old app picker (UU-C-106). */}
-        {r?.appChoices?.length > 0 && (
-          <select className="picker" aria-label="App" value={q.app || ""} onChange={(e) => set({ app: e.target.value || null, cat: null })}>
-            <option value="">All apps</option>
-            {[
-              ["unifi", "Counted by UniFi"],
-              ["detected", "Found in connection records"],
-              ["local", "On your network"],
-            ].map(([src, label]) => {
-              const list = r.appChoices.filter((a) => a.source === src);
-              return list.length ? (
-                <optgroup key={src} label={label}>
-                  {list.map((a) => (
-                    <option key={a.value} value={a.value}>
-                      {a.app} · {bytes(a.totalBytes)}
-                    </option>
-                  ))}
-                </optgroup>
-              ) : null;
-            })}
-            {q.app && !r.appChoices.some((a) => String(a.value) === String(q.app)) && <option value={q.app}>{appLabel}</option>}
-          </select>
-        )}
+        {/* One box for apps, categories and devices (UU-C-112); replaces the app dropdown. */}
+        {r && <Finder className="finder" browse placeholder="Filter by app, category or device" groups={finderGroups} />}
         {range === "day" && <DayStep date={date} onDate={(d) => set({ d: d === todayKey() ? null : d, from: null, to: null })} />}
       </div>
+
+      {topApps.length > 0 && (
+        <div className="quick" role="group" aria-label="Top apps">
+          <span className="dim small">Top apps</span>
+          {topApps.map((a) => (
+            <button key={a.value} className={`btn small ${String(q.app) === String(a.value) ? "on" : ""}`} onClick={() => set({ app: String(q.app) === String(a.value) ? null : a.value, cat: null })}>
+              {a.app.replace(/ \(.*\)$/, "")} <span className="dim">{bytes(a.totalBytes)}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {(q.from || q.mac || q.app || q.cat) && (
         <div className="chips">
@@ -149,8 +168,8 @@ export default function Usage({ route }) {
             {!q.app && (
               <div className="card tight stat">
                 <span className="label">Busiest app</span>
-                <span className="value small ellipsis">{r.apps[0]?.app || "—"}</span>
-                <span className="sub">{r.apps[0] ? `${bytes(r.apps[0].totalBytes)} · ${r.apps[0].category}` : ""}</span>
+                <span className="value small ellipsis">{busiest?.app || "—"}</span>
+                <span className="sub">{busiest ? `${bytes(busiest.totalBytes)} · ${busiest.category}` : ""}</span>
               </div>
             )}
             <div className="card tight stat">

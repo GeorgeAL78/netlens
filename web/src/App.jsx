@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { ago, api, href, go, useRoute } from "./lib.js";
+import { useEffect, useRef, useState } from "react";
+import { ago, api, href, go, isPlumbing, useRoute } from "./lib.js";
+import { Finder } from "./ui.jsx";
 import Home from "./pages/Home.jsx";
 import Day from "./pages/Day.jsx";
 import Network from "./pages/Network.jsx";
@@ -18,78 +19,34 @@ const TABS = [
   ["security", "Security"],
 ];
 
+// Top-bar search (UU-C-112): devices, plus apps and categories of the last 7 days — an app or
+// category opens Usage filtered to it. Loaded on first focus.
 function Search() {
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(false);
-  const [list, setList] = useState(null);
-  const [sel, setSel] = useState(0);
+  const [devices, setDevices] = useState(null);
+  const [week, setWeek] = useState(null);
   const box = useRef(null);
-  useEffect(() => {
-    if (!open || list) return;
-    api("/api/clients?scope=all")
-      .then((d) => setList(d.clients || []))
-      .catch(() => setList([]));
-  }, [open, list]);
-  useEffect(() => {
-    const close = (e) => box.current && !box.current.contains(e.target) && setOpen(false);
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, []);
-  const results = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s || !list) return [];
-    return list
-      .filter((c) => [c.name, c.hostname, c.mac, c.ip].some((v) => String(v || "").toLowerCase().includes(s)))
-      .slice(0, 12);
-  }, [q, list]);
-  const pick = (c) => {
-    setOpen(false);
-    setQ("");
-    go("device", c.mac);
+  const load = () => {
+    if (devices) return;
+    api("/api/clients?scope=all").then((d) => setDevices(d.clients || [])).catch(() => setDevices([]));
+    api("/api/report?period=7d").then(setWeek).catch(() => setWeek({}));
   };
+  const app = (a) => ({ key: `a${a.value}`, label: a.app, sub: "app", pick: () => go("usage", null, { r: "7d", app: a.value }) });
+  const choices = week?.appChoices || [];
+  const groups = [
+    {
+      label: "Devices",
+      items: (devices || []).map((c) => ({ key: `d${c.mac}`, label: c.name || c.hostname || c.mac, sub: c.online ? "online" : "offline", searchable: [c.hostname, c.mac, c.ip], pick: () => go("device", c.mac) })),
+    },
+    { label: "Apps", items: choices.filter((a) => !isPlumbing(a)).map(app) },
+    {
+      label: "Categories",
+      items: (week?.categories || []).filter((c) => c.catId != null).map((c) => ({ key: `c${c.catId}`, label: c.category, sub: "category", pick: () => go("usage", null, { r: "7d", cat: c.catId }) })),
+    },
+    { label: "Protocols and background", items: choices.filter(isPlumbing).map(app) },
+  ];
   return (
-    <div className="search" ref={box}>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-        <circle cx="11" cy="11" r="6" />
-        <path d="M20 20l-4.5-4.5" />
-      </svg>
-      <input
-        aria-label="Find a device"
-        placeholder="Find a device"
-        value={q}
-        onFocus={() => setOpen(true)}
-        onChange={(e) => {
-          setQ(e.target.value);
-          setSel(0);
-          setOpen(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown") setSel((i) => Math.min(i + 1, results.length - 1));
-          else if (e.key === "ArrowUp") setSel((i) => Math.max(i - 1, 0));
-          else if (e.key === "Enter" && results[sel]) pick(results[sel]);
-          else if (e.key === "Escape") setOpen(false);
-        }}
-      />
-      {open && q.trim() && (
-        <div className="search-results">
-          {!list && <div className="dim small" style={{ padding: 10 }}>Loading devices…</div>}
-          {list && !results.length && <div className="dim small" style={{ padding: 10 }}>No device matches “{q}”.</div>}
-          {results.map((c, i) => (
-            <a
-              key={c.mac}
-              href={href("device", c.mac)}
-              className={i === sel ? "on" : ""}
-              onClick={(e) => {
-                e.preventDefault();
-                pick(c);
-              }}
-            >
-              <span className="ellipsis">{c.name || c.hostname || c.mac}</span>
-              <span className="dim small">{c.online ? "online" : "offline"}</span>
-            </a>
-          ))}
-        </div>
-      )}
+    <div ref={box} onFocus={load}>
+      <Finder groups={groups} placeholder="Find a device, app or category" />
     </div>
   );
 }

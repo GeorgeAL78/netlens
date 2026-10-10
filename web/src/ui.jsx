@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { addDays, dayLabel, todayKey, useApi } from "./lib.js";
 
 // A month calendar (UU-C-096). Days with saved data carry a dot; future days are disabled.
@@ -153,3 +153,87 @@ export function Meter({ share, color }) {
 
 export const levelColor = { bad: "var(--bad)", warn: "var(--warn)", info: "var(--accent)", ok: "var(--ok)" };
 export const healthClass = (h) => (h === "warn" ? "warn" : h === "off" ? "off" : h === "bad" ? "bad" : "");
+
+// Type-ahead finder (UU-C-112): one box over grouped items — apps, categories, devices.
+// groups: [{ label, items: [{ key, label, sub, on, pick }] }]. With `browse`, focusing the
+// empty box lists everything; without it (the top bar) results appear once you type.
+export function Finder({ groups, placeholder, browse = false, className = "" }) {
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const [sel, setSel] = useState(0);
+  const box = useRef(null);
+  useEffect(() => {
+    const close = (e) => box.current && !box.current.contains(e.target) && setOpen(false);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+  const shown = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s && !browse) return [];
+    return groups
+      .map((g) => ({ ...g, items: g.items.filter((i) => !s || [i.label, i.sub, ...(i.searchable || [])].join(" ").toLowerCase().includes(s)).slice(0, s ? 12 : 40) }))
+      .filter((g) => g.items.length);
+  }, [q, groups, browse]);
+  const flat = shown.flatMap((g) => g.items);
+  const pick = (i) => {
+    setOpen(false);
+    setQ("");
+    i.pick();
+  };
+  return (
+    <div className={`search ${className}`} ref={box}>
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+        <circle cx="11" cy="11" r="6" />
+        <path d="M20 20l-4.5-4.5" />
+      </svg>
+      <input
+        aria-label={placeholder}
+        placeholder={placeholder}
+        value={q}
+        onFocus={() => setOpen(true)}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setSel(0);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") setSel((i) => Math.min(i + 1, flat.length - 1));
+          else if (e.key === "ArrowUp") setSel((i) => Math.max(i - 1, 0));
+          else if (e.key === "Enter" && flat[sel]) pick(flat[sel]);
+          else if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      {open && (q.trim() || browse) && (
+        <div className="search-results" role="listbox">
+          {!groups.some((g) => g.items.length) && <div className="dim small" style={{ padding: 10 }}>Loading…</div>}
+          {groups.some((g) => g.items.length) && !flat.length && <div className="dim small" style={{ padding: 10 }}>Nothing matches “{q}”.</div>}
+          {shown.map((g) => (
+            <div key={g.label}>
+              <div className="grp">{g.label}</div>
+              {g.items.map((i) => {
+                const n = flat.indexOf(i);
+                return (
+                  <a
+                    key={i.key}
+                    href="#"
+                    role="option"
+                    aria-selected={n === sel}
+                    className={`${n === sel ? "on" : ""} ${i.on ? "picked" : ""}`}
+                    onMouseEnter={() => setSel(n)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      pick(i);
+                    }}
+                  >
+                    <span className="ellipsis">{i.label}</span>
+                    {i.sub && <span className="dim small">{i.sub}</span>}
+                  </a>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

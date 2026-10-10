@@ -1539,7 +1539,7 @@ app.get("/api/report", async (req, res) => {
     const choiceByKey = new Map();
     const normName = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     for (const a of aggregateApps(scopedRows, maps)) {
-      choiceByKey.set(normName(a.app), { value: String(a.appId), app: a.app, totalBytes: a.totalBytes, source: "unifi" });
+      choiceByKey.set(normName(a.app), { value: String(a.appId), app: a.app, category: a.category, totalBytes: a.totalBytes, source: "unifi" });
     }
     const detected = new Map();
     for (const row of flowGroups) {

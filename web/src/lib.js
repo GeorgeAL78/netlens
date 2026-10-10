@@ -133,3 +133,10 @@ export function heat(share) {
   if (share < 0.8) return "var(--cell-4)";
   return "var(--cell-5)";
 }
+
+// Plumbing rather than something a person uses (UU-C-112): protocols, CDNs, unclassified
+// traffic. Filters keep it, but under "Protocols and background". Calls stays an app.
+const PLUMBING_CATS = /^(Network protocols|Unknown)$/;
+const PLUMBING_NAMES = /^(HTTPS?|SSL\/TLS|DTLS|QUIC|DNS|Unidentified)$|\b(CDN|Akamai|CloudFront|Cloudflare|Fastly|Static Content|User Content|APIs?)\b/i;
+export const isPlumbing = (c) =>
+  !/^Calls\b/.test(c.app || "") && Boolean(c.infrastructure || PLUMBING_CATS.test(c.category || "") || PLUMBING_NAMES.test(c.app || ""));
