@@ -9,6 +9,7 @@ import Device from "./pages/Device.jsx";
 import Usage from "./pages/Usage.jsx";
 import Settings from "./pages/Settings.jsx";
 import Alerts from "./pages/Alerts.jsx";
+import Devices from "./pages/Devices.jsx";
 
 // The shell of the redesigned interface (UU-C-087): one top bar — home, the three views,
 // search and settings — and the page the URL names.
@@ -18,6 +19,7 @@ const TABS = [
   ["usage", "Usage"], // apps, categories and the app picker (UU-C-106)
   ["network", "Network"],
   ["security", "Security"],
+  ["devices", "Devices"], // new devices, vendor, names saved in UniFi (UU-C-118)
   ["alerts", "Alerts"], // daily limits per app / device (UU-C-114)
 ];
 
@@ -29,7 +31,8 @@ function Search() {
   const box = useRef(null);
   const load = () => {
     if (devices) return;
-    api("/api/clients?scope=all").then((d) => setDevices(d.clients || [])).catch(() => setDevices([]));
+    // UniFi's own client list (UU-C-118), so forgotten devices are not offered.
+    api("/api/devices").then((d) => setDevices(d.devices || [])).catch(() => setDevices([]));
     api("/api/report?period=7d").then(setWeek).catch(() => setWeek({}));
   };
   const app = (a) => ({ key: `a${a.value}`, label: a.app, sub: "app", pick: () => go("usage", null, { r: "7d", app: a.value }) });
@@ -131,6 +134,7 @@ export default function App() {
     usage: Usage,
     settings: Settings,
     alerts: Alerts,
+    devices: Devices,
   };
   const Page = pages[route.page] || Home;
   const fired = useFiredToday(route.page);

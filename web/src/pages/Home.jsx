@@ -24,6 +24,7 @@ function actionsFor(f, date) {
   }
   if (f.span) a.push({ label: `See ${clock(f.span.from)} – ${clock(f.span.to)}`, to: href("usage", null, { d: date, from: f.span.from, to: f.span.to }) });
   if (f.mac) a.push({ label: f.kind === "wifi" ? "Signal history" : "Open device", to: href("device", f.mac, { d: date }) });
+  if (f.kind === "device" && f.mac) a.push({ label: "Name it", to: href("devices", null, { mac: f.mac }) }); // UU-C-118
   if (f.uid) a.push({ label: "Event details", to: href("security", null, { e: f.uid }) });
   if (f.rule) a.push({ label: "Firewall events", to: href("security", null, { rule: f.rule }) });
   if (f.ip) a.push({ label: "Investigate address", to: href("security", null, { ip: f.ip }) });

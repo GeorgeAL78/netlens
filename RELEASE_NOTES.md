@@ -1,2 +1,6 @@
+### Added
+- Devices tab: devices new in the last 7 days at the top, then every device UniFi knows — with the maker (vendor), where it connected (switch and port, or access point and band), IP, and when it was first and last seen.
+- Name or rename any device from the Devices tab, from a device's page, or from Home's "new device" note. The name is saved in UniFi itself, so it shows in the UniFi app too.
+
 ### Fixed
-- Device lists in Alerts and the top-bar search no longer open with a run of bare MAC addresses. Named devices come first; unnamed ones show only while online, and old private Wi-Fi addresses appear only when you type.
+- Devices you forget in UniFi no longer linger in NetLens's device lists.

@@ -126,6 +126,7 @@ export default function Device({ route }) {
           </span>
         </div>
         <DayStep date={date} onDate={(d) => go("device", mac, { d: d === todayKey() ? null : d })} />
+        <a className="btn" href={href("devices", null, { mac })}>Rename</a>
         <button className="btn danger" onClick={toggleBlock} disabled={busy}>
           {blocked ? "Unblock" : "Block device"}
         </button>

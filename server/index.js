@@ -1649,6 +1649,65 @@ app.get("/api/report", (req, res) => {
   }
 });
 
+// ---- devices (UU-C-118) ----------------------------------------------------------------------
+// Every client UniFi knows, with its vendor (OUI; blank for private addresses), when UniFi
+// first and last saw it, and where it last connected — switch and port, or access point and
+// band. Read live from the console when the Devices page opens; renaming writes to UniFi.
+const isPrivateMac = (mac) => (parseInt(String(mac).slice(0, 2), 16) & 2) === 2;
+const RADIO = { ng: "2.4 GHz", na: "5 GHz", "6e": "6 GHz" };
+
+app.get("/api/devices", async (_req, res) => {
+  try {
+    const now = Date.now();
+    const [known, online] = await Promise.all([unifi.getKnownClients(), unifi.listConnectedClients().catch(() => [])]);
+    const onlineMacs = new Set(online.map((c) => c.mac));
+    const nameOf = insights.names();
+    const devices = known
+      .filter((u) => u.mac)
+      .map((u) => {
+        const mac = String(u.mac).toLowerCase();
+        const firstSeen = u.first_seen ? u.first_seen * 1000 : null;
+        return {
+          mac,
+          name: u.name || null,
+          hostname: u.hostname || null,
+          label: u.name || u.hostname || nameOf(mac),
+          vendor: u.oui || null,
+          privateMac: isPrivateMac(mac),
+          firstSeen,
+          lastSeen: u.last_seen ? u.last_seen * 1000 : null,
+          isNew: Boolean(firstSeen && now - firstSeen < 7 * 86400e3),
+          online: onlineMacs.has(mac),
+          ip: u.last_ip || u.fixed_ip || null,
+          wired: Boolean(u.is_wired),
+          via: u.last_uplink_name || null,
+          port: u.is_wired && u.last_uplink_remote_port != null ? Number(u.last_uplink_remote_port) : null,
+          band: u.is_wired ? null : RADIO[u.last_radio] || null,
+          network: u.last_connection_network_name || null,
+          blocked: Boolean(u.blocked),
+        };
+      })
+      .sort((a, b) => (b.firstSeen || 0) - (a.firstSeen || 0));
+    res.json({ devices, ts: now });
+  } catch (err) {
+    sendError(res, "GET /api/devices", err);
+  }
+});
+
+app.post("/api/devices/:mac/name", async (req, res) => {
+  try {
+    const mac = String(req.params.mac || "").toLowerCase();
+    if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) return res.status(400).json({ error: "That is not a MAC address." });
+    const name = String(req.body?.name ?? "").trim().slice(0, 64);
+    await unifi.setClientName(mac, name);
+    db.setStoredClientName(mac, name);
+    health.refreshLocalNames({ force: true }).catch(() => {});
+    res.json({ ok: true, mac, name });
+  } catch (err) {
+    sendError(res, "POST /api/devices/:mac/name", err);
+  }
+});
+
 // ---- alerts (UU-C-114) ---------------------------------------------------------------------
 // A rule: a device (or every device), an app or category (or everything), and a daily limit
 // on time in use (minutes) or data (bytes). Checked from the same report Usage shows, so an

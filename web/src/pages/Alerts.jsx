@@ -29,7 +29,8 @@ function Pick({ label, value, onClear, finder }) {
 export default function Alerts({ route }) {
   const q = route.query;
   const alerts = useApi("/api/alerts");
-  const clients = useApi("/api/clients?scope=all");
+  // UniFi's own client list (UU-C-118): a device forgotten in UniFi drops out here too.
+  const clients = useApi("/api/devices");
   const week = useApi("/api/report?period=7d");
   const [device, setDevice] = useState(q.mac ? { mac: q.mac, label: q.macLabel || q.mac } : null);
   const [target, setTarget] = useState(q.app ? { app: q.app, label: q.appLabel || q.app } : q.cat ? { cat: q.cat, label: q.catLabel || "category" } : null);
@@ -51,7 +52,7 @@ export default function Alerts({ route }) {
     },
     { label: "Protocols and background", items: choices.filter((a) => a.source !== "local" && isPlumbing(a)).map(appItem) },
   ];
-  const devicePick = deviceGroups(clients.data?.clients, (c) => setDevice({ mac: c.mac, label: c.name || c.hostname || c.mac }));
+  const devicePick = deviceGroups(clients.data?.devices, (c) => setDevice({ mac: c.mac, label: c.name || c.hostname || c.mac }));
 
   const limitValue = () => {
     const n = Number(String(amountIn).replace(",", "."));

@@ -146,7 +146,10 @@ export const isPlumbing = (c) =>
 // name. Named devices first (online ones on top), unnamed ones online now next, and old
 // unnamed addresses only when you type.
 const MAC_RE = /^([0-9a-f]{2}[:-]){5}[0-9a-f]{2}$/i;
-export const isUnnamed = (c) => !c.name || MAC_RE.test(String(c.name).trim()) || String(c.name).toLowerCase() === String(c.mac).toLowerCase();
+export const isUnnamed = (c) => {
+  const n = String(c.name || c.hostname || "").trim();
+  return !n || MAC_RE.test(n) || n.toLowerCase() === String(c.mac).toLowerCase();
+};
 export function deviceGroups(clients, pick) {
   const item = (c) => ({
     key: `d${c.mac}`,
@@ -155,7 +158,7 @@ export function deviceGroups(clients, pick) {
     searchable: [c.hostname, c.mac, c.ip],
     pick: () => pick(c),
   });
-  const byName = (a, b) => Number(Boolean(b.online)) - Number(Boolean(a.online)) || String(a.name || a.mac).localeCompare(String(b.name || b.mac));
+  const byName = (a, b) => Number(Boolean(b.online)) - Number(Boolean(a.online)) || String(a.name || a.hostname || a.mac).localeCompare(String(b.name || b.hostname || b.mac));
   const list = [...(clients || [])].sort(byName);
   const unnamed = list.filter(isUnnamed);
   return [

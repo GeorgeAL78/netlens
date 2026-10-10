@@ -303,6 +303,12 @@ export function saveDpi(apps, cats) {
   for (const c of cats) upsertCat.run(c.id, c.name);
 }
 
+// After a rename in UniFi (UU-C-118): the stored name follows at once, including a clear.
+export function setStoredClientName(mac, name) {
+  const m = String(mac).toLowerCase();
+  db.prepare(`INSERT INTO clients (mac, name, last_seen) VALUES (?, ?, ?) ON CONFLICT(mac) DO UPDATE SET name = excluded.name`).run(m, name || null, Date.now());
+}
+
 export function listStoredClients() {
   return db.prepare(`SELECT mac, id, name, hostname, ip, type, last_seen AS lastSeen, blocked FROM clients ORDER BY name COLLATE NOCASE`).all();
 }

@@ -428,6 +428,20 @@ export async function getKnownClients() {
   return json?.data || [];
 }
 
+// Renames a client in the console — the same as renaming it in the UniFi app (UU-C-118).
+// Known clients are updated by id; a MAC UniFi has no record for is created with the name.
+// An empty name clears it. The classic API answers 200 with meta.rc "error" on refusal.
+export async function setClientName(mac, name) {
+  const { site } = config();
+  const m = String(mac).toLowerCase();
+  const user = (await getKnownClients()).find((u) => String(u.mac || "").toLowerCase() === m);
+  const json = user?._id
+    ? await request(`/proxy/network/api/s/${site}/rest/user/${user._id}`, { method: "PUT", body: { name } })
+    : await request(`/proxy/network/api/s/${site}/rest/user`, { method: "POST", body: { mac: m, name } });
+  if (json?.meta?.rc && json.meta.rc !== "ok") throw new Error(`UniFi refused the rename: ${json.meta.msg || json.meta.rc}`);
+  return json?.data?.[0] || null;
+}
+
 // Blocked state for every known client, not just the connected ones — a blocked device
 // usually is not associated, so it would be missing from the active list.
 export async function listBlockedMacs() {
