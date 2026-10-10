@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.11 — 2026-10-09
+
+### Changed
+- UniFi's "STUN" traffic is shown as "Calls (FaceTime, WhatsApp, Meet…)": that is where UniFi files most FaceTime and other voice and video calls.
+
 ## 2.0.10 — 2026-10-09
 
 ### Added

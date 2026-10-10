@@ -286,8 +286,12 @@ export function listStoredClients() {
   return db.prepare(`SELECT mac, id, name, hostname, ip, type, last_seen AS lastSeen, blocked FROM clients ORDER BY name COLLATE NOCASE`).all();
 }
 
+// UniFi's names that say nothing to a person (UU-C-110). STUN is how FaceTime, WhatsApp, Meet
+// and other calls connect, and UniFi files most call traffic under it.
+const DISPLAY_NAMES = { STUN: "Calls (FaceTime, WhatsApp, Meet…)" };
+
 export function dpiMaps() {
-  const apps = Object.fromEntries(db.prepare(`SELECT id, name FROM dpi_apps`).all().map((r) => [r.id, r.name]));
+  const apps = Object.fromEntries(db.prepare(`SELECT id, name FROM dpi_apps`).all().map((r) => [r.id, DISPLAY_NAMES[r.name] || r.name]));
   const cats = Object.fromEntries(db.prepare(`SELECT id, name FROM dpi_cats`).all().map((r) => [r.id, r.name]));
   return { apps, cats };
 }
