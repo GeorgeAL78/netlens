@@ -10,7 +10,7 @@
   <Overview>NetLens — a dashboard for UniFi networks. Self-hosted. Per-device and per-app traffic with time charts and sessions; Wi-Fi signal, roaming and presence per device; access point, switch and gateway health; security events; local-network traffic; WAN status. It samples your UniFi console around the clock, so history is kept beyond UniFi's own short retention (24 hours of 5-minute data, 7 days hourly). Needs a UniFi OS console (UDM, UCG, UDR, Cloud Key Gen2+) and a local API key. After installing, open the web UI: a short setup asks for your console address, the API key and a login password. Not affiliated with Ubiquiti.</Overview>
   <Category>Network:Management Tools:</Category>
   <WebUI>http://[IP]:[PORT:3780]/</WebUI>
-  <TemplateURL>https://raw.githubusercontent.com/GeorgeAL78/pia-qbittorrent-docker/master/netlens.xml</TemplateURL>
+  <TemplateURL>https://raw.githubusercontent.com/GeorgeAL78/unraid-templates/main/netlens.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/icon.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
   <Requires>A UniFi OS console reachable from this server, and a local API key (UniFi Network &gt; Settings &gt; Control Plane &gt; Integrations &gt; Create API Key).</Requires>

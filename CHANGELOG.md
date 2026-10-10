@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.7.1 — 2026-10-10
+
+### Changed
+- The Unraid template now lives in GeorgeK's central template repository (github.com/GeorgeAL78/unraid-templates); its TemplateURL points there.
+
 ## 2.7.0 — 2026-10-10
 
 ### Changed
