@@ -18,6 +18,9 @@ function config() {
 }
 
 async function request(path, { method = "GET", body } = {}) {
+  // NETLENS_OFFLINE=1 means never talking to UniFi — enforced here, not only by not starting
+  // the timers: a page asking for live data must not reach a console (UU-C-129).
+  if (process.env.NETLENS_OFFLINE === "1") throw new Error("NetLens is offline (NETLENS_OFFLINE=1): UniFi is not contacted");
   const { host, apiKey } = config();
   const url = path.startsWith("http") ? path : `https://${host}${path}`;
   const res = await fetch(url, {

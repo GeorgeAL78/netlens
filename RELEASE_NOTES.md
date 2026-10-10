@@ -1,7 +1,7 @@
-### Added
-- Home → Usage: the top 5 devices (with each one's main app and share) and the top 5 apps (with the device using each most), for today or any 3–30 day view.
-- Home: a device using far more than usual (3× its normal day or more) is flagged.
+### Changed
+- New screenshots in the README and on Docker Hub, including the Devices and Alerts pages.
+- Devices: when UniFi cannot be reached, the page shows the devices NetLens has stored (with their maker and where they last connected) instead of failing.
 
 ### Fixed
-- Home: on 3–30 day views the busiest-device chart shows one bar per day instead of piling everything into the last bar, and its link opens the right day.
-- Home no longer says a device "used … of Unidentified"; traffic UniFi cannot classify is described as encrypted (for example a VPN).
+- Offline mode (`NETLENS_OFFLINE=1`) now never contacts UniFi, not just stops the timers.
+- A new data folder set with `UNIFI_DATABASE_DIR` no longer adopts the retired PC app's database.

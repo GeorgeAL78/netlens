@@ -16,11 +16,13 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 | | |
 | --- | --- |
 | ![Home — today's findings](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/home.png) | ![Day — every device by hour](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/day.png) |
-| **Home** — today's findings in plain language | **Day** — every device by hour |
-| ![Network — live map with access-point detail](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/network.png) | ![Device — traffic, signal and events](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/device.png) |
-| **Network** — live map, access point selected | **Device** — its day, apps, sessions and events |
-| ![Security — blocked intrusion with full detail](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/security.png) | ![Usage — one hour in 5-minute steps](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/usage.png) |
-| **Security** — blocked intrusion with its full record | **Usage** — one hour in 5-minute steps |
+| **Home** — findings in plain language, alerts on top | **Day** — every device by hour |
+| ![Usage — apps, categories and top apps](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/usage.png) | ![Device — traffic, signal and events](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/device.png) |
+| **Usage** — top apps, search by app, category or device | **Device** — its day, apps, sessions and events |
+| ![Network — live map with access-point detail](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/network.png) | ![Security — blocked intrusion with full detail](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/security.png) |
+| **Network** — live map, access point selected | **Security** — blocked intrusion with its full record |
+| ![Devices — new devices, maker and where they connect](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) |
+| **Devices** — new devices, maker, switch port or access point, rename | **Alerts** — daily limits per app and device |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
@@ -30,9 +32,13 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
   threats, new devices, equipment problems.
 - **Day** — devices × hours: when each device was busy, roamed or got blocked.
 - **Network** — live map of gateway, switches, access points and devices, with radio and port details.
-- **Devices** — traffic, signal or link speed, apps, sessions, events, block / unblock.
+- **Device** — traffic, signal or link speed, apps, sessions, events, online history, block / unblock.
+- **Devices** — new devices first, with maker and switch port or access point; rename (saved in UniFi);
+  offline devices checked on the network every 5 minutes.
+- **Alerts** — daily limits on time or data for an app on a device, flagged on Home.
 - **Security** — blocked intrusions and firewall hits with the full connection record.
-- **Usage** — apps, categories and devices for a day, an hour or 90 days; every number adds up.
+- **Usage** — apps, categories and devices for a day, an hour or 90 days, one search box for all
+  three; every number adds up.
 - Local-network traffic shown separately; missing data marked, never shown as a quiet hour.
 
 ## Requirements

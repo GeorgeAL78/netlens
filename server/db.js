@@ -321,6 +321,36 @@ export function saveDpi(apps, cats) {
   for (const c of cats) upsertCat.run(c.id, c.name);
 }
 
+// Maker and UniFi's first-seen time, kept from the last live device list (UU-C-129) so the
+// Devices page can still show them when UniFi cannot be reached.
+for (const [col, type] of [["vendor", "TEXT"], ["first_seen", "INTEGER"]]) {
+  if (!db.prepare(`PRAGMA table_info(clients)`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE clients ADD COLUMN ${col} ${type}`);
+}
+export function saveClientDetails(list) {
+  const up = db.prepare(`UPDATE clients SET vendor = COALESCE(?, vendor), first_seen = COALESCE(?, first_seen) WHERE mac = ?`);
+  db.exec("BEGIN");
+  try {
+    for (const d of list) up.run(d.vendor || null, d.firstSeen || null, d.mac);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+// Each device's newest client sample and first sample (UU-C-129: stored device list).
+export function latestClientSamples() {
+  return new Map(
+    db
+      .prepare(`SELECT s.* FROM client_samples s JOIN (SELECT mac, MAX(ts) ts FROM client_samples GROUP BY mac) m ON s.mac = m.mac AND s.ts = m.ts`)
+      .all()
+      .map((r) => [r.mac, r])
+  );
+}
+export function firstClientSamples() {
+  return new Map(db.prepare(`SELECT mac, MIN(ts) ts FROM client_samples GROUP BY mac`).all().map((r) => [r.mac, r.ts]));
+}
+
 // After a rename in UniFi (UU-C-118): the stored name follows at once, including a clear.
 export function setStoredClientName(mac, name) {
   const m = String(mac).toLowerCase();
@@ -328,7 +358,7 @@ export function setStoredClientName(mac, name) {
 }
 
 export function listStoredClients() {
-  return db.prepare(`SELECT mac, id, name, hostname, ip, type, last_seen AS lastSeen, blocked FROM clients ORDER BY name COLLATE NOCASE`).all();
+  return db.prepare(`SELECT mac, id, name, hostname, ip, type, last_seen AS lastSeen, blocked, vendor, first_seen AS firstSeen FROM clients ORDER BY name COLLATE NOCASE`).all();
 }
 
 // UniFi's names that say nothing to a person (UU-C-110). STUN is how FaceTime, WhatsApp, Meet

@@ -1660,10 +1660,55 @@ app.get("/api/report", (req, res) => {
 const isPrivateMac = (mac) => (parseInt(String(mac).slice(0, 2), 16) & 2) === 2;
 const RADIO = { ng: "2.4 GHz", na: "5 GHz", "6e": "6 GHz" };
 
+// UniFi unreachable (or NETLENS_OFFLINE): the same list from what NetLens has stored —
+// names, last samples, the saved maker and first-seen time (UU-C-129).
+function storedDevices(now) {
+  const nameOf = insights.names();
+  const last = db.latestClientSamples();
+  const first = db.firstClientSamples();
+  const seen = db.presenceNow();
+  return db
+    .listStoredClients()
+    .filter((c) => c.mac)
+    .map((c) => {
+      const mac = String(c.mac).toLowerCase();
+      const s = last.get(mac);
+      const firstSeen = c.firstSeen || first.get(mac) || null;
+      return {
+        mac,
+        name: c.name && c.name.toLowerCase() !== mac ? c.name : null,
+        hostname: c.hostname || null,
+        label: nameOf(mac),
+        vendor: c.vendor || null,
+        privateMac: isPrivateMac(mac),
+        firstSeen,
+        lastSeen: s?.ts || null,
+        isNew: Boolean(firstSeen && now - firstSeen < 7 * 86400e3),
+        online: Boolean(s && now - s.ts < 15 * 60 * 1000),
+        ip: s?.ip || c.ip || null,
+        wired: s ? Boolean(s.wired) : c.type === "WIRED",
+        via: s?.ap_mac ? nameOf(s.ap_mac) : null,
+        port: s?.wired ? s.port ?? null : null,
+        band: s && !s.wired ? RADIO[s.radio] || null : null,
+        network: s?.essid || null,
+        blocked: Boolean(c.blocked),
+        presence: seen.get(mac) || null,
+      };
+    })
+    .sort((a, b) => (b.firstSeen || 0) - (a.firstSeen || 0));
+}
+
 app.get("/api/devices", async (_req, res) => {
   try {
     const now = Date.now();
-    const [known, online] = await Promise.all([unifi.getKnownClients(), unifi.listConnectedClients().catch(() => [])]);
+    if (process.env.NETLENS_OFFLINE === "1") return res.json({ devices: storedDevices(now), ts: now, source: "offline", checks: { ...presence.state } });
+    let known, online;
+    try {
+      [known, online] = await Promise.all([unifi.getKnownClients(), unifi.listConnectedClients().catch(() => [])]);
+    } catch (err) {
+      logError("devices: UniFi unreachable, using stored list", err);
+      return res.json({ devices: storedDevices(now), ts: now, source: "stored", checks: { ...presence.state } });
+    }
     const onlineMacs = new Set(online.map((c) => c.mac));
     const nameOf = insights.names();
     const seen = db.presenceNow();
@@ -1695,7 +1740,12 @@ app.get("/api/devices", async (_req, res) => {
         };
       })
       .sort((a, b) => (b.firstSeen || 0) - (a.firstSeen || 0));
-    res.json({ devices, ts: now, checks: { ...presence.state } });
+    try {
+      db.saveClientDetails(devices);
+    } catch (err) {
+      logError("devices: save details", err);
+    }
+    res.json({ devices, ts: now, source: "unifi", checks: { ...presence.state } });
   } catch (err) {
     sendError(res, "GET /api/devices", err);
   }

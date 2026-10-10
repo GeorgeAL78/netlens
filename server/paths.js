@@ -23,7 +23,10 @@ const bundledEnv = path.join(appRoot, ".env");
 
 fs.mkdirSync(databaseDir, { recursive: true });
 
-if (!fs.existsSync(dbFile)) {
+// The old PC app's database is adopted only for the default PC folder — never when a folder
+// is set explicitly (Docker, demo data, test copies), or a "fresh" demo would start as a copy
+// of the owner's real devices (UU-C-129).
+if (!process.env.UNIFI_DATABASE_DIR && !fs.existsSync(dbFile)) {
   const oldDb = path.join(legacyDir, "data", "usage.db");
   if (fs.existsSync(oldDb)) {
     fs.copyFileSync(oldDb, dbFile);
