@@ -52,6 +52,22 @@ db.exec(`
     first_seq INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS flow_groups_day ON flow_groups (day, mac);
+  -- Per day x destination x device, for the Sites page (UU-C-136): 30 days x all devices read
+  -- ~10x fewer rows than the flows themselves. flow_site_days marks the days built.
+  CREATE TABLE IF NOT EXISTS flow_sites (
+    day TEXT NOT NULL,
+    domain TEXT,
+    app TEXT,
+    category TEXT,
+    mac TEXT,
+    ip TEXT,
+    n INTEGER NOT NULL,
+    bytes INTEGER NOT NULL,
+    first INTEGER,
+    last INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS flow_sites_day ON flow_sites (day, mac);
+  CREATE TABLE IF NOT EXISTS flow_site_days (day TEXT PRIMARY KEY);
   CREATE TABLE IF NOT EXISTS flow_days (
     day TEXT PRIMARY KEY,
     count INTEGER NOT NULL,
@@ -67,6 +83,21 @@ const insertFlow = db.prepare(
 const deleteDayFlows = db.prepare(`DELETE FROM flows WHERE day = ?`);
 const deleteDayGroups = db.prepare(`DELETE FROM flow_groups WHERE day = ?`);
 const deleteDayMeta = db.prepare(`DELETE FROM flow_days WHERE day = ?`);
+const deleteDaySites = db.prepare(`DELETE FROM flow_sites WHERE day = ?`);
+const deleteDaySiteMark = db.prepare(`DELETE FROM flow_site_days WHERE day = ?`);
+const buildSites = db.prepare(`
+  INSERT INTO flow_sites (day, domain, app, category, mac, ip, n, bytes, first, last)
+  SELECT day, domain, app, category, mac, MAX(ip), COUNT(*), COALESCE(SUM(bytes), 0),
+         MIN(CASE WHEN t > 0 THEN t END), MAX(t)
+  FROM flows WHERE day = ? GROUP BY domain, app, category, mac`);
+const markSites = db.prepare(`INSERT OR REPLACE INTO flow_site_days (day) VALUES (?)`);
+const siteDaysBuilt = () => new Set(db.prepare(`SELECT day FROM flow_site_days`).all().map((r) => r.day));
+
+function rebuildSites(day) {
+  deleteDaySites.run(day);
+  buildSites.run(day);
+  markSites.run(day);
+}
 const buildGroups = db.prepare(`
   INSERT INTO flow_groups (day, app, category, mac, ldomain, bytes, first_seq)
   SELECT day, app, category, mac, CASE WHEN app = 'Local network' THEN domain END AS ld,
@@ -139,6 +170,7 @@ export function writeDay(day, rows, classifier) {
       insertFlow.run(day, seq++, ...COLS.map((c) => v(f[c])));
     }
     buildGroups.run(day);
+    rebuildSites(day);
     upsertDay.run(day, seq, classifier);
     db.exec("COMMIT");
   } catch (err) {
@@ -153,6 +185,8 @@ export function deleteDay(day) {
     deleteDayFlows.run(day);
     deleteDayGroups.run(day);
     deleteDayMeta.run(day);
+    deleteDaySites.run(day);
+    deleteDaySiteMark.run(day);
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -256,4 +290,75 @@ export function destinations(days, mac, from, to, limit = 3) {
   }
   const rows = stmt.all(mac, from, to, ...days, limit);
   return { domains: rows.map((r) => (r.domain == null ? undefined : r.domain)), any: rows.length > 0 };
+}
+
+// Every destination of these days, one row per (domain, app, category, device) with its
+// connections, bytes, first and last time — the Sites page (UU-C-135). `ip` is one address
+// seen for it (rows named from another flow keep the address in `ip`).
+export function siteSummary(days, mac, span) {
+  if (!days.length) return [];
+  if (!span) return siteSummaryDays(days, mac);
+  const args = [...days];
+  let where = `day IN (${inList(days)})`;
+  where += spanSql(span, args);
+  if (mac) {
+    where += " AND mac = ?";
+    args.push(mac);
+  }
+  const sql = `SELECT domain, app, category, MAX(ip) AS ip, mac, COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes,
+      MIN(CASE WHEN t > 0 THEN t END) AS first, MAX(t) AS last
+    FROM flows WHERE ${where} GROUP BY domain, app, category, mac`;
+  return db.prepare(sql).all(...args);
+}
+
+// Whole days come from flow_sites; days written before it existed are built on first use.
+function ensureSites(days) {
+  const built = siteDaysBuilt();
+  const missing = days.filter((d) => !built.has(d));
+  if (!missing.length) return;
+  db.exec("BEGIN");
+  try {
+    for (const d of missing) rebuildSites(d);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+function siteSummaryDays(days, mac) {
+  ensureSites(days);
+  const sql = `SELECT domain, app, category, mac, MAX(ip) AS ip, SUM(n) AS n, SUM(bytes) AS bytes, MIN(first) AS first, MAX(last) AS last
+    FROM flow_sites WHERE day IN (${inList(days)})${mac ? " AND mac = ?" : ""} GROUP BY domain, app, category, mac`;
+  return db.prepare(sql).all(...days, ...(mac ? [mac] : []));
+}
+
+// Devices with connections in these days, for the Sites device picker.
+export function siteDevices(days, span) {
+  if (!days.length) return [];
+  if (!span) {
+    ensureSites(days);
+    return db.prepare(`SELECT mac, SUM(n) AS n FROM flow_sites WHERE day IN (${inList(days)}) GROUP BY mac ORDER BY n DESC`).all(...days);
+  }
+  const args = [...days];
+  const where = `day IN (${inList(days)})${spanSql(span, args)}`;
+  return db.prepare(`SELECT mac, COUNT(*) AS n FROM flows WHERE ${where} GROUP BY mac ORDER BY n DESC`).all(...args);
+}
+
+// The newest connections to these raw destinations, newest first.
+export function siteHits(days, mac, domains, limit = 50, span) {
+  if (!days.length || !domains.length) return [];
+  const args = [...days];
+  let where = `day IN (${inList(days)}) AND t > 0`;
+  where += spanSql(span, args);
+  if (mac) {
+    where += " AND mac = ?";
+    args.push(mac);
+  }
+  where += ` AND domain IN (${inList(domains)})`;
+  args.push(...domains);
+  return db
+    .prepare(`SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id FROM flows WHERE ${where} ORDER BY t DESC, day, seq LIMIT ?`)
+    .all(...args, limit)
+    .map(toRow);
 }

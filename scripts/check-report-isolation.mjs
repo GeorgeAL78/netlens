@@ -36,7 +36,13 @@ if (start < 0) {
 // Since UU-C-114 the handler is a thin wrapper over buildReport(), which alert checks reuse;
 // both must stay synchronous and UniFi-free.
 const builder = src.indexOf("function buildReport(");
-const body = sliceBalanced(start) + (builder >= 0 ? sliceBalanced(builder) : "");
+// The Sites page (UU-C-135) reads the same stored records and follows the same rule.
+const extra = ['app.get("/api/sites"', 'app.get("/api/sites/hits"', "function buildSites(", "function siteIndex("]
+  .map((m) => src.indexOf(m))
+  .filter((i) => i >= 0)
+  .map(sliceBalanced)
+  .join("");
+const body = sliceBalanced(start) + (builder >= 0 ? sliceBalanced(builder) : "") + extra;
 
 const problems = [];
 const awaits = (body.match(/\bawait\b/g) || []).length;
@@ -52,8 +58,8 @@ for (const name of new Set([...body.matchAll(/\b([a-zA-Z_$][\w$]*)\s*\(/g)].map(
 }
 
 if (problems.length) {
-  console.error("FAIL /api/report can reach UniFi (REVIEW rule 8):");
+  console.error("FAIL /api/report or /api/sites can reach UniFi (REVIEW rule 8):");
   for (const p of problems) console.error("  - " + p);
   process.exit(1);
 }
-console.log("PASS /api/report cannot reach UniFi (no await, no unifi.*, no helper reaches it)");
+console.log("PASS /api/report and /api/sites cannot reach UniFi (no await, no unifi.*, no helper reaches it)");

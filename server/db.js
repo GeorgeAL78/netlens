@@ -142,6 +142,16 @@ db.exec(`
     method TEXT,
     PRIMARY KEY (mac, ts)
   );
+  -- Addresses of watched sites (UU-C-135), from NetLens's own hourly lookups. A connection
+  -- UniFi recorded only by IP (secure DNS hid the name) is named from here.
+  CREATE TABLE IF NOT EXISTS watch_ips (
+    ip TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    category TEXT NOT NULL,
+    first_seen INTEGER NOT NULL,
+    last_seen INTEGER NOT NULL,
+    PRIMARY KEY (ip, domain)
+  );
   CREATE TABLE IF NOT EXISTS local_names (
     key TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -746,6 +756,30 @@ export function savePresence(mac, state, { ts, ip = null, method = null, verify 
 
 export function presenceLog(mac, since) {
   return db.prepare(`SELECT ts, state, method FROM presence_log WHERE mac = ? AND ts >= ? ORDER BY ts`).all(String(mac).toLowerCase(), since);
+}
+
+// Watched-site addresses (UU-C-135).
+export function saveWatchIps(rows, ts) {
+  const up = db.prepare(
+    `INSERT INTO watch_ips (ip, domain, category, first_seen, last_seen) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(ip, domain) DO UPDATE SET last_seen = excluded.last_seen, category = excluded.category`
+  );
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) up.run(r.ip, r.domain, r.category, ts, ts);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+export function watchIps() {
+  return db.prepare(`SELECT ip, domain, category, first_seen AS firstSeen, last_seen AS lastSeen FROM watch_ips`).all();
+}
+
+export function pruneWatchIps(before) {
+  db.prepare(`DELETE FROM watch_ips WHERE last_seen < ?`).run(before);
 }
 
 export function prunePresence(before) {

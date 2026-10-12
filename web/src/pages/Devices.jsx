@@ -106,6 +106,20 @@ export default function Devices({ route }) {
   // Network checks (UU-C-122): mac -> "checking" | { up, method, ms }.
   const [checks, setChecks] = useState({});
   const [checkingAll, setCheckingAll] = useState(false);
+  // Blocked in UniFi (UU-C-135): mac -> true/false set this visit, before the reload lands.
+  const [blockNow, setBlockNow] = useState({});
+  const [blockMsg, setBlockMsg] = useState("");
+  async function setBlock(d, next) {
+    if (!window.confirm(next ? `Block ${d.label}? It loses network access until you unblock it.` : `Unblock ${d.label}?`)) return;
+    setBlockMsg("");
+    try {
+      const r = await api(`/api/clients/${encodeURIComponent(d.mac)}/block`, { method: "POST", body: JSON.stringify({ blocked: next }) });
+      setBlockNow((m) => ({ ...m, [d.mac]: Boolean(r.blocked) }));
+      setBlockMsg(`${d.label} ${r.blocked ? "blocked" : "unblocked"} in UniFi.`);
+    } catch (err) {
+      setBlockMsg(err.message || String(err));
+    }
+  }
   async function check(d) {
     setChecks((m) => ({ ...m, [d.mac]: "checking" }));
     try {
@@ -125,9 +139,16 @@ export default function Devices({ route }) {
     setCheckingAll(false);
   }
 
-  const list = useMemo(() => (data?.devices || []).map((d) => (saved[d.mac] != null ? { ...d, name: saved[d.mac] || null, label: saved[d.mac] || d.hostname || d.mac } : d)), [data, saved]);
+  const list = useMemo(
+    () =>
+      (data?.devices || [])
+        .map((d) => (saved[d.mac] != null ? { ...d, name: saved[d.mac] || null, label: saved[d.mac] || d.hostname || d.mac } : d))
+        .map((d) => (blockNow[d.mac] != null ? { ...d, blocked: blockNow[d.mac] } : d)),
+    [data, saved, blockNow]
+  );
+  const blocked = list.filter((d) => d.blocked);
   const fresh = list.filter((d) => d.isNew);
-  const old = (d) => !d.online && isUnnamed({ name: d.name, mac: d.mac }) && (!d.lastSeen || Date.now() - d.lastSeen > 7 * 86400e3);
+  const old = (d) => !d.blocked && !d.online && isUnnamed({ name: d.name, mac: d.mac }) && (!d.lastSeen || Date.now() - d.lastSeen > 7 * 86400e3);
   const hiddenOld = list.filter(old).length;
   const s = q.trim().toLowerCase();
   const all = list
@@ -156,6 +177,7 @@ export default function Devices({ route }) {
             <span className="muted">
               {data.source === "stored" ? `UniFi did not answer — ${list.length} devices NetLens has stored` : data.source === "offline" ? `${list.length} devices` : `${list.length} known to UniFi`} · {list.filter((d) => d.online).length} online now
               {list.some((d) => !d.online && d.presence?.state === "lan") ? ` · ${list.filter((d) => !d.online && d.presence?.state === "lan").length} more answer on the network` : ""}
+              {blocked.length ? ` · ${blocked.length} blocked` : ""}
               {data.checks?.lastRunAt ? ` · offline devices checked every 5 min, last ${ago(data.checks.lastRunAt)}` : ""}
             </span>
           )}
@@ -163,8 +185,29 @@ export default function Devices({ route }) {
       </div>
       {error && <Failed error={error} reload={reload} />}
       {!data && loading && <Loading what="Asking UniFi for its device list…" />}
+      {blockMsg && <p className="note">{blockMsg}</p>}
       {data && (
         <>
+          {blocked.length > 0 && (
+            <div className="card">
+              <div className="card-head">
+                <h2>Blocked</h2>
+                <span className="hint">no network access until unblocked in UniFi</span>
+              </div>
+              <div className="rows">
+                {blocked.map((d) => (
+                  <div key={d.mac} className="row" style={{ gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr) auto", cursor: "default", alignItems: "center" }}>
+                    <span className="stack">
+                      <a href={href("device", d.mac)} className="ellipsis">{d.label}</a>
+                      <span className="dim small ellipsis">{vendorText(d)}</span>
+                    </span>
+                    <span className="dim small mono ellipsis">{d.ip || d.mac}{d.lastSeen ? ` · seen ${ago(d.lastSeen)}` : ""}</span>
+                    <button className="btn small" onClick={() => setBlock(d, false)}>Unblock</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="card">
             <div className="card-head">
               <h2>New in the last 7 days</h2>
@@ -206,7 +249,10 @@ export default function Devices({ route }) {
                 <div key={d.mac} id={`dev-${d.mac}`} className={`row ${route.query.mac === d.mac ? "sel" : ""}`} style={{ gridTemplateColumns: "14px minmax(0, 1.2fr) minmax(0, 1fr) 170px minmax(150px, auto)", cursor: "default", alignItems: "center" }}>
                   <span className={`status-dot ${d.online ? "" : d.presence?.state === "lan" ? "warn" : "off"}`} title={d.online ? "online in UniFi" : d.presence?.state === "lan" ? "on the network, not in UniFi" : "offline"} />
                   <span className="stack">
-                    <a href={href("device", d.mac)} className="ellipsis">{d.label}</a>
+                    <span className="ellipsis">
+                      <a href={href("device", d.mac)}>{d.label}</a>
+                      {d.blocked && <span className="bad small" style={{ marginLeft: 8, fontWeight: 600 }}>blocked</span>}
+                    </span>
                     <span className="dim small ellipsis">{vendorText(d)}</span>
                   </span>
                   <span className="stack">

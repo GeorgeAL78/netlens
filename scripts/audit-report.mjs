@@ -118,7 +118,40 @@ for (const { q, label } of periods) {
       check(`${label} ${client.name} / ${svc.app} (detected)`, await get(`/api/report?${qm}&appId=${encodeURIComponent(svc.value)}`), { appSelected: true });
     }
   }
+  if (!label.includes(":")) await checkSites(q, label);
   process.stdout.write(`  ${label.padEnd(10)} ${String(stats.screens).padStart(6)} screens checked\n`);
+}
+
+// Sites (UU-C-135): every connection counted once, whatever the grouping, filter or device.
+async function checkSites(q, label) {
+  const one = async (qs, name) => {
+    const s = await get(`/api/sites?${qs}`);
+    stats.screens += 1;
+    const bad = (m) => failures.push(`${label} sites ${name}: ${m}`);
+    const listed = { n: sum(s.sites, (r) => r.n), bytes: sum(s.sites, (r) => r.bytes) };
+    if (!s.truncated && (listed.n !== s.total.n || listed.bytes !== s.total.bytes)) bad(`rows ${listed.n}/${listed.bytes} != total ${s.total.n}/${s.total.bytes}`);
+    if (!/cat=/.test(qs) && sum(s.categories, (c) => c.n) !== s.total.n) bad("category chips do not add up to the total");
+    if (!/(cat|q)=/.test(qs) && s.total.n + s.hidden.n !== s.all.n) bad(`shown ${s.total.n} + hidden ${s.hidden.n} != all ${s.all.n}`);
+    if (/bg=1/.test(qs) && s.hidden.n) bad("background hidden although asked for");
+    return s;
+  };
+  const all = await one(`${q}&bg=1`, "all");
+  const grouped = await one(`${q}&bg=1&group=domain`, "grouped");
+  if (grouped.all.n !== all.all.n || grouped.all.bytes !== all.all.bytes) failures.push(`${label} sites: grouping by domain changed the totals`);
+  await one(q, "default");
+  const cat = all.categories[0];
+  if (cat) {
+    const c = await one(`${q}&bg=1&cat=${encodeURIComponent(cat.category)}`, cat.category);
+    if (c.total.n !== cat.n) failures.push(`${label} sites: ${cat.category} chip says ${cat.n}, filtered list has ${c.total.n}`);
+  }
+  let perDevice = 0;
+  for (const d of all.devices) perDevice += (await one(`${q}&bg=1&mac=${encodeURIComponent(d.mac)}`, d.name)).all.n;
+  if (perDevice !== all.all.n) failures.push(`${label} sites: devices add up to ${perDevice}, all devices ${all.all.n}`);
+  const top = all.sites[0];
+  if (top) {
+    const h = await get(`/api/sites/hits?${q}&bg=1&key=${encodeURIComponent(top.key)}`);
+    if (!h.hits.length && top.last > 0) failures.push(`${label} sites: no connections behind ${top.site}`);
+  }
 }
 
 for (const { hq, label, dayBar } of hourChecks) {

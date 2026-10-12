@@ -23,6 +23,8 @@ which UniFi itself deletes after a day or a week.
 | **Network** — live map, access point selected | **Security** — blocked intrusion with its full record |
 | ![Devices — new devices, maker and where they connect](assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) |
 | **Devices** — new devices, maker, switch port or access point, rename | **Alerts** — daily limits per app and device |
+| ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) | |
+| **Sites** — every site each device connected to, filtered by category | |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
@@ -40,7 +42,13 @@ which UniFi itself deletes after a day or a week.
 - **Devices** — every device UniFi knows, new ones first: maker, where it connected (switch port
   or access point and band), IP, first and last seen; rename it (saved in UniFi). Offline devices
   are checked on the network every 5 minutes (ping, then common ports, with a MAC check), so a
-  device that is on but not using the internet still shows as there.
+  device that is on but not using the internet still shows as there. Blocked devices are listed
+  on top, with an Unblock button.
+- **Sites** — every site each device connected to over the last 30 days, with a filter per
+  category (social, gaming, school, ads and tracking, AI, adult…), search, and the times of
+  each connection. Taken from UniFi's connection records, not a DNS log (UniFi has none). When a
+  browser's secure DNS hides the name, NetLens names the address if it belongs to a watched
+  site, from its own hourly lookups.
 - **Alerts** — daily limits on time in use or data for an app or category on a device, e.g.
   YouTube on the kids' tablet over 2 hours. Flagged on Home and the Alerts tab; watch only.
 - **Security** — intrusion attempts and firewall blocks with the blocked connection's full

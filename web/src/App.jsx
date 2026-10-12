@@ -10,6 +10,7 @@ import Usage from "./pages/Usage.jsx";
 import Settings from "./pages/Settings.jsx";
 import Alerts from "./pages/Alerts.jsx";
 import Devices from "./pages/Devices.jsx";
+import Sites from "./pages/Sites.jsx";
 
 // The shell of the redesigned interface (UU-C-087): one top bar — home, the three views,
 // search and settings — and the page the URL names.
@@ -17,6 +18,7 @@ const TABS = [
   ["home", "Home"],
   ["day", "Day"],
   ["usage", "Usage"], // apps, categories and the app picker (UU-C-106)
+  ["sites", "Sites"], // every site each device connected to (UU-C-135)
   ["network", "Network"],
   ["security", "Security"],
   ["devices", "Devices"], // new devices, vendor, names saved in UniFi (UU-C-118)
@@ -135,6 +137,7 @@ export default function App() {
     settings: Settings,
     alerts: Alerts,
     devices: Devices,
+    sites: Sites,
   };
   const Page = pages[route.page] || Home;
   const fired = useFiredToday(route.page);

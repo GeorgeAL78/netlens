@@ -23,6 +23,8 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 | **Network** — live map, access point selected | **Security** — blocked intrusion with its full record |
 | ![Devices — new devices, maker and where they connect](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) |
 | **Devices** — new devices, maker, switch port or access point, rename | **Alerts** — daily limits per app and device |
+| ![Sites — every site each device connected to, by category](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/sites.png) | |
+| **Sites** — every site each device connected to, filtered by category | |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
@@ -34,7 +36,9 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 - **Network** — live map of gateway, switches, access points and devices, with radio and port details.
 - **Device** — traffic, signal or link speed, apps, sessions, events, online history, block / unblock.
 - **Devices** — new devices first, with maker and switch port or access point; rename (saved in UniFi);
-  offline devices checked on the network every 5 minutes.
+  offline devices checked on the network every 5 minutes; blocked devices listed with Unblock.
+- **Sites** — every site each device connected to (30 days), filtered by category; addresses hidden
+  by secure DNS named when they belong to a watched site.
 - **Alerts** — daily limits on time or data for an app on a device, flagged on Home.
 - **Security** — blocked intrusions and firewall hits with the full connection record.
 - **Usage** — apps, categories and devices for a day, an hour or 90 days, one search box for all

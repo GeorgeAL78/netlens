@@ -16,6 +16,8 @@ import * as flowstore from "./flowstore.js";
 import * as views from "./views.js";
 import * as probe from "./probe.js";
 import * as presence from "./presence.js";
+import * as watchlist from "./watchlist.js";
+import { siteCategory } from "./sitecats.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
 import * as health from "./health.js";
@@ -26,6 +28,7 @@ import {
   sessionize,
   isInfrastructureDomain,
   domainFoldsIntoApp,
+  registrableDomain,
 } from "./classify.js";
 import { logError } from "./log.js";
 
@@ -1653,6 +1656,156 @@ app.get("/api/report", (req, res) => {
   }
 });
 
+// ---- sites (UU-C-135) --------------------------------------------------------------------------
+// Every site each device connected to, from the connection records NetLens stores (30 days).
+// Not a DNS log: UniFi's API has none. A name is what UniFi saw in the DNS answer or the TLS
+// handshake; with secure DNS it sees neither and keeps a bare IP, which the watch list names
+// where it can (watchlist.js). Reads flows.db only — never UniFi — like buildReport.
+const IPV4_RE = /^\d{1,3}(\.\d{1,3}){3}$/;
+const PLUMBING_APP = /^(HTTPS?|SSL\/TLS|DTLS|QUIC|DNS|Unidentified)$|\b(CDN|Akamai|CloudFront|Cloudflare|Fastly|Static Content|User Content|APIs?)\b/i;
+const SITES_CAP = 2000;
+
+function siteIndex(query) {
+  const mac = String(query.mac || "").toLowerCase() || null;
+  const range = rangeFor(query);
+  const have = flowstore.dayInfo();
+  const days = dayKeysForRange(range.start, range.end).filter((d) => have.has(d));
+  const span = range.partial ? { from: range.start, to: range.end } : undefined;
+  const match = watchlist.matcher();
+  const group = query.group === "domain";
+  const sites = new Map();
+  for (const r of flowstore.siteSummary(days, mac, span)) {
+    const dom = String(r.domain || "");
+    const ip = IPV4_RE.test(dom) ? dom : r.ip || null;
+    const named = Boolean(dom) && dom !== "unknown" && !IPV4_RE.test(dom);
+    let site = named ? dom : ip || "";
+    let app = r.app || "Unidentified";
+    let category = r.category || "Unknown";
+    let how = null;
+    const watched = named ? watchlist.categoryForHost(dom) : null;
+    if (watched) category = watched;
+    // No rule knew the site: a common-site category beats "Web services" (sitecats.js).
+    else if (named && category === "Web services") category = siteCategory(dom) || category;
+    else if (!named && ip) {
+      const m = match(ip, r.last || range.end);
+      if (m) {
+        how = { match: m.match, confidence: m.confidence };
+        category = m.category;
+        site = app = m.site;
+      }
+    }
+    if (!site) site = "No name";
+    const key = `${group && site !== "No name" ? registrableDomain(site) || site : site}\u0000${category}`;
+    let s = sites.get(key);
+    if (!s) {
+      s = { key, site: key.split("\u0000")[0], category, apps: new Map(), n: 0, bytes: 0, first: null, last: 0, macs: new Map(), ip: null, how: null, raw: new Set() };
+      sites.set(key, s);
+    }
+    s.apps.set(app, (s.apps.get(app) || 0) + r.bytes + r.n);
+    s.n += r.n;
+    s.bytes += r.bytes;
+    if (r.first && (!s.first || r.first < s.first)) s.first = r.first;
+    if (r.last > s.last) s.last = r.last;
+    s.macs.set(r.mac, (s.macs.get(r.mac) || 0) + r.n);
+    if (!s.ip && ip && !named) s.ip = ip;
+    if (how && (!s.how || s.how.confidence === "possible")) s.how = how;
+    s.raw.add(r.domain ?? null);
+  }
+  return { range, days, span, mac, sites };
+}
+
+function buildSites(query) {
+  const { range, days, span, mac, sites } = siteIndex(query);
+  const nameOf = insights.names();
+  const showBg = query.bg === "1";
+  const q = String(query.q || "").trim().toLowerCase();
+  const cats = new Set(String(query.cat || "").split(",").filter(Boolean));
+  const all = { sites: sites.size, n: 0, bytes: 0 };
+  const list = [];
+  const hidden = { sites: 0, n: 0 };
+  for (const s of sites.values()) {
+    all.n += s.n;
+    all.bytes += s.bytes;
+    const app = [...s.apps].sort((a, b) => b[1] - a[1])[0][0];
+    const watched = watchlist.watchedCategories.includes(s.category) || s.category === "Local network";
+    const plumbing = !watched && !/^Calls\b/.test(app) && (/^(Network protocols|Unknown)$/.test(s.category) || PLUMBING_APP.test(app));
+    const row = {
+      key: s.key,
+      site: s.site,
+      app,
+      category: s.category,
+      n: s.n,
+      bytes: s.bytes,
+      first: s.first,
+      last: s.last,
+      devices: s.macs.size,
+      top: [...s.macs].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([m]) => ({ mac: m, name: nameOf(m) })),
+      ip: s.ip,
+      match: s.how?.match || null,
+      confidence: s.how?.confidence || null,
+      plumbing,
+    };
+    if (plumbing && !showBg) {
+      hidden.sites += 1;
+      hidden.n += s.n;
+      continue;
+    }
+    if (q && ![row.site, row.app, row.ip].some((v) => String(v || "").toLowerCase().includes(q))) continue;
+    list.push(row);
+  }
+  // Chip counts: everything the search and the background toggle leave, before the chips.
+  const byCat = new Map();
+  for (const r of list) {
+    const c = byCat.get(r.category) || { category: r.category, sites: 0, n: 0, bytes: 0 };
+    c.sites += 1;
+    c.n += r.n;
+    c.bytes += r.bytes;
+    byCat.set(r.category, c);
+  }
+  const shown = cats.size ? list.filter((r) => cats.has(r.category)) : list;
+  const total = shown.reduce((t, r) => ({ sites: t.sites + 1, n: t.n + r.n, bytes: t.bytes + r.bytes }), { sites: 0, n: 0, bytes: 0 });
+  const sortBy = { bytes: (a, b) => b.bytes - a.bytes, last: (a, b) => b.last - a.last }[query.sort] || ((a, b) => b.n - a.n || b.bytes - a.bytes);
+  shown.sort(sortBy);
+  return {
+    start: range.start,
+    end: range.end,
+    days: days.length,
+    mac,
+    group: query.group === "domain" ? "domain" : "site",
+    devices: flowstore.siteDevices(days, span).map((d) => ({ mac: d.mac, name: nameOf(d.mac), n: d.n })),
+    categories: [...byCat.values()].sort((a, b) => b.sites - a.sites),
+    all,
+    hidden,
+    total,
+    truncated: shown.length > SITES_CAP,
+    sites: shown.slice(0, SITES_CAP),
+    watch: { refreshedAt: Number(db.metaGet("watch_refreshed_at")) || null, categories: watchlist.watchedCategories },
+  };
+}
+
+app.get("/api/sites", (req, res) => {
+  try {
+    res.json(buildSites(req.query));
+  } catch (err) {
+    sendError(res, "GET /api/sites", err);
+  }
+});
+
+// The newest connections behind one row of the Sites page.
+app.get("/api/sites/hits", (req, res) => {
+  try {
+    const { days, span, mac, sites } = siteIndex(req.query);
+    const s = sites.get(String(req.query.key || ""));
+    const nameOf = insights.names();
+    const rows = s ? flowstore.siteHits(days, mac, [...s.raw].filter((d) => d != null), 50, span) : [];
+    res.json({
+      hits: rows.map((r) => ({ t: r.t, tEnd: r.tEnd, mac: r.mac, device: nameOf(r.mac), bytes: r.bytes || 0, domain: r.domain, ip: r.ip || null })),
+    });
+  } catch (err) {
+    sendError(res, "GET /api/sites/hits", err);
+  }
+});
+
 // ---- devices (UU-C-118) ----------------------------------------------------------------------
 // Every client UniFi knows, with its vendor (OUI; blank for private addresses), when UniFi
 // first and last saw it, and where it last connected — switch and port, or access point and
@@ -1920,6 +2073,8 @@ async function snapshot() {
       .getKnownClients()
       .then((known) => presence.refresh({ known, online, now: end }))
       .catch((err) => logError("presence", err));
+    // Addresses of watched sites, hourly, also in the background (UU-C-135).
+    watchlist.refresh(end).catch((err) => logError("watchlist", err));
     // Alert rules against today's fresh numbers (UU-C-114).
     try {
       evaluateAlerts(end);
