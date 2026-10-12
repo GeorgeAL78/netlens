@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.1 — 2026-10-11
+
+### Added
+- Devices: a Block / Unblock button on every device row (asks first; blocks in UniFi, like the device page).
+
 ## 2.8.0 — 2026-10-11
 
 ### Added

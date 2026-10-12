@@ -215,7 +215,7 @@ export default function Devices({ route }) {
             {!fresh.length && <div className="empty">No new devices this week.</div>}
             <div className="rows">
               {fresh.map((d) => (
-                <div key={d.mac} className="row" style={{ gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr) minmax(150px, auto)", cursor: "default", alignItems: "center" }}>
+                <div key={d.mac} className="row" style={{ gridTemplateColumns: "minmax(0, 1.2fr) minmax(0, 1fr) minmax(200px, auto)", cursor: "default", alignItems: "center" }}>
                   <span className="stack">
                     <a href={href("device", d.mac)} className="ellipsis">{d.label}</a>
                     <span className="dim small ellipsis">{vendorText(d)}</span>
@@ -227,9 +227,14 @@ export default function Devices({ route }) {
                   {editing === `new:${d.mac}` ? (
                     <NameEditor d={d} onSaved={onSaved(d)} onCancel={() => setEditing(null)} autoFocus />
                   ) : (
-                    <button className="btn small" style={{ justifySelf: "end" }} onClick={() => setEditing(`new:${d.mac}`)}>
-                      {d.name ? "Rename" : "Name it"}
-                    </button>
+                    <span style={{ justifySelf: "end", display: "inline-flex", gap: 6 }}>
+                      <button className="btn small" onClick={() => setEditing(`new:${d.mac}`)}>
+                        {d.name ? "Rename" : "Name it"}
+                      </button>
+                      <button className={`btn small ${d.blocked ? "" : "danger"}`} onClick={() => setBlock(d, !d.blocked)}>
+                        {d.blocked ? "Unblock" : "Block"}
+                      </button>
+                    </span>
                   )}
                 </div>
               ))}
@@ -246,7 +251,7 @@ export default function Devices({ route }) {
             </div>
             <div className="rows">
               {all.map((d) => (
-                <div key={d.mac} id={`dev-${d.mac}`} className={`row ${route.query.mac === d.mac ? "sel" : ""}`} style={{ gridTemplateColumns: "14px minmax(0, 1.2fr) minmax(0, 1fr) 170px minmax(150px, auto)", cursor: "default", alignItems: "center" }}>
+                <div key={d.mac} id={`dev-${d.mac}`} className={`row ${route.query.mac === d.mac ? "sel" : ""}`} style={{ gridTemplateColumns: "14px minmax(0, 1.2fr) minmax(0, 1fr) 170px minmax(200px, auto)", cursor: "default", alignItems: "center" }}>
                   <span className={`status-dot ${d.online ? "" : d.presence?.state === "lan" ? "warn" : "off"}`} title={d.online ? "online in UniFi" : d.presence?.state === "lan" ? "on the network, not in UniFi" : "offline"} />
                   <span className="stack">
                     <span className="ellipsis">
@@ -266,9 +271,15 @@ export default function Devices({ route }) {
                   {editing === `all:${d.mac}` ? (
                     <NameEditor d={d} onSaved={onSaved(d)} onCancel={() => setEditing(null)} autoFocus />
                   ) : (
-                    <button className="btn small" style={{ justifySelf: "end" }} onClick={() => setEditing(`all:${d.mac}`)}>
-                      {d.name ? "Rename" : "Name it"}
-                    </button>
+                    <span style={{ justifySelf: "end", display: "inline-flex", gap: 6 }}>
+                      <button className="btn small" onClick={() => setEditing(`all:${d.mac}`)}>
+                        {d.name ? "Rename" : "Name it"}
+                      </button>
+                      {/* Block / unblock in UniFi, per device (UU-C-139). */}
+                      <button className={`btn small ${d.blocked ? "" : "danger"}`} onClick={() => setBlock(d, !d.blocked)}>
+                        {d.blocked ? "Unblock" : "Block"}
+                      </button>
+                    </span>
                   )}
                 </div>
               ))}
