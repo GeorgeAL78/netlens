@@ -799,6 +799,12 @@ app.get("/api/wifi", (req, res) => {
   }
 });
 
+// UniFi writes resolved hosts as "<ip>_<name>": the name, and the address apart.
+const splitHost = (raw) => {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3})[._](.+)$/.exec(String(raw || ""));
+  return m ? { name: m[2], ip: m[1] } : { name: raw || "unknown", ip: /^\d{1,3}(\.\d{1,3}){3}$/.test(String(raw || "")) ? raw : null };
+};
+
 // UniFi's flow API and its System Log can name the same firewall rule differently ("Kids Wi-Fi
 // Blocks" vs "Block YouTube on Kids Wi-Fi"). A blocked connection that lines up with a firewall
 // event for the same device (±3 min) takes the event's name, so both lists agree (UU-C-155).
@@ -816,76 +822,104 @@ function systemLogRuleNames(items, nameOf) {
   };
 }
 
+// One list of blocks (UU-C-156). Two sources described the same thing: the System Log writes one
+// event per burst ("rule X blocked the iPad, 17 attempts") and the connection records hold every
+// blocked connection of it. An incident is one device blocked by one rule in one burst (a quiet
+// gap of 15 minutes starts a new one); a firewall event that falls inside it is attached, so it is
+// one line. Intrusions (IPS) stay their own lines; ad and tracker blocks are summarised apart.
+const INCIDENT_GAP_MS = 15 * 60e3;
+const isAdBlock = (r) => (r.policy ? /ad.?block|tracker/i.test(r.policy) : String(r.service || "").toUpperCase() === "DNS");
+
+function buildIncidents(start, end) {
+  const have = flowstore.dayInfo();
+  const nameOf = insights.names();
+  const sys = insights.threats(start, end);
+  const ruleOf = systemLogRuleNames(sys.items, nameOf);
+  const ads = [];
+  const open = new Map(); // mac|rule -> current incident
+  const incidents = [];
+  for (const r of flowstore.blockedAll(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end)) {
+    if (isAdBlock(r)) {
+      ads.push(r);
+      continue;
+    }
+    const rule = ruleOf({ ...r, first: r.t, last: r.t });
+    const k = `${r.mac}|${rule || ""}`;
+    let inc = open.get(k);
+    if (!inc || r.t - inc.last > INCIDENT_GAP_MS) {
+      inc = { kind: "rule", mac: r.mac, rule, first: r.t, last: r.t, n: 0, sites: new Map(), addrs: new Map(), services: new Set(), event: null };
+      open.set(k, inc);
+      incidents.push(inc);
+    }
+    const { name, ip } = splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip);
+    inc.n += 1;
+    inc.last = Math.max(inc.last, r.t);
+    inc.sites.set(name, (inc.sites.get(name) || 0) + 1);
+    if (ip || r.ip) inc.addrs.set(ip || r.ip, (inc.addrs.get(ip || r.ip) || 0) + 1);
+    if (r.service) inc.services.add(r.service);
+  }
+  // Attach firewall events; the ones with no connection records become their own incidents.
+  for (const it of sys.items) {
+    if (it.kind === "Threat blocked") {
+      incidents.push({ kind: "intrusion", mac: String(it.detail?.source?.mac || "").toLowerCase() || null, deviceName: it.source, rule: it.signature || it.policy || null, first: it.ts, last: it.ts, n: it.detail?.traffic?.count || 1, sites: new Map([[it.domain || it.target || "unknown", 1]]), addrs: new Map(it.target && IPV4_RE.test(it.target) ? [[it.target, 1]] : []), services: new Set(), event: it });
+      continue;
+    }
+    const mac = String(it.detail?.source?.mac || "").toLowerCase() || null;
+    const inc = incidents.find((x) => x.kind === "rule" && !x.event && x.rule === it.policy && (mac ? x.mac === mac : nameOf(x.mac) === it.source) && it.ts >= x.first - 180e3 && it.ts <= x.last + 180e3);
+    if (inc) inc.event = it;
+    else incidents.push({ kind: "rule", mac, deviceName: it.source, rule: it.policy, first: it.ts, last: it.ts, n: it.detail?.traffic?.count || 1, sites: new Map([[it.detail?.destination?.domain || it.target || "unknown", 1]]), addrs: new Map(it.target && IPV4_RE.test(it.target) ? [[it.target, 1]] : []), services: new Set(), event: it });
+  }
+  const list = incidents
+    .map((x) => {
+      const sites = [...x.sites].sort((a, b) => b[1] - a[1]);
+      return {
+        id: x.event?.uid || `${x.mac}|${x.rule || ""}|${x.first}`,
+        kind: x.kind,
+        mac: x.mac,
+        device: x.mac ? nameOf(x.mac) : x.deviceName || "unknown device",
+        rule: x.rule || null,
+        first: x.first,
+        last: x.last,
+        n: x.n,
+        sites: sites.slice(0, 12).map(([name, n]) => ({ name, n })),
+        siteCount: sites.length,
+        addresses: [...x.addrs].sort((a, b) => b[1] - a[1]).map(([ip, n]) => ({ ip, n })),
+        services: [...x.services],
+        event: x.event || null,
+      };
+    })
+    .sort((a, b) => b.last - a.last);
+  return { sys, list, ads, nameOf };
+}
+
 app.get("/api/threats", (req, res) => {
   try {
     const { start, end } = rangeFor(req.query);
-    // Blocked connections from the connection records (UU-C-148): every block, including ad
-    // blocking and Object / app blocks, which never reach the System Log. 30 days at most.
-    const have = flowstore.dayInfo();
-    const nameOf = insights.names();
-    // UniFi writes resolved hosts as "<ip>_<name>": show the name, and fold one name's many
-    // addresses into one row (UU-C-152).
-    const sys = insights.threats(start, end);
-    const ruleOf = systemLogRuleNames(sys.items, nameOf);
-    const grouped = new Map();
-    for (const r0 of flowstore.blockedSummary(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end)) {
-      const r = { ...r0, policy: ruleOf(r0) };
-      const raw = r.domain && r.domain !== "unknown" ? r.domain : r.ip || "unknown";
-      const m = /^(\d{1,3}(?:\.\d{1,3}){3})[._](.+)$/.exec(raw);
-      const name = m ? m[2] : raw;
-      const addr = m ? m[1] : IPV4_RE.test(raw) ? raw : null;
-      const k = `${r.mac}|${r.policy || ""}|${name}`;
-      const g = grouped.get(k) || { ...r, domain: name, addrs: new Set(), n: 0, first: r.first, last: 0 };
-      g.n += r.n;
-      g.first = Math.min(g.first, r.first);
-      g.last = Math.max(g.last, r.last);
-      if (addr) g.addrs.add(addr);
-      grouped.set(k, g);
-    }
-    const all = [...grouped.values()].sort((a, b) => b.last - a.last).map((r) => ({
-      mac: r.mac,
-      device: nameOf(r.mac),
-      rule: r.policy || null,
-      destination: r.domain,
-      addresses: r.addrs.size,
-      n: r.n,
-      first: r.first,
-      last: r.last,
-      // Ad and tracker blocks (UU-C-150) go to their own summary. Before rule names were kept,
-      // a blocked DNS lookup is what ad blocking produces; anything else counts as a rule.
-      ad: r.policy ? /ad.?block|tracker/i.test(r.policy) : String(r.service || "").toUpperCase() === "DNS",
-    }));
-    const blocked = all.filter((b) => !b.ad);
-    const ads = all.filter((b) => b.ad);
+    const { sys, list, ads, nameOf } = buildIncidents(start, end);
     const sumBy = (rows, key) => {
       const m = new Map();
-      for (const b of rows) {
-        const k = key(b);
-        const x = m.get(k) || { n: 0, macs: new Set(), mac: b.mac, device: b.device, last: 0 };
-        x.n += b.n;
-        x.macs.add(b.mac);
-        x.last = Math.max(x.last, b.last);
+      for (const r of rows) {
+        const k = key(r);
+        const x = m.get(k) || { n: 0, macs: new Set(), mac: r.mac };
+        x.n += 1;
+        x.macs.add(r.mac);
         m.set(k, x);
       }
-      return [...m].map(([k, x]) => ({ key: k, n: x.n, devices: x.macs.size, mac: x.mac, device: x.device, last: x.last })).sort((a, b) => b.n - a.n);
+      return [...m].map(([k, x]) => ({ key: k, n: x.n, devices: x.macs.size, mac: x.mac })).sort((a, b) => b.n - a.n);
     };
-    const byRule = new Map();
-    for (const b of blocked) byRule.set(b.rule || "", (byRule.get(b.rule || "") || 0) + b.n);
     res.json({
       start,
       end,
       tz,
-      ...sys,
-      blockedConnections: {
-        total: blocked.reduce((n, b) => n + b.n, 0),
-        rules: [...byRule].map(([rule, n]) => ({ rule: rule || null, n })).sort((a, b) => b.n - a.n),
-        rows: blocked.slice(0, 300),
-        truncated: blocked.length > 300,
-      },
+      incidents: list.slice(0, 500),
+      truncated: list.length > 500,
+      intrusions: list.filter((x) => x.kind === "intrusion").length,
+      ruleBlocks: list.filter((x) => x.kind === "rule").length,
+      threatsWithoutSignature: sys.threatsWithoutSignature,
       adBlocks: {
-        total: ads.reduce((n, b) => n + b.n, 0),
-        devices: sumBy(ads, (b) => b.mac).map((d) => ({ mac: d.mac, device: d.device, n: d.n, last: d.last })),
-        domains: sumBy(ads, (b) => b.destination).slice(0, 15).map((d) => ({ domain: d.key, n: d.n, devices: d.devices })),
+        total: ads.length,
+        devices: sumBy(ads, (r) => r.mac).map((d) => ({ mac: d.mac, device: nameOf(d.mac), n: d.n })),
+        domains: sumBy(ads, (r) => splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip).name).slice(0, 15).map((d) => ({ domain: d.key, n: d.n, devices: d.devices })),
       },
     });
   } catch (err) {
@@ -2073,39 +2107,27 @@ function evaluateAlerts(now = Date.now()) {
   });
 }
 
-// The connections behind one "Blocked by your rules" row (UU-C-153): device, rule, destination.
-const splitHost = (raw) => {
-  const m = /^(\d{1,3}(?:\.\d{1,3}){3})[._](.+)$/.exec(String(raw || ""));
-  return m ? { name: m[2], ip: m[1] } : { name: raw || "unknown", ip: IPV4_RE.test(String(raw || "")) ? raw : null };
-};
+// The connections behind one incident of the Security list (UU-C-153, UU-C-156).
 app.get("/api/threats/blocked", (req, res) => {
   try {
-    const { start, end } = rangeFor(req.query);
+    // One incident's connections: a device, a rule, a time span (UU-C-156).
     const mac = String(req.query.mac || "").toLowerCase();
     const rule = req.query.rule ? String(req.query.rule) : null;
-    const dest = String(req.query.dest || "");
+    const from = Number(req.query.from) || 0;
+    const to = (Number(req.query.to) || Date.now()) + 1;
     const have = flowstore.dayInfo();
-    const ruleOf = systemLogRuleNames(insights.threats(start, end).items, insights.names());
+    const ruleOf = systemLogRuleNames(insights.threats(from - 3600e3, to + 3600e3).items, insights.names());
     const rows = flowstore
-      .blockedRows(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end, mac)
-      .filter((r) => ruleOf({ ...r, mac }) === rule)
-      .map((r) => ({ ...r, ...splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip) }))
-      .filter((r) => r.name === dest);
-    const sample = db.latestClientSamples().get(mac);
-    const addresses = new Map();
-    for (const r of rows) if (r.ip || r.domain) addresses.set(r.ip || r.domain, (addresses.get(r.ip || r.domain) || 0) + 1);
+      .blockedRows(dayKeysForRange(from, to).filter((d) => have.has(d)), from, to, mac)
+      .filter((r) => ruleOf({ ...r, mac, first: r.t, last: r.t }) === rule)
+      .map((r) => ({ ...r, ...splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip) }));
     res.json({
       mac,
       device: insights.names()(mac),
-      deviceIp: sample?.ip || null,
+      deviceIp: db.latestClientSamples().get(mac)?.ip || null,
       rule,
-      destination: dest,
       n: rows.length,
-      first: rows.length ? rows[rows.length - 1].t : null,
-      last: rows.length ? rows[0].t : null,
-      services: [...new Set(rows.map((r) => r.service).filter(Boolean))],
-      addresses: [...addresses].map(([ip, n]) => ({ ip, n })).sort((a, b) => b.n - a.n),
-      attempts: rows.slice(0, 100).map((r) => ({ t: r.t, ip: r.ip || null, service: r.service || null })),
+      attempts: rows.slice(0, 200).map((r) => ({ t: r.t, site: r.name, ip: r.ip || null, service: r.service || null })),
     });
   } catch (err) {
     sendError(res, "GET /api/threats/blocked", err);

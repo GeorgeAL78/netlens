@@ -381,17 +381,6 @@ export function close() {
   db.close();
 }
 
-// Blocked connections in [from, to) (UU-C-148): per device, rule and destination.
-export function blockedSummary(days, from, to) {
-  if (!days.length) return [];
-  return db
-    .prepare(
-      `SELECT mac, policy, domain, MAX(ip) AS ip, MAX(service) AS service, COUNT(*) AS n, MIN(t) AS first, MAX(t) AS last FROM flows INDEXED BY flows_blocked
-       WHERE action = 'blocked' AND day IN (${inList(days)}) AND t >= ? AND t < ? GROUP BY mac, policy, domain ORDER BY last DESC`
-    )
-    .all(...days, from, to);
-}
-
 // Blocked rows still without a rule (UU-C-152), and naming one by its primary key.
 export function blockedWithoutRule(days, since) {
   if (!days.length) return [];
@@ -421,4 +410,15 @@ export function blockedRows(days, from, to, mac, limit = 500) {
        WHERE action = 'blocked' AND day IN (${inList(days)}) AND t >= ? AND t < ? AND mac = ? ORDER BY t DESC LIMIT ?`
     )
     .all(...days, from, to, mac, limit);
+}
+
+// Every blocked connection in [from, to), per device in time order (UU-C-156), for incidents.
+export function blockedAll(days, from, to) {
+  if (!days.length) return [];
+  return db
+    .prepare(
+      `SELECT t, mac, domain, ip, service, policy FROM flows INDEXED BY flows_blocked
+       WHERE action = 'blocked' AND day IN (${inList(days)}) AND t >= ? AND t < ? ORDER BY mac, t`
+    )
+    .all(...days, from, to);
 }

@@ -1,7 +1,4 @@
 ### Changed
-- Security › Blocked by your rules: click a row for its details — rule, device and its address, destination with every address it used, attempts and when, service — like the System Log events.
-- Destinations show the site name (yt3.googleusercontent.com) with its addresses folded into one row, instead of one row per address.
-
-### Fixed
-- Blocked connections saved before v2.10.0 get their rule name filled in from UniFi while it still has the record (about 4 days). Connection-tracking blocks are named "Block Invalid Traffic".
-- A blocked connection that matches a firewall event in the System Log uses that event's rule name (UniFi's connection records can call the same rule something else).
+- Security is one list of blocks. Each line is one incident: an intrusion, or a device blocked by one of your rules in one burst (for example "iPad → yt3.googleusercontent.com +5 more · Block YouTube on Kids Wi-Fi · ×40"). UniFi's System Log event for a burst and the blocked connections behind it are now the same line; click it for the event's details and every blocked connection.
+- "Investigate <address>" finds every block that touched the address, including those only in the connection records.
+- Ads and trackers stay in their own summary.
