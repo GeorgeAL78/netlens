@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.11.1 — 2026-10-14
+
+### Added
+- Security: drop-down filters above the list — type (blocked by your rules / intrusions), device, site, and rule or signature, each with its count; they combine, and Clear filters resets them.
+
 ## 2.11.0 — 2026-10-14
 
 ### Changed

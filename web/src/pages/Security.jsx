@@ -103,6 +103,11 @@ export default function Security({ route }) {
   const [showHidden, setShowHidden] = useState(false);
   const ip = route.query.ip || null;
   const rule = route.query.rule || null;
+  // Drop-down filters (UU-C-158): type, device, site, rule — combined.
+  const kind = route.query.kind || "";
+  const dev = route.query.dev || "";
+  const site = route.query.site || "";
+  const setFilter = (patch) => go("security", null, { ...route.query, ...patch, e: null });
 
   const toggleHide = (r) => {
     const next = hidden.includes(r) ? hidden.filter((x) => x !== r) : [...hidden, r];
@@ -115,11 +120,30 @@ export default function Security({ route }) {
   };
 
   const all = data?.incidents || [];
+  const devKey = (x) => x.mac || x.device;
   const list = all.filter((x) => {
-    if (ip) return touches(x, ip);
-    if (rule) return x.rule === rule;
-    return showHidden || x.kind !== "rule" || !hidden.includes(x.rule);
+    if (ip && !touches(x, ip)) return false;
+    if (rule && x.rule !== rule) return false;
+    if (kind && x.kind !== kind) return false;
+    if (dev && devKey(x) !== dev) return false;
+    if (site && !x.sites.some((s) => s.name === site)) return false;
+    if (!ip && !rule && !showHidden && x.kind === "rule" && hidden.includes(x.rule)) return false;
+    return true;
   });
+  // Options with counts, from the whole period.
+  const options = useMemo(() => {
+    const count = (pairs) => {
+      const m = new Map();
+      for (const [k, label] of pairs) if (k) m.set(k, { label, n: (m.get(k)?.n || 0) + 1 });
+      return [...m].sort((a, b) => b[1].n - a[1].n).map(([value, v]) => ({ value, label: v.label, n: v.n }));
+    };
+    return {
+      dev: count(all.map((x) => [devKey(x), x.device])),
+      site: count(all.flatMap((x) => x.sites.map((s) => [s.name, s.name]))),
+      rule: count(all.map((x) => [x.rule, x.rule])),
+    };
+  }, [all]); // eslint-disable-line react-hooks/exhaustive-deps
+  const filtered = Boolean(kind || dev || site || rule);
   const hiddenCount = all.filter((x) => x.kind === "rule" && hidden.includes(x.rule)).length;
   const sel = all.find((x) => x.id === route.query.e) || null;
 
@@ -159,11 +183,11 @@ export default function Security({ route }) {
           <div className="page-head">
             <div className="titles">
               <span className="dim small">Security</span>
-              <h1>{ip ? `Address ${ip}` : rule ? `Rule “${rule}”` : "Blocked traffic"}</h1>
+              <h1>{ip ? `Address ${ip}` : "Blocked traffic"}</h1>
               {data && (
                 <span className="muted">
                   {intrusions} intrusion attempt{intrusions === 1 ? "" : "s"} · {list.length - intrusions} block{list.length - intrusions === 1 ? "" : "s"} by your rules
-                  {(ip || rule) && <> · <a href={href("security", null, { r: range })}>show everything</a></>}
+                  {ip && <> · <a href={href("security", null, { r: range })}>show everything</a></>}
                 </span>
               )}
             </div>
@@ -192,7 +216,7 @@ export default function Security({ route }) {
                   <div className="axis"><span>{days[0].k}</span><span>{days[days.length - 1].k}</span></div>
                 </div>
               )}
-              {list.length > 0 && !ip && !rule && (
+              {list.length > 0 && !ip && (
                 <div className="grid g3">
                   {tops.map(([title, rows]) => (
                     <div key={title} className="card tight">
@@ -209,6 +233,27 @@ export default function Security({ route }) {
                 </div>
               )}
               <div className="card" style={{ padding: "6px 10px" }}>
+                <div className="filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", padding: "6px 4px 10px" }}>
+                  <select className="field" aria-label="Type" value={kind} onChange={(e) => setFilter({ kind: e.target.value || null })}>
+                    <option value="">All types</option>
+                    <option value="rule">Blocked by your rules</option>
+                    <option value="intrusion">Intrusions</option>
+                  </select>
+                  <select className="field" aria-label="Device" value={dev} onChange={(e) => setFilter({ dev: e.target.value || null })}>
+                    <option value="">All devices</option>
+                    {options.dev.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.n})</option>)}
+                  </select>
+                  <select className="field" aria-label="Site" value={site} onChange={(e) => setFilter({ site: e.target.value || null })}>
+                    <option value="">All sites</option>
+                    {options.site.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.n})</option>)}
+                  </select>
+                  <select className="field" aria-label="Rule" value={rule || ""} onChange={(e) => setFilter({ rule: e.target.value || null })}>
+                    <option value="">All rules & signatures</option>
+                    {options.rule.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.n})</option>)}
+                  </select>
+                  {filtered && <button className="btn small" onClick={() => setFilter({ kind: null, dev: null, site: null, rule: null })}>Clear filters</button>}
+                  <span className="dim small" style={{ marginLeft: "auto" }}>{list.length} of {all.length}</span>
+                </div>
                 <div className="rows">
                   {list.map((x) => (
                     <button
