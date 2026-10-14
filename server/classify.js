@@ -345,6 +345,7 @@ export function annotateFlow(flow) {
     service: flow.service || "",
     action: flow.action || "",
     mac: String(flow.source?.mac || "").toLowerCase(),
+    ...(flow.policy ? { policy: flow.policy } : {}),
   };
 }
 

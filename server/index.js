@@ -801,7 +801,33 @@ app.get("/api/wifi", (req, res) => {
 app.get("/api/threats", (req, res) => {
   try {
     const { start, end } = rangeFor(req.query);
-    res.json({ start, end, tz, ...insights.threats(start, end) });
+    // Blocked connections from the connection records (UU-C-148): every block, including ad
+    // blocking and Object / app blocks, which never reach the System Log. 30 days at most.
+    const have = flowstore.dayInfo();
+    const nameOf = insights.names();
+    const blocked = flowstore.blockedSummary(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end).map((r) => ({
+      mac: r.mac,
+      device: nameOf(r.mac),
+      rule: r.policy || null,
+      destination: r.domain && r.domain !== "unknown" ? r.domain : r.ip || "unknown",
+      n: r.n,
+      first: r.first,
+      last: r.last,
+    }));
+    const byRule = new Map();
+    for (const b of blocked) byRule.set(b.rule || "", (byRule.get(b.rule || "") || 0) + b.n);
+    res.json({
+      start,
+      end,
+      tz,
+      ...insights.threats(start, end),
+      blockedConnections: {
+        total: blocked.reduce((n, b) => n + b.n, 0),
+        rules: [...byRule].map(([rule, n]) => ({ rule: rule || null, n })).sort((a, b) => b.n - a.n),
+        rows: blocked.slice(0, 300),
+        truncated: blocked.length > 300,
+      },
+    });
   } catch (err) {
     sendError(res, "GET /api/threats", err);
   }
@@ -955,6 +981,9 @@ app.post("/api/cache/delta", async (req, res) => {
       }
     }
     await cache.warm(jobs, { mode: "delta" });
+    // "Refresh" means everything new (UU-C-148): System Log events, Wi-Fi joins, health and
+    // presence too — the same snapshot the timer runs (it reuses one already running).
+    await runSnapshot();
     res.json({ ok: true, mode: "delta", ...cache.status() });
   } catch (err) {
     sendError(res, "POST /api/cache/delta", err);

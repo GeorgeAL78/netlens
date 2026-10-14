@@ -75,10 +75,15 @@ db.exec(`
   );
 `);
 
-const COLS = ["t", "tEnd", "mac", "app", "category", "domain", "bytes", "bytesRx", "bytesTx", "service", "action", "kind", "confidence", "source", "ip", "id"];
+// The rule that blocked a connection (UU-C-148): "Block YouTube on Kids Wi-Fi", "Ad Blocking"…
+// Added to an existing flows.db in place; rows stored before have none.
+if (!db.prepare(`PRAGMA table_info(flows)`).all().some((c) => c.name === "policy")) db.exec(`ALTER TABLE flows ADD COLUMN policy TEXT`);
+db.exec(`CREATE INDEX IF NOT EXISTS flows_blocked ON flows (day, t) WHERE action = 'blocked'`);
+
+const COLS = ["t", "tEnd", "mac", "app", "category", "domain", "bytes", "bytesRx", "bytesTx", "service", "action", "kind", "confidence", "source", "ip", "id", "policy"];
 const insertFlow = db.prepare(
-  `INSERT INTO flows (day, seq, t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  `INSERT INTO flows (day, seq, t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id, policy)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 const deleteDayFlows = db.prepare(`DELETE FROM flows WHERE day = ?`);
 const deleteDayGroups = db.prepare(`DELETE FROM flow_groups WHERE day = ?`);
@@ -108,7 +113,7 @@ const upsertDay = db.prepare(
    ON CONFLICT(day) DO UPDATE SET count = excluded.count, classifier = excluded.classifier`
 );
 const selectDay = db.prepare(
-  `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id
+  `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id, policy
    FROM flows WHERE day = ? ORDER BY seq`
 );
 
@@ -135,6 +140,7 @@ function toRow(r) {
   if (r.kind != null) row.kind = r.kind;
   if (r.ip != null) row.ip = r.ip;
   if (r.id != null) row.id = r.id;
+  if (r.policy != null) row.policy = r.policy;
   for (const k of Object.keys(row)) if (row[k] === null) delete row[k];
   return row;
 }
@@ -238,7 +244,7 @@ export function rowsForApps(days, mac, apps, localDomains, span) {
     conds.push(`(app = 'Local network' AND domain IN (${inList(localDomains)}))`);
     args.push(...localDomains);
   }
-  const sql = `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id
+  const sql = `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id, policy
     FROM flows WHERE day IN (${inList(days)})${spanWhere}${mac ? " AND mac = ?" : ""} AND (${conds.join(" OR ")}) ORDER BY day, seq`;
   return db.prepare(sql).all(...args).map(toRow);
 }
@@ -266,7 +272,7 @@ export function latest(days, mac, filter, limit, span) {
     if (!conds.length) return [];
     where += ` AND (${conds.join(" OR ")})`;
   }
-  const sql = `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id
+  const sql = `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id, policy
     FROM flows WHERE ${where} ORDER BY t DESC, day, seq LIMIT ?`;
   return db.prepare(sql).all(...args, limit).map(toRow);
 }
@@ -358,7 +364,7 @@ export function siteHits(days, mac, domains, limit = 50, span) {
   where += ` AND domain IN (${inList(domains)})`;
   args.push(...domains);
   return db
-    .prepare(`SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id FROM flows WHERE ${where} ORDER BY t DESC, day, seq LIMIT ?`)
+    .prepare(`SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id, policy FROM flows WHERE ${where} ORDER BY t DESC, day, seq LIMIT ?`)
     .all(...args, limit)
     .map(toRow);
 }
@@ -371,4 +377,15 @@ export function close() {
     /* closing anyway */
   }
   db.close();
+}
+
+// Blocked connections in [from, to) (UU-C-148): per device, rule and destination.
+export function blockedSummary(days, from, to) {
+  if (!days.length) return [];
+  return db
+    .prepare(
+      `SELECT mac, policy, domain, MAX(ip) AS ip, COUNT(*) AS n, MIN(t) AS first, MAX(t) AS last FROM flows INDEXED BY flows_blocked
+       WHERE action = 'blocked' AND day IN (${inList(days)}) AND t >= ? AND t < ? GROUP BY mac, policy, domain ORDER BY last DESC`
+    )
+    .all(...days, from, to);
 }

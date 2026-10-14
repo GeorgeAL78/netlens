@@ -115,6 +115,11 @@ export default function Security({ route }) {
     return [...m.values()].sort((a, b) => a.ts - b.ts);
   }, [list]);
   const dmax = Math.max(1, ...days.map((d) => d.t + d.f));
+  // Blocked connections from the connection records (UU-C-148), filterable by rule.
+  const [connRule, setConnRule] = useState(null);
+  const bc = data?.blockedConnections;
+  const ruleKey = (r) => r ?? "";
+  const connRows = (bc?.rows || []).filter((b) => (rule ? b.rule === rule : connRule == null || ruleKey(b.rule) === connRule));
   const threats = list.filter((i) => i.kind === "Threat blocked").length;
 
   return (
@@ -194,6 +199,39 @@ export default function Security({ route }) {
                   {!list.length && <div className="empty">Nothing blocked in this period.</div>}
                 </div>
               </div>
+              {bc && !ip && (
+                <div className="card">
+                  <div className="card-head" style={{ flexWrap: "wrap", gap: 10 }}>
+                    <h2>Blocked connections</h2>
+                    <span className="hint">
+                      {bc.total.toLocaleString()} from UniFi's connection records — includes ad blocking and app / Object blocks, which the list above never shows
+                    </span>
+                  </div>
+                  {!rule && bc.rules.length > 0 && (
+                    <div className="quick" role="group" aria-label="Rules">
+                      <button className={`btn small ${connRule == null ? "on" : ""}`} onClick={() => setConnRule(null)}>All <span className="dim">{bc.total}</span></button>
+                      {bc.rules.map((r) => (
+                        <button key={ruleKey(r.rule)} className={`btn small ${connRule === ruleKey(r.rule) ? "on" : ""}`} onClick={() => setConnRule(connRule === ruleKey(r.rule) ? null : ruleKey(r.rule))}>
+                          {r.rule || "rule not recorded"} <span className="dim">{r.n}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="rows">
+                    {connRows.slice(0, 200).map((b, i) => (
+                      <div key={i} className="row" style={{ gridTemplateColumns: "130px minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1fr) 60px", cursor: "default" }}>
+                        <span className="mono small dim">{shortDate(b.last)}</span>
+                        <a href={href("device", b.mac)} className="ellipsis">{b.device}</a>
+                        <span className="ellipsis small">{b.destination}</span>
+                        <span className="muted small ellipsis">{b.rule || "rule not recorded"}</span>
+                        <span className="mono small" style={{ textAlign: "right" }}>×{b.n}</span>
+                      </div>
+                    ))}
+                    {!connRows.length && <div className="empty">No blocked connections in this period.</div>}
+                  </div>
+                  {bc.truncated && <p className="dim small" style={{ margin: 0 }}>The 300 most recent groups.</p>}
+                </div>
+              )}
               {hiddenCount > 0 && !ip && !rule && (
                 <button className="btn small" style={{ alignSelf: "flex-start" }} onClick={() => setShowHidden((v) => !v)}>
                   {showHidden ? "Hide" : "Show"} {hiddenCount} event{hiddenCount === 1 ? "" : "s"} from hidden rules

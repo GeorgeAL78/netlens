@@ -314,6 +314,9 @@ function slimFlow(flow) {
   if (flow.id != null) slim.id = flow.id;
   if (flow.service) slim.service = flow.service;
   if (flow.action) slim.action = flow.action;
+  // Which rule decided it (UU-C-148); CONNTRACK is just "an allowed, tracked connection".
+  const policy = (flow.policies || []).map((p) => p?.name || p?.internal_type || p?.type).filter((n) => n && !/^CONNTRACK$/i.test(n));
+  if (policy.length) slim.policy = [...new Set(policy)].join(" + ");
   return slim;
 }
 
