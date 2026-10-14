@@ -362,3 +362,13 @@ export function siteHits(days, mac, domains, limit = 50, span) {
     .all(...args, limit)
     .map(toRow);
 }
+
+// Shutdown (UU-C-142): fold the WAL into the database file and close it.
+export function close() {
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch {
+    /* closing anyway */
+  }
+  db.close();
+}

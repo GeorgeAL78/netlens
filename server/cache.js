@@ -805,3 +805,8 @@ export async function readHourlyHistory(dayKey, { full = false } = {}) {
     logError("cache readHourlyHistory", err, { dayKey });
   }
 }
+
+// Resolves when no warm or bucket refresh is running (UU-C-142), for a clean shutdown.
+export function idle() {
+  return Promise.all([warmup?.pending, bucketRefresh].filter(Boolean).map((p) => Promise.resolve(p).catch(() => {})));
+}

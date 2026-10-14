@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.8.2 — 2026-10-14
+
+### Fixed
+- A container that ran past midnight stopped collecting: the new day was never opened, so its traffic was dropped and Usage showed 0 B until a restart or Refresh. Every 5-minute update now opens today and finishes yesterday, and today's connection records (Sessions, Sites) update every 5 minutes too, not only on Refresh.
+- Clean shutdown: `docker stop` (and Ctrl+C) now lets a running fetch finish, closes the databases properly and exits, instead of being killed after 10 seconds.
+
 ## 2.8.1 — 2026-10-11
 
 ### Added

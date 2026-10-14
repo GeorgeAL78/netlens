@@ -2058,7 +2058,13 @@ async function snapshot() {
         },
       ]);
     }
-    const { rows } = await cache.refreshBuckets();
+    // Today's and yesterday's day files, then the 5-minute buckets (warm does both). Only
+    // refreshing buckets left a new day unopened after midnight: its buckets had no day file
+    // to land in and were dropped, and today's flows only updated on a restart or Refresh —
+    // three empty days on a container that ran past midnight (UU-F-075). Yesterday is listed
+    // so the finished day gets its one closing read; a closed day costs no UniFi call.
+    const todayKey = zonedDateKey(end);
+    await cache.warm([dayJob(addDays(todayKey, -1)), dayJob(todayKey)], { mode: "delta" });
     // UniFi's System Log: connects, disconnects, roams, threats (UU-C-051).
     await siem.refreshSystemLog().catch((err) => logError("siem refreshSystemLog", err));
     // Live Wi-Fi quality, equipment health and WAN state (UU-C-056).
@@ -2082,7 +2088,7 @@ async function snapshot() {
       logError("alerts", err);
     }
     db.metaSet("last_snapshot", end);
-    console.log(`snapshot ${new Date(end).toISOString()} clients=${online.length} buckets=+${rows}`);
+    console.log(`snapshot ${new Date(end).toISOString()} clients=${online.length} today flows=${cache.status().keys.find((k) => k.key === todayKey)?.flows ?? 0}`);
   } catch (err) {
     logError("snapshot", err);
   }
@@ -2110,6 +2116,12 @@ function launchBrowser() {
 
 let snapshotTimer = null;
 let httpServer = null;
+// One snapshot at a time: a slow one is not stacked on, and shutdown can wait for it.
+let snapshotRun = null;
+function runSnapshot() {
+  if (!snapshotRun) snapshotRun = snapshot().finally(() => (snapshotRun = null));
+  return snapshotRun;
+}
 
 export function startHttpServer({ openBrowser = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -2123,8 +2135,8 @@ export function startHttpServer({ openBrowser = false } = {}) {
       // NETLENS_OFFLINE=1: serve the stored data without ever talking to UniFi — used to
       // compare report output before and after a change on a frozen copy (UU-C-060).
       const offline = process.env.NETLENS_OFFLINE === "1";
-      if (!offline) snapshot();
-      if (!offline && !snapshotTimer) snapshotTimer = setInterval(snapshot, snapshotMinutes * 60 * 1000);
+      if (!offline) runSnapshot();
+      if (!offline && !snapshotTimer) snapshotTimer = setInterval(runSnapshot, snapshotMinutes * 60 * 1000);
       // SIEM logs forwarded by syslog-ng (UU-C-050): listen if a port is set.
       siem.configure();
       if (!offline) {
@@ -2166,6 +2178,7 @@ export function closeHttpServer() {
       return;
     }
     httpServer.close(() => resolve());
+    httpServer.closeIdleConnections?.();
     httpServer = null;
   });
 }
@@ -2176,7 +2189,34 @@ process.on("unhandledRejection", (err) => logError("unhandledRejection", err));
 const launchedDirectly =
   Boolean(process.argv[1]) && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
 
+// Clean shutdown on docker stop / Ctrl+C (UU-C-142). Node as PID 1 ignores SIGTERM unless it
+// listens for it, so Docker used to wait 10 s and kill the process mid-write. Now: stop taking
+// requests and starting snapshots, let a running fetch finish (8 s cap, inside Docker's 10 s),
+// close the syslog listener, checkpoint and close both databases, exit 0. Day files are
+// written atomically and every DB write is a transaction, so the cap cannot leave half a day.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`${signal}: shutting down`);
+  const cap = new Promise((resolve) => setTimeout(() => resolve("timeout"), 8000).unref());
+  try {
+    await closeHttpServer();
+    const waited = await Promise.race([Promise.all([snapshotRun, cache.idle()].map((p) => Promise.resolve(p).catch(() => {}))), cap]);
+    if (waited === "timeout") console.log("shutdown: a fetch was still running after 8 s; it is repeated on the next start");
+    siem.stopListener();
+    flowstore.close();
+    db.close();
+    console.log("shutdown complete");
+    process.exit(0);
+  } catch (err) {
+    logError("shutdown", err);
+    process.exit(1);
+  }
+}
+
 if (launchedDirectly) {
+  for (const sig of ["SIGTERM", "SIGINT"]) process.on(sig, () => shutdown(sig));
   startHttpServer({
     openBrowser: process.argv.includes("--open") || process.env.UNIFI_OPEN_BROWSER === "1",
   }).catch((err) => {

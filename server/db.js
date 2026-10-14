@@ -785,3 +785,13 @@ export function pruneWatchIps(before) {
 export function prunePresence(before) {
   db.prepare(`DELETE FROM presence_log WHERE ts < ?`).run(before);
 }
+
+// Shutdown (UU-C-142): fold the WAL into the database file and close it.
+export function close() {
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch {
+    /* closing anyway */
+  }
+  db.close();
+}

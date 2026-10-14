@@ -229,7 +229,7 @@ function queue(line) {
   }
 }
 
-function stopListener() {
+export function stopListener() {
   for (const s of [state.tcp, state.udp]) {
     try {
       s?.close();
