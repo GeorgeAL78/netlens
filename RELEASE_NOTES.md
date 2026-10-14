@@ -1,2 +1,2 @@
-### Added
-- Security: drop-down filters above the list — type (blocked by your rules / intrusions), device, site, and rule or signature, each with its count; they combine, and Clear filters resets them.
+### Changed
+- Security has two tabs: Blocks & intrusions, and Ads & trackers. The ads tab has the same layout: a chart by day, top devices and blocked sites, device and site filters, one line per device and blocked site, and a detail panel with every blocked lookup.

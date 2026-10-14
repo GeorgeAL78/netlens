@@ -836,22 +836,22 @@ function buildIncidents(start, end) {
   const sys = insights.threats(start, end);
   const ruleOf = systemLogRuleNames(sys.items, nameOf);
   const ads = [];
-  const open = new Map(); // mac|rule -> current incident
+  const open = new Map(); // mac|rule (or mac|site for ads) -> current incident
   const incidents = [];
+  const adIncidents = [];
   for (const r of flowstore.blockedAll(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end)) {
-    if (isAdBlock(r)) {
-      ads.push(r);
-      continue;
-    }
-    const rule = ruleOf({ ...r, first: r.t, last: r.t });
-    const k = `${r.mac}|${rule || ""}`;
+    const { name, ip } = splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip);
+    // Ad and tracker blocks: one incident per device and blocked site per burst (UU-C-160).
+    const ad = isAdBlock(r);
+    if (ad) ads.push(r);
+    const rule = ad ? r.policy || "Ad Blocking" : ruleOf({ ...r, first: r.t, last: r.t });
+    const k = ad ? `ad|${r.mac}|${name}` : `${r.mac}|${rule || ""}`;
     let inc = open.get(k);
     if (!inc || r.t - inc.last > INCIDENT_GAP_MS) {
-      inc = { kind: "rule", mac: r.mac, rule, first: r.t, last: r.t, n: 0, sites: new Map(), addrs: new Map(), services: new Set(), event: null };
+      inc = { kind: ad ? "ad" : "rule", mac: r.mac, rule, first: r.t, last: r.t, n: 0, sites: new Map(), addrs: new Map(), services: new Set(), event: null };
       open.set(k, inc);
-      incidents.push(inc);
+      (ad ? adIncidents : incidents).push(inc);
     }
-    const { name, ip } = splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip);
     inc.n += 1;
     inc.last = Math.max(inc.last, r.t);
     inc.sites.set(name, (inc.sites.get(name) || 0) + 1);
@@ -869,11 +869,10 @@ function buildIncidents(start, end) {
     if (inc) inc.event = it;
     else incidents.push({ kind: "rule", mac, deviceName: it.source, rule: it.policy, first: it.ts, last: it.ts, n: it.detail?.traffic?.count || 1, sites: new Map([[it.detail?.destination?.domain || it.target || "unknown", 1]]), addrs: new Map(it.target && IPV4_RE.test(it.target) ? [[it.target, 1]] : []), services: new Set(), event: it });
   }
-  const list = incidents
-    .map((x) => {
+  const shape = (x) => {
       const sites = [...x.sites].sort((a, b) => b[1] - a[1]);
       return {
-        id: x.event?.uid || `${x.mac}|${x.rule || ""}|${x.first}`,
+        id: x.event?.uid || `${x.kind}|${x.mac}|${x.rule || ""}|${sites[0]?.[0] || ""}|${x.first}`,
         kind: x.kind,
         mac: x.mac,
         device: x.mac ? nameOf(x.mac) : x.deviceName || "unknown device",
@@ -887,15 +886,16 @@ function buildIncidents(start, end) {
         services: [...x.services],
         event: x.event || null,
       };
-    })
-    .sort((a, b) => b.last - a.last);
-  return { sys, list, ads, nameOf };
+  };
+  const adList = adIncidents.map(shape).sort((a, b) => b.last - a.last);
+  const list = incidents.map(shape).sort((a, b) => b.last - a.last);
+  return { sys, list, ads, adList, nameOf };
 }
 
 app.get("/api/threats", (req, res) => {
   try {
     const { start, end } = rangeFor(req.query);
-    const { sys, list, ads, nameOf } = buildIncidents(start, end);
+    const { sys, list, ads, adList, nameOf } = buildIncidents(start, end);
     const sumBy = (rows, key) => {
       const m = new Map();
       for (const r of rows) {
@@ -918,6 +918,8 @@ app.get("/api/threats", (req, res) => {
       threatsWithoutSignature: sys.threatsWithoutSignature,
       adBlocks: {
         total: ads.length,
+        incidents: adList.slice(0, 500),
+        truncated: adList.length > 500,
         devices: sumBy(ads, (r) => r.mac).map((d) => ({ mac: d.mac, device: nameOf(d.mac), n: d.n })),
         domains: sumBy(ads, (r) => splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip).name).slice(0, 15).map((d) => ({ domain: d.key, n: d.n, devices: d.devices })),
       },
@@ -2113,14 +2115,17 @@ app.get("/api/threats/blocked", (req, res) => {
     // One incident's connections: a device, a rule, a time span (UU-C-156).
     const mac = String(req.query.mac || "").toLowerCase();
     const rule = req.query.rule ? String(req.query.rule) : null;
+    const site = req.query.site ? String(req.query.site) : null;
+    const ad = req.query.kind === "ad";
     const from = Number(req.query.from) || 0;
     const to = (Number(req.query.to) || Date.now()) + 1;
     const have = flowstore.dayInfo();
     const ruleOf = systemLogRuleNames(insights.threats(from - 3600e3, to + 3600e3).items, insights.names());
     const rows = flowstore
       .blockedRows(dayKeysForRange(from, to).filter((d) => have.has(d)), from, to, mac)
-      .filter((r) => ruleOf({ ...r, mac, first: r.t, last: r.t }) === rule)
-      .map((r) => ({ ...r, ...splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip) }));
+      .filter((r) => (ad ? isAdBlock(r) : !isAdBlock(r) && ruleOf({ ...r, mac, first: r.t, last: r.t }) === rule))
+      .map((r) => ({ ...r, ...splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip) }))
+      .filter((r) => !site || r.name === site);
     res.json({
       mac,
       device: insights.names()(mac),

@@ -34,12 +34,16 @@ const outsideOf = (x) => {
 };
 const touches = (x, ip) => x.addresses.some((a) => a.ip === ip) || [x.event?.target, x.event?.source, x.event?.detail?.destination?.ip, x.event?.detail?.source?.ip].includes(ip);
 
-function Panel({ x, range, all, onHide, hidden }) {
+function Panel({ x, range, tab, all, onHide, hidden }) {
   const e = x.event;
   const d = e?.detail;
   const p = new URLSearchParams({ mac: x.mac || "", from: String(x.first), to: String(x.last) });
   if (x.rule) p.set("rule", x.rule);
-  const conns = useApi(x.kind === "rule" && x.mac ? `/api/threats/blocked?${p}` : null);
+  if (x.kind === "ad") {
+    p.set("kind", "ad");
+    p.set("site", x.sites[0]?.name || "");
+  }
+  const conns = useApi(x.kind !== "intrusion" && x.mac ? `/api/threats/blocked?${p}` : null);
   const c = conns.data;
   const outside = outsideOf(x);
   const same = outside ? all.filter((y) => touches(y, outside)).length : 0;
@@ -47,9 +51,9 @@ function Panel({ x, range, all, onHide, hidden }) {
     <aside className="panel" aria-label="Block detail">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <span className="mono small dim">{span(x.first, x.last)}</span>
-        <a className="iconbtn" href={href("security", null, { r: range })} aria-label="Close">×</a>
+        <a className="iconbtn" href={href("security", null, { r: range, tab: tab === "ads" ? "ads" : null })} aria-label="Close">×</a>
       </div>
-      <h2 style={{ fontSize: 20, lineHeight: 1.3 }}>{x.kind === "intrusion" ? "Intrusion attempt blocked" : `Blocked by “${x.rule || "a rule"}”`}</h2>
+      <h2 style={{ fontSize: 20, lineHeight: 1.3 }}>{x.kind === "intrusion" ? "Intrusion attempt blocked" : x.kind === "ad" ? `Ad / tracker blocked: ${x.sites[0]?.name || ""}` : `Blocked by “${x.rule || "a rule"}”`}</h2>
       {d?.signature && (
         <p className="note">
           {d.signature}
@@ -119,7 +123,10 @@ export default function Security({ route }) {
     }
   };
 
-  const all = data?.incidents || [];
+  // Two tabs (UU-C-160): blocks by your rules and intrusions; ads and trackers. Same layout.
+  const tab = route.query.tab === "ads" ? "ads" : "blocks";
+  const ads = tab === "ads";
+  const all = (ads ? data?.adBlocks?.incidents : data?.incidents) || [];
   const devKey = (x) => x.mac || x.device;
   const list = all.filter((x) => {
     if (ip && !touches(x, ip)) return false;
@@ -127,7 +134,7 @@ export default function Security({ route }) {
     if (kind && x.kind !== kind) return false;
     if (dev && devKey(x) !== dev) return false;
     if (site && !x.sites.some((s) => s.name === site)) return false;
-    if (!ip && !rule && !showHidden && x.kind === "rule" && hidden.includes(x.rule)) return false;
+    if (!ads && !ip && !rule && !showHidden && x.kind === "rule" && hidden.includes(x.rule)) return false;
     return true;
   });
   // Options with counts, from the whole period.
@@ -144,7 +151,7 @@ export default function Security({ route }) {
     };
   }, [all]); // eslint-disable-line react-hooks/exhaustive-deps
   const filtered = Boolean(kind || dev || site || rule);
-  const hiddenCount = all.filter((x) => x.kind === "rule" && hidden.includes(x.rule)).length;
+  const hiddenCount = ads ? 0 : all.filter((x) => x.kind === "rule" && hidden.includes(x.rule)).length;
   const sel = all.find((x) => x.id === route.query.e) || null;
 
   const days = useMemo(() => {
@@ -153,7 +160,7 @@ export default function Security({ route }) {
       const k = new Date(x.last).toLocaleDateString([], { month: "short", day: "numeric" });
       const cur = m.get(k) || { k, t: 0, f: 0, ts: x.last };
       if (x.kind === "intrusion") cur.t += 1;
-      else cur.f += 1;
+      else cur.f += ads ? x.n : 1;
       m.set(k, cur);
     }
     return [...m.values()].sort((a, b) => a.ts - b.ts);
@@ -169,12 +176,26 @@ export default function Security({ route }) {
       }
       return [...m].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
     };
-    return [
-      ["Devices", top((x) => x.device)],
-      ["Sites", top((x) => x.sites[0]?.name)],
-      ["Rules & signatures", top((x) => x.rule)],
-    ];
-  }, [list]);
+    const topN = (key) => {
+      const m = new Map();
+      for (const x of list) {
+        const k = key(x);
+        if (k) m.set(k, (m.get(k) || 0) + x.n);
+      }
+      return [...m].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, count]) => ({ name, count }));
+    };
+    // Ads count blocked lookups; blocks count incidents.
+    return ads
+      ? [
+          ["Devices", topN((x) => x.device)],
+          ["Blocked sites", topN((x) => x.sites[0]?.name)],
+        ]
+      : [
+          ["Devices", top((x) => x.device)],
+          ["Sites", top((x) => x.sites[0]?.name)],
+          ["Rules & signatures", top((x) => x.rule)],
+        ];
+  }, [list, ads]);
 
   return (
     <div className="split">
@@ -186,7 +207,9 @@ export default function Security({ route }) {
               <h1>{ip ? `Address ${ip}` : "Blocked traffic"}</h1>
               {data && (
                 <span className="muted">
-                  {intrusions} intrusion attempt{intrusions === 1 ? "" : "s"} · {list.length - intrusions} block{list.length - intrusions === 1 ? "" : "s"} by your rules
+                  {ads
+                    ? `${list.reduce((n, x) => n + x.n, 0).toLocaleString()} ads and trackers stopped by UniFi's ad blocking`
+                    : `${intrusions} intrusion attempt${intrusions === 1 ? "" : "s"} · ${list.length - intrusions} block${list.length - intrusions === 1 ? "" : "s"} by your rules`}
                   {ip && <> · <a href={href("security", null, { r: range })}>show everything</a></>}
                 </span>
               )}
@@ -199,6 +222,14 @@ export default function Security({ route }) {
               ))}
             </div>
           </div>
+          <div className="seg" role="tablist" aria-label="View" style={{ alignSelf: "flex-start" }}>
+            {[["blocks", "Blocks & intrusions"], ["ads", "Ads & trackers"]].map(([id, label]) => (
+              <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "on" : ""} onClick={() => go("security", null, { r: range, tab: id === "ads" ? "ads" : null })}>
+                {label}
+                {data ? <span className="dim"> {id === "ads" ? (data.adBlocks?.total || 0).toLocaleString() : data.incidents?.length || 0}</span> : null}
+              </button>
+            ))}
+          </div>
           {error && <Failed error={error} reload={reload} />}
           {!data && loading && <Loading />}
           {data && (
@@ -207,7 +238,7 @@ export default function Security({ route }) {
                 <div className="card tight">
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 70 }}>
                     {days.map((d) => (
-                      <div key={d.k} title={`${d.k} · ${d.t} intrusion · ${d.f} blocked by rules`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%", gap: 2 }}>
+                      <div key={d.k} title={ads ? `${d.k} · ${d.f} ads and trackers` : `${d.k} · ${d.t} intrusion · ${d.f} blocked by rules`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%", gap: 2 }}>
                         {d.t > 0 && <span style={{ height: `${(d.t / dmax) * 56}px`, background: "var(--bad)", borderRadius: 3 }} />}
                         {d.f > 0 && <span style={{ height: `${(d.f / dmax) * 56}px`, background: "#8a6a2e", borderRadius: 3 }} />}
                       </div>
@@ -217,7 +248,7 @@ export default function Security({ route }) {
                 </div>
               )}
               {list.length > 0 && !ip && (
-                <div className="grid g3">
+                <div className={`grid ${ads ? "g2" : "g3"}`}>
                   {tops.map(([title, rows]) => (
                     <div key={title} className="card tight">
                       <h2 style={{ fontSize: 14 }}>{title}</h2>
@@ -234,11 +265,13 @@ export default function Security({ route }) {
               )}
               <div className="card" style={{ padding: "6px 10px" }}>
                 <div className="filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", padding: "6px 4px 10px" }}>
-                  <select className="field" aria-label="Type" value={kind} onChange={(e) => setFilter({ kind: e.target.value || null })}>
-                    <option value="">All types</option>
-                    <option value="rule">Blocked by your rules</option>
-                    <option value="intrusion">Intrusions</option>
-                  </select>
+                  {!ads && (
+                    <select className="field" aria-label="Type" value={kind} onChange={(e) => setFilter({ kind: e.target.value || null })}>
+                      <option value="">All types</option>
+                      <option value="rule">Blocked by your rules</option>
+                      <option value="intrusion">Intrusions</option>
+                    </select>
+                  )}
                   <select className="field" aria-label="Device" value={dev} onChange={(e) => setFilter({ dev: e.target.value || null })}>
                     <option value="">All devices</option>
                     {options.dev.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.n})</option>)}
@@ -247,10 +280,12 @@ export default function Security({ route }) {
                     <option value="">All sites</option>
                     {options.site.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.n})</option>)}
                   </select>
-                  <select className="field" aria-label="Rule" value={rule || ""} onChange={(e) => setFilter({ rule: e.target.value || null })}>
-                    <option value="">All rules & signatures</option>
-                    {options.rule.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.n})</option>)}
-                  </select>
+                  {!ads && (
+                    <select className="field" aria-label="Rule" value={rule || ""} onChange={(e) => setFilter({ rule: e.target.value || null })}>
+                      <option value="">All rules & signatures</option>
+                      {options.rule.map((o) => <option key={o.value} value={o.value}>{o.label} ({o.n})</option>)}
+                    </select>
+                  )}
                   {filtered && <button className="btn small" onClick={() => setFilter({ kind: null, dev: null, site: null, rule: null })}>Clear filters</button>}
                   <span className="dim small" style={{ marginLeft: "auto" }}>{list.length} of {all.length}</span>
                 </div>
@@ -263,7 +298,7 @@ export default function Security({ route }) {
                       onClick={() => go("security", null, { ...route.query, r: range, e: x.id })}
                     >
                       <span className="mono small dim">{shortDate(x.last)}</span>
-                      <span className={x.kind === "intrusion" ? "bad" : "warn"}>{x.kind === "intrusion" ? "Intrusion" : "Blocked"}</span>
+                      <span className={x.kind === "intrusion" ? "bad" : x.kind === "ad" ? "dim" : "warn"}>{x.kind === "intrusion" ? "Intrusion" : x.kind === "ad" ? "Ad / tracker" : "Blocked"}</span>
                       <span className="stack">
                         <span className="ellipsis">{x.device} → {x.sites[0]?.name || "—"}{x.siteCount > 1 ? <span className="dim"> +{x.siteCount - 1} more</span> : null}</span>
                         {x.first !== x.last && <span className="dim small">{span(x.first, x.last)}</span>}
@@ -281,40 +316,11 @@ export default function Security({ route }) {
                   {showHidden ? "Hide" : "Show"} {hiddenCount} block{hiddenCount === 1 ? "" : "s"} from hidden rules
                 </button>
               )}
-              {/* Ads and trackers stopped by UniFi's ad blocking (UU-C-150): a summary, not a list. */}
-              {data.adBlocks?.total > 0 && !ip && !rule && (
-                <div className="card">
-                  <div className="card-head">
-                    <h2>Ads &amp; trackers stopped</h2>
-                    <span className="hint">{data.adBlocks.total.toLocaleString()} blocked by UniFi's ad blocking</span>
-                  </div>
-                  <div className="grid g2">
-                    <div className="stack" style={{ gap: 4 }}>
-                      <span className="dim small">By device</span>
-                      {data.adBlocks.devices.slice(0, 10).map((d) => (
-                        <div key={d.mac} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
-                          <a href={href("device", d.mac)} className="ellipsis">{d.device}</a>
-                          <span className="mono dim">{d.n}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="stack" style={{ gap: 4 }}>
-                      <span className="dim small">Top blocked addresses</span>
-                      {data.adBlocks.domains.slice(0, 10).map((d) => (
-                        <div key={d.domain} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
-                          <span className="ellipsis">{d.domain}{d.devices > 1 ? <span className="dim"> · {d.devices} devices</span> : null}</span>
-                          <span className="mono dim">{d.n}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </div>
       </div>
-      {sel && <Panel key={sel.id} x={sel} range={range} all={all} onHide={toggleHide} hidden={hidden} />}
+      {sel && <Panel key={sel.id} x={sel} range={range} tab={tab} all={all} onHide={toggleHide} hidden={hidden} />}
     </div>
   );
 }
