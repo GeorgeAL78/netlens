@@ -247,8 +247,12 @@ function normalizeHost(host) {
     .replace(/\/.*$/, "");
 }
 
-export function applyConnectionSettings({ host, apiKey, site, siteId, trayMode, siemPort, tz } = {}) {
+// How often NetLens reads UniFi, in minutes (UU-C-144): whole minutes, 1 to 1440.
+export const clampMinutes = (v) => Math.min(1440, Math.max(1, Math.round(Number(v)) || 5));
+
+export function applyConnectionSettings({ host, apiKey, site, siteId, trayMode, siemPort, tz, snapshotMinutes } = {}) {
   if (tz) setSetting("tz", String(tz).trim());
+  if (snapshotMinutes != null && snapshotMinutes !== "") setSetting("snapshot_minutes", String(clampMinutes(snapshotMinutes)));
   // Empty string clears these; undefined leaves them alone (v2's settings form omits them).
   if (siemPort != null) {
     const n = Number(siemPort);
@@ -269,6 +273,7 @@ export function readConnectionSettings() {
     siteId: getSetting("unifi_site_id", ""),
     trayMode: getSetting("tray_mode", "0") === "1",
     siemPort: getSetting("siem_port", ""),
+    snapshotMinutes: clampMinutes(getSetting("snapshot_minutes", "5")),
   };
 }
 
@@ -282,6 +287,7 @@ export function publicConnectionSettings() {
     siteId: s.siteId,
     trayMode: s.trayMode,
     siemPort: s.siemPort,
+    snapshotMinutes: s.snapshotMinutes,
     hasApiKey: Boolean(s.apiKey),
   };
 }

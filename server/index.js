@@ -81,7 +81,8 @@ const port = Number(process.env.UNIFI_PORT || db.getSetting("port", process.env.
 // `let`: the timezone can be changed in Settings without a restart (UU-C-059).
 const systemTz = () => process.env.TZ || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 let tz = db.getSetting("tz", "") || systemTz();
-const snapshotMinutes = Number(db.getSetting("snapshot_minutes", process.env.SNAPSHOT_MINUTES || 5));
+// Settings › Updates; changing it reschedules the timer at once (UU-C-144).
+let snapshotMinutes = db.clampMinutes(db.getSetting("snapshot_minutes", process.env.SNAPSHOT_MINUTES || 5));
 
 // origin:true reflected ANY origin, so any page the owner visited could read
 // /api/settings (API key and all) and drive PUT /api/settings and POST /api/shutdown.
@@ -722,6 +723,13 @@ app.put("/api/settings", (req, res) => {
     }
     db.applyConnectionSettings(body);
     if (body.tz) tz = body.tz;
+    if (body.snapshotMinutes != null && body.snapshotMinutes !== "") {
+      snapshotMinutes = db.clampMinutes(db.getSetting("snapshot_minutes", "5"));
+      if (snapshotTimer) {
+        clearInterval(snapshotTimer);
+        snapshotTimer = setInterval(runSnapshot, snapshotMinutes * 60 * 1000);
+      }
+    }
     db.persistConnectionFile(db.readConnectionSettings());
     siem.configure();
     res.json({ ok: true, ...db.publicConnectionSettings() });
@@ -907,6 +915,7 @@ app.get("/api/cache", (_req, res) => {
     gaps: gapDays(),
     retainDays: cache.RETAIN_DAYS,
     fetchDays: FETCH_DAYS,
+    snapshotMinutes,
     // Computed here because the server owns `tz`; the browser must not re-derive the
     // calendar day from its own clock (UTC slicing put the picker a day ahead).
     todayKey,

@@ -86,8 +86,33 @@ function Data() {
     }
   }
   const gaps = data?.gaps?.length || 0;
+  // How often NetLens reads UniFi (UU-C-144).
+  const [every, setEvery] = useState("");
+  useEffect(() => {
+    if (data?.snapshotMinutes && every === "") setEvery(String(data.snapshotMinutes));
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function saveEvery() {
+    setMsg("");
+    try {
+      const r = await api("/api/settings", { method: "PUT", body: JSON.stringify({ snapshotMinutes: every }) });
+      setEvery(String(r.snapshotMinutes));
+      setMsg(`NetLens now reads UniFi every ${r.snapshotMinutes} minute${r.snapshotMinutes === 1 ? "" : "s"}.`);
+      reload();
+    } catch (err) {
+      setMsg(err.message);
+    }
+  }
   return (
-    <SettingsSection icon="sliders" title="Updates" hint="NetLens reads UniFi every 5 minutes by itself. These are only for catching up by hand.">
+    <SettingsSection icon="sliders" title="Updates" hint="How often NetLens reads UniFi by itself, and buttons for catching up by hand. UniFi keeps time detail in 5-minute steps, so reading more often only makes the newest numbers fresher.">
+      <div className="setup-row">
+        <label>
+          Read UniFi every (minutes)
+          <input inputMode="numeric" value={every} onChange={(e) => setEvery(e.target.value.replace(/\D/g, ""))} placeholder="5" disabled={!data} />
+        </label>
+        <div style={{ alignSelf: "flex-end" }}>
+          <button type="button" className="btn primary" onClick={saveEvery} disabled={!data || !every || every === String(data?.snapshotMinutes)}>Save</button>
+        </div>
+      </div>
       <div className="kv">
         <div><span>Last update</span><span>{ago(data?.fetchedAt)}</span></div>
         <div><span>Usage detail kept</span><span>{data?.retainDays ?? 30} days</span></div>

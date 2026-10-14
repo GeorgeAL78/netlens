@@ -262,7 +262,7 @@ export default function Device({ route }) {
             <div className="card">
               <div className="card-head">
                 <h2>Online history</h2>
-                <span className="dim small">last 7 days · checked every 5 minutes</span>
+                <span className="dim small">last 7 days · checked with every update</span>
               </div>
               <div className="rows">
                 {[...seen.data.log].reverse().slice(0, 40).map((e) => (

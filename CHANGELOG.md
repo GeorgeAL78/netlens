@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.3 — 2026-10-14
+
+### Added
+- Settings › Updates: choose how often NetLens reads UniFi (1–1440 minutes, default 5). It takes effect at once, no restart.
+
 ## 2.8.2 — 2026-10-14
 
 ### Fixed

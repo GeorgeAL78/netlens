@@ -3,7 +3,7 @@ import { api, bytes, deviceGroups, duration, go, href, isPlumbing, useApi } from
 import { Failed, Finder, Loading, Meter } from "../ui.jsx";
 
 // Alerts (UU-C-114): a daily limit on time in use or data, for one app or category on one
-// device (or every device). NetLens checks every 5 minutes and flags a rule once a day when
+// device (or every device). NetLens checks with every update and flags a rule once a day when
 // today's figure passes it — on this page, the Home feed and the tab's count. Watching only:
 // nothing is blocked.
 

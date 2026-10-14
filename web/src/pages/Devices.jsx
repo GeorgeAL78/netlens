@@ -178,7 +178,7 @@ export default function Devices({ route }) {
               {data.source === "stored" ? `UniFi did not answer — ${list.length} devices NetLens has stored` : data.source === "offline" ? `${list.length} devices` : `${list.length} known to UniFi`} · {list.filter((d) => d.online).length} online now
               {list.some((d) => !d.online && d.presence?.state === "lan") ? ` · ${list.filter((d) => !d.online && d.presence?.state === "lan").length} more answer on the network` : ""}
               {blocked.length ? ` · ${blocked.length} blocked` : ""}
-              {data.checks?.lastRunAt ? ` · offline devices checked every 5 min, last ${ago(data.checks.lastRunAt)}` : ""}
+              {data.checks?.lastRunAt ? ` · offline devices checked with every update, last ${ago(data.checks.lastRunAt)}` : ""}
             </span>
           )}
         </div>
