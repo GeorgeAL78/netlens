@@ -202,9 +202,9 @@ export default function Security({ route }) {
               {bc && !ip && (
                 <div className="card">
                   <div className="card-head" style={{ flexWrap: "wrap", gap: 10 }}>
-                    <h2>Blocked connections</h2>
+                    <h2>Blocked by your rules</h2>
                     <span className="hint">
-                      {bc.total.toLocaleString()} from UniFi's connection records — includes ad blocking and app / Object blocks, which the list above never shows
+                      {bc.total.toLocaleString()} connections from UniFi's connection records — firewall rules and app / Object blocks, including those the list above never shows
                     </span>
                   </div>
                   {!rule && bc.rules.length > 0 && (
@@ -230,6 +230,35 @@ export default function Security({ route }) {
                     {!connRows.length && <div className="empty">No blocked connections in this period.</div>}
                   </div>
                   {bc.truncated && <p className="dim small" style={{ margin: 0 }}>The 300 most recent groups.</p>}
+                </div>
+              )}
+              {/* Ads and trackers stopped by UniFi's ad blocking (UU-C-150): a summary, not a list. */}
+              {data.adBlocks?.total > 0 && !ip && !rule && (
+                <div className="card">
+                  <div className="card-head">
+                    <h2>Ads &amp; trackers stopped</h2>
+                    <span className="hint">{data.adBlocks.total.toLocaleString()} blocked by UniFi's ad blocking</span>
+                  </div>
+                  <div className="grid g2">
+                    <div className="stack" style={{ gap: 4 }}>
+                      <span className="dim small">By device</span>
+                      {data.adBlocks.devices.slice(0, 10).map((d) => (
+                        <div key={d.mac} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
+                          <a href={href("device", d.mac)} className="ellipsis">{d.device}</a>
+                          <span className="mono dim">{d.n}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="stack" style={{ gap: 4 }}>
+                      <span className="dim small">Top blocked addresses</span>
+                      {data.adBlocks.domains.slice(0, 10).map((d) => (
+                        <div key={d.domain} style={{ display: "flex", justifyContent: "space-between", gap: 10, fontSize: 13 }}>
+                          <span className="ellipsis">{d.domain}{d.devices > 1 ? <span className="dim"> · {d.devices} devices</span> : null}</span>
+                          <span className="mono dim">{d.n}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
               {hiddenCount > 0 && !ip && !rule && (

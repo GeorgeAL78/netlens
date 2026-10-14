@@ -805,7 +805,7 @@ app.get("/api/threats", (req, res) => {
     // blocking and Object / app blocks, which never reach the System Log. 30 days at most.
     const have = flowstore.dayInfo();
     const nameOf = insights.names();
-    const blocked = flowstore.blockedSummary(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end).map((r) => ({
+    const all = flowstore.blockedSummary(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end).map((r) => ({
       mac: r.mac,
       device: nameOf(r.mac),
       rule: r.policy || null,
@@ -813,7 +813,24 @@ app.get("/api/threats", (req, res) => {
       n: r.n,
       first: r.first,
       last: r.last,
+      // Ad and tracker blocks (UU-C-150) go to their own summary. Before rule names were kept,
+      // a blocked DNS lookup is what ad blocking produces; anything else counts as a rule.
+      ad: r.policy ? /ad.?block|tracker/i.test(r.policy) : String(r.service || "").toUpperCase() === "DNS",
     }));
+    const blocked = all.filter((b) => !b.ad);
+    const ads = all.filter((b) => b.ad);
+    const sumBy = (rows, key) => {
+      const m = new Map();
+      for (const b of rows) {
+        const k = key(b);
+        const x = m.get(k) || { n: 0, macs: new Set(), mac: b.mac, device: b.device, last: 0 };
+        x.n += b.n;
+        x.macs.add(b.mac);
+        x.last = Math.max(x.last, b.last);
+        m.set(k, x);
+      }
+      return [...m].map(([k, x]) => ({ key: k, n: x.n, devices: x.macs.size, mac: x.mac, device: x.device, last: x.last })).sort((a, b) => b.n - a.n);
+    };
     const byRule = new Map();
     for (const b of blocked) byRule.set(b.rule || "", (byRule.get(b.rule || "") || 0) + b.n);
     res.json({
@@ -826,6 +843,11 @@ app.get("/api/threats", (req, res) => {
         rules: [...byRule].map(([rule, n]) => ({ rule: rule || null, n })).sort((a, b) => b.n - a.n),
         rows: blocked.slice(0, 300),
         truncated: blocked.length > 300,
+      },
+      adBlocks: {
+        total: ads.reduce((n, b) => n + b.n, 0),
+        devices: sumBy(ads, (b) => b.mac).map((d) => ({ mac: d.mac, device: d.device, n: d.n, last: d.last })),
+        domains: sumBy(ads, (b) => b.destination).slice(0, 15).map((d) => ({ domain: d.key, n: d.n, devices: d.devices })),
       },
     });
   } catch (err) {

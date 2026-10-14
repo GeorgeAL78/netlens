@@ -384,7 +384,7 @@ export function blockedSummary(days, from, to) {
   if (!days.length) return [];
   return db
     .prepare(
-      `SELECT mac, policy, domain, MAX(ip) AS ip, COUNT(*) AS n, MIN(t) AS first, MAX(t) AS last FROM flows INDEXED BY flows_blocked
+      `SELECT mac, policy, domain, MAX(ip) AS ip, MAX(service) AS service, COUNT(*) AS n, MIN(t) AS first, MAX(t) AS last FROM flows INDEXED BY flows_blocked
        WHERE action = 'blocked' AND day IN (${inList(days)}) AND t >= ? AND t < ? GROUP BY mac, policy, domain ORDER BY last DESC`
     )
     .all(...days, from, to);
