@@ -23,6 +23,8 @@ export default function Device({ route }) {
   const wifi = useApi(`/api/wifi?${period}&mac=${encodeURIComponent(mac)}`);
   const day = useApi(`/api/day?date=${date}`);
   const seen = useApi(`/api/devices/${encodeURIComponent(mac)}/presence?days=7`); // UU-C-124
+  const joins = useApi(`/api/wifi-joins?days=7&mac=${encodeURIComponent(mac)}`); // UU-C-146
+  const jd = joins.data?.devices?.[0] || null;
   // Blocked state lives in UniFi's full client list (a blocked device is usually offline).
   const clients = useApi("/api/clients?scope=all");
   const [blockedNow, setBlocked] = useState(null);
@@ -55,8 +57,23 @@ export default function Device({ route }) {
     for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.app, detail: (s.domains || []).join(", "), v: bytes(s.bytes), kind: "session" });
     for (const e of r?.siem?.events || []) list.push({ ts: e.ts, at: clock(e.ts), what: e.name, detail: [e.via, e.duration, e.usageDown && `↓ ${e.usageDown}`].filter(Boolean).join(" · "), v: "", kind: "event" });
     for (const x of w?.roams || []) if (!list.some((i) => i.kind === "event" && Math.abs(i.ts - x.ts) < 2000)) list.push({ ts: x.ts, at: clock(x.ts), what: "Roamed", detail: x.msg || x.via || "", v: "", kind: "event" });
+    // Failed Wi-Fi joins of this day, one line per hour and problem (UU-C-146).
+    if (day.data) {
+      const hours = new Map();
+      for (const f of joins.data?.failures || []) {
+        if (f.ts < day.data.start || f.ts >= day.data.start + 24 * HOUR) continue;
+        const k = `${Math.floor((f.ts - day.data.start) / HOUR)}|${f.problem}`;
+        const g = hours.get(k) || { first: f.ts, last: f.ts, n: 0, label: f.label, aps: new Set() };
+        g.n += f.n;
+        g.first = Math.min(g.first, f.ts);
+        g.last = Math.max(g.last, f.ts);
+        if (f.ap) g.aps.add(f.ap);
+        hours.set(k, g);
+      }
+      for (const g of hours.values()) list.push({ ts: g.last, at: g.first === g.last ? clock(g.last) : `${clock(g.first)} – ${clock(g.last)}`, what: `${g.label}${g.n > 1 ? ` ×${g.n}` : ""}`, detail: [...g.aps].join(", "), v: "", kind: "joinfail" });
+    }
     return list.sort((a, b) => b.ts - a.ts);
-  }, [r, w]);
+  }, [r, w, joins.data, day.data]);
 
   async function toggleBlock() {
     const next = !blocked;
@@ -257,6 +274,30 @@ export default function Device({ route }) {
             )}
           </div>
 
+          {/* Wi-Fi join attempts over 7 days, from UniFi's wifi-connectivity (UU-C-146). */}
+          {jd && (
+            <div className="card">
+              <div className="card-head">
+                <h2>Wi-Fi joins</h2>
+                <span className="dim small">
+                  last 7 days · {jd.joins} joined{jd.fails ? <> · <span className="warn">{jd.fails} failed</span></> : ""}
+                  {jd.joinMs != null ? ` · typical join ${jd.joinMs < 1000 ? `${jd.joinMs} ms` : `${(jd.joinMs / 1000).toFixed(1)} s`}` : ""}
+                </span>
+              </div>
+              {!jd.problems.length && <span className="dim small">Every attempt got in.</span>}
+              <div className="rows">
+                {jd.problems.map((p) => (
+                  <div key={p.key} className="row" style={{ gridTemplateColumns: "minmax(0, 1fr) auto", cursor: "default" }}>
+                    <span className="stack">
+                      <span><span className="warn">{p.label}</span> <span className="dim">×{p.n} · last {shortDate(p.last)} · {p.aps.map((a) => `${a.name} (${a.n})`).join(", ")}</span></span>
+                      {p.hint && <span className="dim small">{p.hint}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Online / on the network / off over the last 7 days, from the 5-minute checks (UU-C-124). */}
           {seen.data?.log?.length > 0 && (
             <div className="card">
@@ -312,7 +353,7 @@ export default function Device({ route }) {
                   <div key={n} className="row" style={{ gridTemplateColumns: "104px minmax(0, 1fr) auto" }}>
                     <span className="mono small dim">{i.at}</span>
                     <span className="stack">
-                      <span style={{ color: i.kind === "session" ? "var(--accent)" : "#c8d2df" }}>{i.what}</span>
+                      <span style={{ color: i.kind === "session" ? "var(--accent)" : i.kind === "joinfail" ? "var(--bad)" : "#c8d2df" }}>{i.what}</span>
                       <span className="dim small ellipsis">{i.detail}</span>
                     </span>
                     <span className="mono small">{i.v}</span>

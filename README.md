@@ -43,7 +43,9 @@ which UniFi itself deletes after a day or a week.
   or access point and band), IP, first and last seen; rename it (saved in UniFi). Offline devices
   are checked on the network every 5 minutes (ping, then common ports, with a MAC check), so a
   device that is on but not using the internet still shows as there. Blocked devices are listed
-  on top, with an Unblock button.
+  on top, with an Unblock button, and every device has Block / Unblock. Failed Wi-Fi joins
+  (couldn't log in, no IP address, DNS failed…) are listed per device with the usual cause,
+  kept 90 days.
 - **Sites** — every site each device connected to over the last 30 days, with a filter per
   category (social, gaming, school, ads and tracking, AI, adult…), search, and the times of
   each connection. Taken from UniFi's connection records, not a DNS log (UniFi has none). When a

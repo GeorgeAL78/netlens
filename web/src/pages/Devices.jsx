@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ago, api, href, isUnnamed, useApi } from "../lib.js";
+import { ago, api, href, isUnnamed, shortDate, useApi } from "../lib.js";
 import { Failed, Loading } from "../ui.jsx";
 
 // Devices (UU-C-118): every client UniFi knows — new ones first, with vendor and where they
@@ -106,6 +106,12 @@ export default function Devices({ route }) {
   // Network checks (UU-C-122): mac -> "checking" | { up, method, ms }.
   const [checks, setChecks] = useState({});
   const [checkingAll, setCheckingAll] = useState(false);
+  // Failed Wi-Fi joins (UU-C-146): today or the last 7 days.
+  const [joinDays, setJoinDays] = useState(1);
+  const joins = useApi(`/api/wifi-joins?days=${joinDays}`);
+  const joins7 = useApi("/api/wifi-joins?days=7");
+  const failsOf = useMemo(() => new Map((joins7.data?.devices || []).filter((d) => d.fails).map((d) => [d.mac, d.fails])), [joins7.data]);
+  const joinTrouble = (joins.data?.devices || []).filter((d) => d.fails);
   // Blocked in UniFi (UU-C-135): mac -> true/false set this visit, before the reload lands.
   const [blockNow, setBlockNow] = useState({});
   const [blockMsg, setBlockMsg] = useState("");
@@ -208,6 +214,38 @@ export default function Devices({ route }) {
               </div>
             </div>
           )}
+          {(joinTrouble.length > 0 || joinDays !== 1) && (
+            <div className="card">
+              <div className="card-head" style={{ gap: 10, flexWrap: "wrap" }}>
+                <h2>Wi-Fi join problems</h2>
+                <span className="hint">devices that tried to join the Wi-Fi and failed</span>
+                <div className="seg" role="group" aria-label="Period" style={{ marginLeft: "auto" }}>
+                  {[[1, "Today"], [7, "7 days"]].map(([n, label]) => (
+                    <button key={n} className={joinDays === n ? "on" : ""} onClick={() => setJoinDays(n)}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              {!joinTrouble.length && <div className="empty">No failed joins {joinDays === 1 ? "today" : "in 7 days"}.</div>}
+              <div className="rows">
+                {joinTrouble.flatMap((d) =>
+                  d.problems.map((p) => (
+                    <div key={`${d.mac}-${p.key}`} className="row" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.4fr) auto", cursor: "default", alignItems: "center" }}>
+                      <span className="stack">
+                        <a href={href("device", d.mac)} className="ellipsis">{d.name}</a>
+                        <span className="dim small">{d.joins} joined · {d.fails} failed{d.lastFail ? ` · last ${shortDate(d.lastFail)}` : ""}</span>
+                      </span>
+                      <span className="stack">
+                        <span className="small"><span className="warn">{p.label}</span> <span className="dim">×{p.n} · {p.aps.map((a) => a.name).join(", ")}</span></span>
+                        {p.hint && <span className="dim small">{p.hint}</span>}
+                      </span>
+                      <span className="mono warn">{p.n}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="card">
             <div className="card-head">
               <h2>New in the last 7 days</h2>
@@ -257,6 +295,7 @@ export default function Devices({ route }) {
                     <span className="ellipsis">
                       <a href={href("device", d.mac)}>{d.label}</a>
                       {d.blocked && <span className="bad small" style={{ marginLeft: 8, fontWeight: 600 }}>blocked</span>}
+                      {failsOf.get(d.mac) > 0 && <span className="warn small" style={{ marginLeft: 8 }} title="Failed Wi-Fi joins in the last 7 days">{failsOf.get(d.mac)} failed joins</span>}
                     </span>
                     <span className="dim small ellipsis">{vendorText(d)}</span>
                   </span>

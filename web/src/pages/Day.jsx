@@ -3,7 +3,7 @@ import { bytes, go, href, speed, todayKey, useApi } from "../lib.js";
 import { DayStep, Failed, Loading, healthClass } from "../ui.jsx";
 
 // Day — every device as a row, the day's hours as columns (UU-C-087). Colour is traffic in
-// that hour; ○ roams/connects, ▲ blocked traffic; hatched = no data.
+// that hour; ○ roams/connects, ▲ blocked traffic, ✕ failed Wi-Fi joins; hatched = no data.
 
 const HOUR = 3600000;
 
@@ -28,6 +28,7 @@ function shade(v, max) {
 function mark(m) {
   if (!m) return "";
   if (m.block) return "▲";
+  if (m.fail) return "✕";
   if (m.roam || m.conn) return "○";
   return "";
 }
@@ -83,6 +84,7 @@ export default function Day({ route }) {
               <span><i style={{ background: "var(--cell-4)" }} />traffic</span>
               <span>○ roam / connect</span>
               <span><span className="bad">▲</span> blocked</span>
+              <span><span className="bad">✕</span> failed Wi-Fi join</span>
               <span><i style={{ background: "repeating-linear-gradient(45deg, #2a3140 0 3px, #161b24 3px 6px)" }} />no data</span>
             </div>
           </div>
@@ -140,8 +142,8 @@ export default function Day({ route }) {
                     <button
                       key={`${r.mac}-${h}`}
                       className={`cell ${st}`}
-                      style={st ? undefined : { background: shade(v, max), color: m?.block ? "var(--bad)" : undefined }}
-                      title={`${r.name} · ${String(h).padStart(2, "0")}:00 · ${bytes(v)}${m?.roam ? ` · ${m.roam} roam(s)` : ""}${m?.conn ? ` · ${m.conn} connect(s)` : ""}${m?.block ? ` · ${m.block} blocked` : ""}`}
+                      style={st ? undefined : { background: shade(v, max), color: m?.block || m?.fail ? "var(--bad)" : undefined }}
+                      title={`${r.name} · ${String(h).padStart(2, "0")}:00 · ${bytes(v)}${m?.roam ? ` · ${m.roam} roam(s)` : ""}${m?.conn ? ` · ${m.conn} connect(s)` : ""}${m?.block ? ` · ${m.block} blocked` : ""}${m?.fail ? ` · ${m.fail} failed Wi-Fi join(s)` : ""}`}
                       onClick={() => !st && go("usage", null, { d: date, from: data.hours[h], to: data.hours[h] + HOUR, mac: r.mac })}
                     >
                       {st ? "" : mark(m)}

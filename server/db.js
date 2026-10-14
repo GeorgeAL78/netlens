@@ -142,6 +142,18 @@ db.exec(`
     method TEXT,
     PRIMARY KEY (mac, ts)
   );
+  -- Wi-Fi join attempts (UU-C-146): one row per attempt (n counts same-second repeats).
+  CREATE TABLE IF NOT EXISTS wifi_joins (
+    mac TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    ap TEXT NOT NULL DEFAULT '',
+    result TEXT NOT NULL,
+    stage TEXT,
+    latency_ms INTEGER,
+    n INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (mac, ts, ap, result)
+  );
+  CREATE INDEX IF NOT EXISTS wifi_joins_ts ON wifi_joins (ts);
   -- Addresses of watched sites (UU-C-135), from NetLens's own hourly lookups. A connection
   -- UniFi recorded only by IP (secure DNS hid the name) is named from here.
   CREATE TABLE IF NOT EXISTS watch_ips (
@@ -762,6 +774,35 @@ export function savePresence(mac, state, { ts, ip = null, method = null, verify 
 
 export function presenceLog(mac, since) {
   return db.prepare(`SELECT ts, state, method FROM presence_log WHERE mac = ? AND ts >= ? ORDER BY ts`).all(String(mac).toLowerCase(), since);
+}
+
+// Wi-Fi join attempts (UU-C-146). A re-read replaces a row's count with the fresh one.
+export function saveWifiJoins(rows) {
+  const up = db.prepare(
+    `INSERT INTO wifi_joins (mac, ts, ap, result, stage, latency_ms, n) VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(mac, ts, ap, result) DO UPDATE SET n = excluded.n, stage = excluded.stage, latency_ms = excluded.latency_ms`
+  );
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) up.run(r.mac, r.ts, r.ap || "", r.result, r.stage, r.latencyMs, r.n);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+export function wifiJoins(from, to, mac = null) {
+  const sql = `SELECT mac, ts, ap, result, stage, latency_ms AS latencyMs, n FROM wifi_joins WHERE ts >= ? AND ts < ?${mac ? " AND mac = ?" : ""}`;
+  return db.prepare(sql).all(from, to, ...(mac ? [mac] : []));
+}
+
+export function newestWifiJoin() {
+  return db.prepare(`SELECT MAX(ts) AS t FROM wifi_joins`).get()?.t || null;
+}
+
+export function pruneWifiJoins(before) {
+  db.prepare(`DELETE FROM wifi_joins WHERE ts < ?`).run(before);
 }
 
 // Watched-site addresses (UU-C-135).

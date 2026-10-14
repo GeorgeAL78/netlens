@@ -1,6 +1,7 @@
 import * as db from "./db.js";
 import * as insights from "./insights.js";
 import { sessionize } from "./classify.js";
+import * as wifijoins from "./wifijoins.js";
 
 // Read-only views for the redesigned interface (UU-C-087): the day grid, the network map and
 // the findings feed. Like /api/report they read SQLite and the cache only — never UniFi.
@@ -37,7 +38,7 @@ function markersFor(start, end) {
     if (!mac) return;
     const h = Math.floor((ts - start) / HOUR);
     if (h < 0 || h > 23) return;
-    const m = marks.get(mac) || Array.from({ length: 24 }, () => ({ roam: 0, conn: 0, block: 0 }));
+    const m = marks.get(mac) || Array.from({ length: 24 }, () => ({ roam: 0, conn: 0, block: 0, fail: 0 }));
     m[h][kind] += 1;
     marks.set(mac, m);
   };
@@ -48,6 +49,8 @@ function markersFor(start, end) {
     else if (/CONNECTED|DISCONNECTED/.test(key)) add(e.mac, e.ts, "conn");
     else if (/^THREAT_|^TRAFFIC_BLOCKED/.test(key)) add(lower(e.data?.params?.SRC_CLIENT?.i) || e.mac, e.ts, "block");
   }
+  // Failed Wi-Fi joins (UU-C-146).
+  for (const r of db.wifiJoins(start, end)) if (r.result !== "SUCCESS") for (let i = 0; i < r.n; i += 1) add(r.mac, r.ts, "fail");
   return marks;
 }
 
@@ -344,6 +347,24 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       title: `${c.name} spent ${poorMin >= 120 ? `${Math.round(poorMin / 60)} hours` : `${poorMin} minutes`} on weak Wi-Fi`,
       text: `Average ${c.avgSignal} dBm on ${c.ap}${c.roams ? `, ${c.roams} roams` : ""}. Pages start to stall below −80 dBm.`,
       mac: c.mac,
+    });
+  }
+
+  // Failed Wi-Fi joins (UU-C-146): only when it is worth a look — 20+ in the period, or more
+  // failures than successful joins. One-offs stay on the device page.
+  const JOIN_PHRASE = { login: "couldn't log in to Wi-Fi", refused: "was refused by an access point", noip: "joined Wi-Fi but got no IP address", dns: "joined Wi-Fi but its DNS lookups failed", other: "failed to join Wi-Fi" };
+  for (const d of wifijoins.summary(start, end)) {
+    if (!(d.fails >= 20 || (d.fails >= 5 && d.fails > d.joins))) continue;
+    const p = d.problems[0];
+    const aps = p.aps.map((a) => a.name).join(", ");
+    out.push({
+      id: `join-${d.mac}`,
+      kind: "wifi",
+      level: "warn",
+      ts: d.lastFail,
+      title: `${d.name} ${JOIN_PHRASE[p.key]} ${p.n} time${p.n === 1 ? "" : "s"} ${when}`,
+      text: `${aps ? `On ${aps}. ` : ""}${d.joins} successful join${d.joins === 1 ? "" : "s"}. ${p.hint}`,
+      mac: d.mac,
     });
   }
 

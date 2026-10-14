@@ -374,6 +374,14 @@ export async function getSystemLog({ startMs, endMs, pageSize = 500, maxPages = 
   return out;
 }
 
+// Wi-Fi join attempts per client (UU-C-146): the Network app's own wifi-connectivity view —
+// each attempt's access point, result (SUCCESS, AUTHENTICATION_FAILURE, DNS_TIMEOUT…) and join
+// latency in microseconds. The console keeps about two days.
+export async function getWifiConnectivity({ startMs, endMs }) {
+  const { site } = config();
+  return request(`/proxy/network/v2/api/site/${site}/wifi-connectivity?start=${Number(startMs)}&end=${Number(endMs)}`);
+}
+
 // Live state for Wi-Fi quality, equipment health and the WAN strip (UU-C-056). These are
 // the Network app's own endpoints; on Network 10.6.106 stat/sta, stat/device and
 // stat/health answer with the API key (stat/event and stat/alarm do not).

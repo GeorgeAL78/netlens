@@ -17,6 +17,7 @@ import * as views from "./views.js";
 import * as probe from "./probe.js";
 import * as presence from "./presence.js";
 import * as watchlist from "./watchlist.js";
+import * as wifijoins from "./wifijoins.js";
 import { siteCategory } from "./sitecats.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
@@ -1983,6 +1984,29 @@ function evaluateAlerts(now = Date.now()) {
   });
 }
 
+// Wi-Fi join attempts (UU-C-146): per device, joins and failures by problem, for the last
+// `days` (1 = since midnight); with `mac`, also that device's failed attempts.
+app.get("/api/wifi-joins", (req, res) => {
+  try {
+    const now = Date.now();
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 1));
+    const from = days === 1 ? zonedMidnight(zonedDateKey(now)) : now - days * 86400e3;
+    const mac = req.query.mac ? String(req.query.mac).toLowerCase() : null;
+    res.json({
+      from,
+      to: now,
+      days,
+      devices: wifijoins.summary(from, now + 1, mac),
+      failures: mac ? wifijoins.failures(from, now + 1, mac) : undefined,
+      problems: wifijoins.PROBLEMS,
+      lastRunAt: wifijoins.state.lastRunAt || null,
+      error: wifijoins.state.error,
+    });
+  } catch (err) {
+    sendError(res, "GET /api/wifi-joins", err);
+  }
+});
+
 app.get("/api/alerts", (req, res) => {
   try {
     // ?light=1 — the tab's count: today's recorded firings, no rule re-evaluated.
@@ -2088,6 +2112,8 @@ async function snapshot() {
       .getKnownClients()
       .then((known) => presence.refresh({ known, online, now: end }))
       .catch((err) => logError("presence", err));
+    // Wi-Fi join attempts (UU-C-146): UniFi keeps ~2 days, so read them every update.
+    wifijoins.refresh(end).catch((err) => logError("wifijoins", err));
     // Addresses of watched sites, hourly, also in the background (UU-C-135).
     watchlist.refresh(end).catch((err) => logError("watchlist", err));
     // Alert rules against today's fresh numbers (UU-C-114).
