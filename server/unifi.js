@@ -172,7 +172,7 @@ const FLOW_ARRAY_FIELDS = [
   "except_for",
 ];
 
-async function fetchFlowPages({ startMs, endMs, mac, maxPages, onTruncate }) {
+async function fetchFlowPages({ startMs, endMs, mac, maxPages, onTruncate, action }) {
   const flows = [];
   let page = 0;
   let hasNext = true;
@@ -180,6 +180,7 @@ async function fetchFlowPages({ startMs, endMs, mac, maxPages, onTruncate }) {
   while (hasNext && page < maxPages) {
     const body = Object.fromEntries(FLOW_ARRAY_FIELDS.map((k) => [k, []]));
     if (mac) body.source_mac = [mac];
+    if (action) body.action = [action];
     body.timestampFrom = startMs;
     body.timestampTo = endMs;
     body.pageNumber = page;
@@ -290,6 +291,26 @@ export async function findBlockedFlow({ ts, mac, srcIp, dstIp, ips = false }) {
 // Raw UniFi flow objects carry ~40 fields; only these are ever read (classify.js
 // hostsFromFlow / bytesFromFlow / timeFromFlow / annotateFlow, cache.js flowId).
 // Projecting here keeps the cache an order of magnitude smaller on disk.
+// Which rule decided a connection (UU-C-148): the rules' own names ("Ad Blocking", "Kids Wi-Fi
+// Blocks"); bare type labels (FIREWALL) only when no rule is named. CONNTRACK is just "an
+// allowed, tracked connection".
+function policyOf(flow) {
+  const all = (flow.policies || []).filter(Boolean);
+  const not = (v) => v && !/^CONNTRACK$/i.test(v);
+  const named = all.map((p) => p.name).filter(not);
+  const list = named.length ? named : all.map((p) => p.internal_type || p.type).filter(not);
+  if (list.length) return [...new Set(list)].join(" + ");
+  // Blocked with only connection tracking behind it: UniFi's built-in invalid-traffic rule.
+  return flow.action === "blocked" && all.length ? "Block Invalid Traffic" : null;
+}
+
+// Blocked connections in a window with their rule (UU-C-152), to name blocks stored before
+// rule names were kept. The console keeps flows ~4 days.
+export async function getBlockedFlows({ startMs, endMs }) {
+  const flows = await fetchFlowPages({ startMs, endMs, action: "blocked", maxPages: 20 });
+  return flows.map((f) => ({ id: f.id, t: Number(f.flow_start_time || f.time || 0), mac: String(f.source?.mac || "").toLowerCase(), policy: policyOf(f) }));
+}
+
 function slimFlow(flow) {
   const dest = flow.destination || {};
   const td = flow.traffic_data || {};
@@ -314,9 +335,8 @@ function slimFlow(flow) {
   if (flow.id != null) slim.id = flow.id;
   if (flow.service) slim.service = flow.service;
   if (flow.action) slim.action = flow.action;
-  // Which rule decided it (UU-C-148); CONNTRACK is just "an allowed, tracked connection".
-  const policy = (flow.policies || []).map((p) => p?.name || p?.internal_type || p?.type).filter((n) => n && !/^CONNTRACK$/i.test(n));
-  if (policy.length) slim.policy = [...new Set(policy)].join(" + ");
+  const policy = policyOf(flow);
+  if (policy) slim.policy = policy;
   return slim;
 }
 

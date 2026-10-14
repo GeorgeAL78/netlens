@@ -79,6 +79,8 @@ db.exec(`
 // Added to an existing flows.db in place; rows stored before have none.
 if (!db.prepare(`PRAGMA table_info(flows)`).all().some((c) => c.name === "policy")) db.exec(`ALTER TABLE flows ADD COLUMN policy TEXT`);
 db.exec(`CREATE INDEX IF NOT EXISTS flows_blocked ON flows (day, t) WHERE action = 'blocked'`);
+// An early build named connection-tracking blocks "CONNTRACK"; they are UniFi's invalid-traffic rule.
+db.exec(`UPDATE flows SET policy = 'Block Invalid Traffic' WHERE action = 'blocked' AND policy = 'CONNTRACK'`);
 
 const COLS = ["t", "tEnd", "mac", "app", "category", "domain", "bytes", "bytesRx", "bytesTx", "service", "action", "kind", "confidence", "source", "ip", "id", "policy"];
 const insertFlow = db.prepare(
@@ -388,4 +390,35 @@ export function blockedSummary(days, from, to) {
        WHERE action = 'blocked' AND day IN (${inList(days)}) AND t >= ? AND t < ? GROUP BY mac, policy, domain ORDER BY last DESC`
     )
     .all(...days, from, to);
+}
+
+// Blocked rows still without a rule (UU-C-152), and naming one by its primary key.
+export function blockedWithoutRule(days, since) {
+  if (!days.length) return [];
+  return db
+    .prepare(`SELECT day, seq, id, t, mac FROM flows INDEXED BY flows_blocked WHERE action = 'blocked' AND day IN (${inList(days)}) AND t >= ? AND policy IS NULL`)
+    .all(...days, since);
+}
+
+const setPolicyStmt = db.prepare(`UPDATE flows SET policy = ? WHERE day = ? AND seq = ?`);
+export function setPolicies(rows) {
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) setPolicyStmt.run(r.policy, r.day, r.seq);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+// One device's blocked connections in [from, to), newest first (UU-C-153), for the detail panel.
+export function blockedRows(days, from, to, mac, limit = 500) {
+  if (!days.length) return [];
+  return db
+    .prepare(
+      `SELECT t, t_end, domain, ip, service, policy, bytes FROM flows INDEXED BY flows_blocked
+       WHERE action = 'blocked' AND day IN (${inList(days)}) AND t >= ? AND t < ? AND mac = ? ORDER BY t DESC LIMIT ?`
+    )
+    .all(...days, from, to, mac, limit);
 }

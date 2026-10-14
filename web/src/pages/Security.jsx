@@ -76,6 +76,53 @@ function Detail({ it, all, onHide, hidden }) {
   );
 }
 
+// One "Blocked by your rules" row opened (UU-C-153): the connections behind it.
+function BlockDetail({ q, range }) {
+  const p = new URLSearchParams({ period: range, mac: q.bm, dest: q.bd });
+  if (q.br) p.set("rule", q.br);
+  const { data: b, error } = useApi(`/api/threats/blocked?${p}`);
+  const outside = (b?.addresses || []).map((a) => a.ip).find((v) => isIp(v) && !/^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(v));
+  return (
+    <aside className="panel" aria-label="Blocked connections detail">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span className="mono small dim">{b?.last ? shortDate(b.last) : ""}</span>
+        <a className="iconbtn" href={href("security", null, { r: q.r })} aria-label="Close">×</a>
+      </div>
+      <h2 style={{ fontSize: 20, lineHeight: 1.3 }}>{q.br ? `Blocked by “${q.br}”` : "Blocked (rule not recorded)"}</h2>
+      {!q.br && <p className="note warn">Saved before NetLens recorded rule names; NetLens fills them in while UniFi still has the record (about 4 days).</p>}
+      {error && <p className="note warn">{error.message || String(error)}</p>}
+      {b && (
+        <>
+          <div className="kv">
+            <div><span>Action</span><span>blocked · {b.n} attempt{b.n === 1 ? "" : "s"}</span></div>
+            <div><span>When</span><span>{b.first === b.last ? shortDate(b.last) : `${shortDate(b.first)} – ${shortDate(b.last)}`}</span></div>
+            {b.services.length > 0 && <div><span>Service</span><span>{b.services.join(" · ")}</span></div>}
+            <div><span>Source</span><span>{b.device}{b.deviceIp ? <span className="mono"> · {b.deviceIp}</span> : null}</span></div>
+            <div><span>Destination</span><span>{b.destination}</span></div>
+            {b.addresses.slice(0, 8).map((a) => (
+              <div key={a.ip}><span /><span className="mono">{a.ip}{a.n > 1 ? ` ×${a.n}` : ""}</span></div>
+            ))}
+            {b.addresses.length > 8 && <div><span /><span className="dim">+{b.addresses.length - 8} more addresses</span></div>}
+          </div>
+          <div className="rows" style={{ maxHeight: 260, overflow: "auto" }}>
+            {b.attempts.map((a, i) => (
+              <div key={i} className="row small" style={{ gridTemplateColumns: "130px minmax(0, 1fr) auto", cursor: "default", padding: "3px 6px" }}>
+                <span className="mono dim">{shortDate(a.t)}</span>
+                <span className="mono ellipsis">{a.ip || "—"}</span>
+                <span className="dim">{a.service || ""}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <a className="btn primary" href={href("device", b.mac)}>{b.device}</a>
+            {outside && <a className="btn" href={href("security", null, { ip: outside, r: "90d" })}>Investigate {outside}</a>}
+          </div>
+        </>
+      )}
+    </aside>
+  );
+}
+
 export default function Security({ route }) {
   const range = route.query.r || (route.query.ip ? "90d" : "7d");
   const { data, error, loading, reload } = useApi(`/api/threats?period=${range}`);
@@ -219,13 +266,18 @@ export default function Security({ route }) {
                   )}
                   <div className="rows">
                     {connRows.slice(0, 200).map((b, i) => (
-                      <div key={i} className="row" style={{ gridTemplateColumns: "130px minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1fr) 60px", cursor: "default" }}>
+                      <button
+                        key={i}
+                        className={`row ${route.query.bm === b.mac && route.query.bd === b.destination && (route.query.br || null) === b.rule ? "sel" : ""}`}
+                        style={{ gridTemplateColumns: "130px minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1fr) 60px" }}
+                        onClick={() => go("security", null, { r: range, bm: b.mac, bd: b.destination, br: b.rule || null })}
+                      >
                         <span className="mono small dim">{shortDate(b.last)}</span>
-                        <a href={href("device", b.mac)} className="ellipsis">{b.device}</a>
-                        <span className="ellipsis small">{b.destination}</span>
+                        <span className="ellipsis" style={{ color: "var(--accent)" }}>{b.device}</span>
+                        <span className="ellipsis small">{b.destination}{b.addresses > 1 ? <span className="dim"> · {b.addresses} addresses</span> : null}</span>
                         <span className="muted small ellipsis">{b.rule || "rule not recorded"}</span>
                         <span className="mono small" style={{ textAlign: "right" }}>×{b.n}</span>
-                      </div>
+                      </button>
                     ))}
                     {!connRows.length && <div className="empty">No blocked connections in this period.</div>}
                   </div>
@@ -270,7 +322,7 @@ export default function Security({ route }) {
           )}
         </div>
       </div>
-      {sel && <Detail it={sel} all={all} onHide={toggleHide} hidden={hidden} />}
+      {sel ? <Detail it={sel} all={all} onHide={toggleHide} hidden={hidden} /> : route.query.bm ? <BlockDetail key={`${route.query.bm}|${route.query.br}|${route.query.bd}`} q={{ ...route.query, r: range }} range={range} /> : null}
     </div>
   );
 }

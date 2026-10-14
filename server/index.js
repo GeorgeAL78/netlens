@@ -18,6 +18,7 @@ import * as probe from "./probe.js";
 import * as presence from "./presence.js";
 import * as watchlist from "./watchlist.js";
 import * as wifijoins from "./wifijoins.js";
+import * as blockedrules from "./blockedrules.js";
 import { siteCategory } from "./sitecats.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
@@ -798,6 +799,23 @@ app.get("/api/wifi", (req, res) => {
   }
 });
 
+// UniFi's flow API and its System Log can name the same firewall rule differently ("Kids Wi-Fi
+// Blocks" vs "Block YouTube on Kids Wi-Fi"). A blocked connection that lines up with a firewall
+// event for the same device (±3 min) takes the event's name, so both lists agree (UU-C-155).
+// Returns (row with mac, policy, first/last or t) -> rule name.
+function systemLogRuleNames(items, nameOf) {
+  const fw = items
+    .filter((i) => i.kind === "Firewall block" && i.policy)
+    .map((i) => ({ mac: String(i.detail?.source?.mac || "").toLowerCase() || null, name: i.source, ts: i.ts, policy: i.policy }));
+  return (r) => {
+    if (/ad.?block/i.test(r.policy || "")) return r.policy || null;
+    const a = (r.first ?? r.t) - 180e3;
+    const b = (r.last ?? r.t) + 180e3;
+    const ev = fw.find((e) => (e.mac ? e.mac === r.mac : e.name === nameOf(r.mac)) && e.ts >= a && e.ts <= b);
+    return ev ? ev.policy : r.policy || null;
+  };
+}
+
 app.get("/api/threats", (req, res) => {
   try {
     const { start, end } = rangeFor(req.query);
@@ -805,11 +823,31 @@ app.get("/api/threats", (req, res) => {
     // blocking and Object / app blocks, which never reach the System Log. 30 days at most.
     const have = flowstore.dayInfo();
     const nameOf = insights.names();
-    const all = flowstore.blockedSummary(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end).map((r) => ({
+    // UniFi writes resolved hosts as "<ip>_<name>": show the name, and fold one name's many
+    // addresses into one row (UU-C-152).
+    const sys = insights.threats(start, end);
+    const ruleOf = systemLogRuleNames(sys.items, nameOf);
+    const grouped = new Map();
+    for (const r0 of flowstore.blockedSummary(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end)) {
+      const r = { ...r0, policy: ruleOf(r0) };
+      const raw = r.domain && r.domain !== "unknown" ? r.domain : r.ip || "unknown";
+      const m = /^(\d{1,3}(?:\.\d{1,3}){3})[._](.+)$/.exec(raw);
+      const name = m ? m[2] : raw;
+      const addr = m ? m[1] : IPV4_RE.test(raw) ? raw : null;
+      const k = `${r.mac}|${r.policy || ""}|${name}`;
+      const g = grouped.get(k) || { ...r, domain: name, addrs: new Set(), n: 0, first: r.first, last: 0 };
+      g.n += r.n;
+      g.first = Math.min(g.first, r.first);
+      g.last = Math.max(g.last, r.last);
+      if (addr) g.addrs.add(addr);
+      grouped.set(k, g);
+    }
+    const all = [...grouped.values()].sort((a, b) => b.last - a.last).map((r) => ({
       mac: r.mac,
       device: nameOf(r.mac),
       rule: r.policy || null,
-      destination: r.domain && r.domain !== "unknown" ? r.domain : r.ip || "unknown",
+      destination: r.domain,
+      addresses: r.addrs.size,
       n: r.n,
       first: r.first,
       last: r.last,
@@ -837,7 +875,7 @@ app.get("/api/threats", (req, res) => {
       start,
       end,
       tz,
-      ...insights.threats(start, end),
+      ...sys,
       blockedConnections: {
         total: blocked.reduce((n, b) => n + b.n, 0),
         rules: [...byRule].map(([rule, n]) => ({ rule: rule || null, n })).sort((a, b) => b.n - a.n),
@@ -2035,6 +2073,45 @@ function evaluateAlerts(now = Date.now()) {
   });
 }
 
+// The connections behind one "Blocked by your rules" row (UU-C-153): device, rule, destination.
+const splitHost = (raw) => {
+  const m = /^(\d{1,3}(?:\.\d{1,3}){3})[._](.+)$/.exec(String(raw || ""));
+  return m ? { name: m[2], ip: m[1] } : { name: raw || "unknown", ip: IPV4_RE.test(String(raw || "")) ? raw : null };
+};
+app.get("/api/threats/blocked", (req, res) => {
+  try {
+    const { start, end } = rangeFor(req.query);
+    const mac = String(req.query.mac || "").toLowerCase();
+    const rule = req.query.rule ? String(req.query.rule) : null;
+    const dest = String(req.query.dest || "");
+    const have = flowstore.dayInfo();
+    const ruleOf = systemLogRuleNames(insights.threats(start, end).items, insights.names());
+    const rows = flowstore
+      .blockedRows(dayKeysForRange(start, end).filter((d) => have.has(d)), start, end, mac)
+      .filter((r) => ruleOf({ ...r, mac }) === rule)
+      .map((r) => ({ ...r, ...splitHost(r.domain && r.domain !== "unknown" ? r.domain : r.ip) }))
+      .filter((r) => r.name === dest);
+    const sample = db.latestClientSamples().get(mac);
+    const addresses = new Map();
+    for (const r of rows) if (r.ip || r.domain) addresses.set(r.ip || r.domain, (addresses.get(r.ip || r.domain) || 0) + 1);
+    res.json({
+      mac,
+      device: insights.names()(mac),
+      deviceIp: sample?.ip || null,
+      rule,
+      destination: dest,
+      n: rows.length,
+      first: rows.length ? rows[rows.length - 1].t : null,
+      last: rows.length ? rows[0].t : null,
+      services: [...new Set(rows.map((r) => r.service).filter(Boolean))],
+      addresses: [...addresses].map(([ip, n]) => ({ ip, n })).sort((a, b) => b.n - a.n),
+      attempts: rows.slice(0, 100).map((r) => ({ t: r.t, ip: r.ip || null, service: r.service || null })),
+    });
+  } catch (err) {
+    sendError(res, "GET /api/threats/blocked", err);
+  }
+});
+
 // Wi-Fi join attempts (UU-C-146): per device, joins and failures by problem, for the last
 // `days` (1 = since midnight); with `mac`, also that device's failed attempts.
 app.get("/api/wifi-joins", (req, res) => {
@@ -2165,6 +2242,8 @@ async function snapshot() {
       .catch((err) => logError("presence", err));
     // Wi-Fi join attempts (UU-C-146): UniFi keeps ~2 days, so read them every update.
     wifijoins.refresh(end).catch((err) => logError("wifijoins", err));
+    // Rule names for blocks stored before they were kept, while UniFi still has them (UU-C-152).
+    blockedrules.backfill(end, dayKeysForRange(end - 4 * 86400e3, end)).catch((err) => logError("blockedrules", err));
     // Addresses of watched sites, hourly, also in the background (UU-C-135).
     watchlist.refresh(end).catch((err) => logError("watchlist", err));
     // Alert rules against today's fresh numbers (UU-C-114).
