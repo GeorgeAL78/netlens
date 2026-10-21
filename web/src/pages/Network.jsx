@@ -73,6 +73,35 @@ function Panel({ data, route }) {
   const hostOf = route.query.c ? flat.find((h) => (h.guests || []).some((g) => g.mac === route.query.c)) || null : null;
   const client = route.query.c ? flat.find((c) => c.mac === route.query.c) || hostOf?.guests.find((g) => g.mac === route.query.c) || null : null;
   const node = route.query.n ? all.find((n) => n.mac === route.query.n) : null;
+  // The Internet box (UU-C-176): line details and the public IP's history (90 days).
+  if (route.query.n === "internet" && data.wan) {
+    const w = data.wan;
+    const link = data.gateway?.uplink?.speed;
+    return (
+      <aside className="panel" aria-label="Internet">
+        <span className="tag dim">INTERNET</span>
+        <h2 style={{ fontSize: 22 }}>{w.isp || "WAN"}</h2>
+        <div className="kv">
+          <div><span>Status</span><span className={w.status === "ok" ? "ok" : "warn"}>{w.status === "ok" ? "OK" : w.status || "unknown"}{w.latency != null ? ` · ${w.latency} ms` : ""}</span></div>
+          {w.availability != null && <div><span>Up</span><span className="mono">{+Number(w.availability).toFixed(2)}%</span></div>}
+          {wanNow(w, link) && <div><span>Right now</span><span className="mono">{wanNow(w, link)}</span></div>}
+          {link && <div><span>WAN link</span><span className="mono">{speed(link)}</span></div>}
+          {w.ip && <div><span>Public IP</span><span className="mono">{w.ip}</span></div>}
+        </div>
+        {w.ipHistory?.length > 0 && (
+          <>
+            <h2>Public IP history</h2>
+            <div className="kv">
+              {w.ipHistory.map((r, i) => (
+                <div key={r.from}><span className="mono">{r.ip}</span><span className="small dim">{shortDate(r.from)} – {i === 0 ? "now" : shortDate(r.to)}</span></div>
+              ))}
+            </div>
+            <p className="dim small" style={{ margin: 0 }}>Recorded with every update, kept 90 days.</p>
+          </>
+        )}
+      </aside>
+    );
+  }
   if (client) {
     return (
       <aside className="panel" aria-label="Selected device">
@@ -242,7 +271,7 @@ function Tree({ data, sel, selC }) {
   const byName = Object.fromEntries(all.map((n) => [n.name, n]));
   return (
     <div className="map">
-      <div className="node internet">
+      <a className={`node internet ${sel === "internet" ? "sel" : ""}`} href={href("network", null, { n: "internet" })}>
         <span className="dim small">Internet</span>
         <strong>{data.wan?.isp || "WAN"}</strong>
         <span className={`mono small ${data.wan?.status === "ok" ? "ok" : "warn"}`}>
@@ -253,7 +282,7 @@ function Tree({ data, sel, selC }) {
         {data.wan?.availability != null ? <span className="mono small dim">up {+Number(data.wan.availability).toFixed(2)}%</span> : null}
         {wanNow(data.wan, gateway.uplink?.speed) ? <span className="mono small">{wanNow(data.wan, gateway.uplink?.speed)}</span> : null}
         {gateway.uplink?.speed ? <span className="mono small dim">WAN link {speed(gateway.uplink.speed)}</span> : null}
-      </div>
+      </a>
       <Branch node={gateway} all={all} byName={byName} gateway={gateway} sel={sel} selC={selC} root />
       {data.loose.length > 0 && (
         <div className="port-row" style={{ marginTop: 8 }}>

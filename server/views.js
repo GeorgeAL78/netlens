@@ -218,7 +218,9 @@ export function networkMap({ bundle, now }) {
     );
   const wan = db.latestWanSample();
   return {
-    wan: wan ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, rxRate: wan.rx_rate, txRate: wan.tx_rate, ip: wan.data?.ip || null, ts: wan.ts } : null,
+    wan: wan
+      ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, rxRate: wan.rx_rate, txRate: wan.tx_rate, ip: wan.data?.ip || null, ts: wan.ts, ipHistory: db.publicIpRuns(now - 90 * 86400e3).slice(-12).reverse() }
+      : null,
     gateway: gateway ? nodes.get(gateway.mac) : null,
     nodes: [...nodes.values()].filter((n) => !gateway || n.mac !== gateway.mac),
     loose,
@@ -493,6 +495,22 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     out.push({ id: `new-${d.mac}`, kind: "device", level: "warn", ts: d.ts, title: `New device on your network: ${nameOf(d.mac)}`, text: `First seen ${days ? new Date(d.ts).toLocaleDateString() + " " : ""}${clock(d.ts)}${d.wired ? " on a wired port" : " on Wi-Fi"}. If you don't recognise it, block it from its page.`, mac: d.mac });
   }
 
+  // The public IP changed in the period (UU-C-176): after a power cut, a gateway restart or the
+  // ISP renewing the address. Only a change NetLens saw, i.e. a new address after a known one.
+  {
+    const runs = db.publicIpRuns(start - 90 * 86400e3);
+    for (let k = 1; k < runs.length; k += 1) {
+      if (runs[k].from < start || runs[k].from >= end) continue;
+      out.push({
+        id: `ip-${runs[k].from}`,
+        kind: "equipment",
+        level: "info",
+        ts: runs[k].from,
+        title: `Public IP changed: ${runs[k - 1].ip} → ${runs[k].ip}`,
+        text: `At ${clock(runs[k].from)}. Usually after a power cut, a gateway restart or the ISP renewing the address.`,
+      });
+    }
+  }
   // Equipment: offline, hot or with an update waiting.
   for (const d of db.latestDeviceSamples()) {
     if (d.state !== 1) out.push({ id: `dev-off-${d.mac}`, kind: "equipment", level: "bad", ts: d.ts, title: `${d.name || d.model} is offline`, text: "UniFi reports it disconnected.", device: d.mac });

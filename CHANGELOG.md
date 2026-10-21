@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.15.0 — 2026-10-21
+
+### Added
+- Public IP history: Overview notes when your public IP changed ("Public IP changed: … → … at 3:14 AM"), and clicking the Internet box on the Network map shows the line's details and which address you had when, for the last 90 days. Recorded from v2.14.3 on.
+
 ## 2.14.4 — 2026-10-21
 
 ### Fixed

@@ -696,6 +696,18 @@ export function latestDeviceSamples() {
   return db.prepare(`SELECT d.* FROM device_samples d JOIN (SELECT mac, MAX(ts) ts FROM device_samples GROUP BY mac) m ON d.mac = m.mac AND d.ts = m.ts`).all().map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
 }
 
+// The public IP over time (UU-C-176): one run per address, from the WAN samples (90 days).
+export function publicIpRuns(since) {
+  const runs = [];
+  const rows = db.prepare(`SELECT ts, json_extract(data, '$.ip') AS ip FROM wan_samples WHERE ts >= ? AND json_extract(data, '$.ip') IS NOT NULL ORDER BY ts`).all(since);
+  for (const r of rows) {
+    const last = runs[runs.length - 1];
+    if (last && last.ip === r.ip) last.to = r.ts;
+    else runs.push({ ip: r.ip, from: r.ts, to: r.ts });
+  }
+  return runs;
+}
+
 export function latestWanSample() {
   const r = db.prepare(`SELECT * FROM wan_samples ORDER BY ts DESC LIMIT 1`).get();
   return r ? { ...r, data: JSON.parse(r.data || "{}") } : null;
