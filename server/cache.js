@@ -509,15 +509,34 @@ export async function loadDay(dayKey, start, end, { mode = "read" } = {}) {
     // it drops DPI traffic — a full replace of 2026-09-15 turned 36k flows into 7k from
     // the last three hours of that day and emptied the timeline. Traffic for a closed
     // day still replaces (the whole-day read is the accurate total).
-    const curFlows = cur.flowCount ? flowstore.readDay(dayKey) : [];
-    const flows = nameBareIpFlows(clampFlows(mergeFlows(curFlows, flowDelta), start, end));
-    flowstore.writeDay(dayKey, flows, CLASSIFIER_VERSION);
+    // An open day that already has flows only gets the new ones appended (UU-C-166): the
+    // whole-day pass (read everything, merge, rename, rewrite) froze the server for seconds on
+    // every update. A closing day, a full refetch or a classifier change still take it, so the
+    // day ends up exactly as a whole-day pass would leave it (bare IPs named from the whole day).
+    const incremental = !full && !dayClosed && cur.flowCount > 0 && Number(cur.classifierVersion || 0) === CLASSIFIER_VERSION;
+    let curFlows = [];
+    let flows = null;
+    let flowCount;
+    if (incremental) {
+      const fresh = clampFlows(flowDelta, start, end);
+      const since = fresh.reduce((m, f) => Math.min(m, Number(f.t) || m), Infinity);
+      const known = fresh.length ? flowstore.flowKeysSince(dayKey, since - OVERLAP_MS) : new Set();
+      const add = fresh.filter((f) => !known.has(flowId(f)));
+      const nameRows = add.length ? flowstore.namedAddresses(dayKey).map((domain) => ({ domain })) : [];
+      const named = nameBareIpFlows(nameRows.concat(add)).slice(nameRows.length);
+      flowCount = add.length ? flowstore.appendDay(dayKey, named, CLASSIFIER_VERSION) : cur.flowCount;
+    } else {
+      curFlows = cur.flowCount ? flowstore.readDay(dayKey) : [];
+      flows = nameBareIpFlows(clampFlows(mergeFlows(curFlows, flowDelta), start, end));
+      flowstore.writeDay(dayKey, flows, CLASSIFIER_VERSION);
+      flowCount = flows.length;
+    }
     const entry = {
       dayKey,
       start,
       end,
       traffic,
-      flowCount: flows.length,
+      flowCount,
       buckets: cur.buckets || [],
       bucketSpans: cur.bucketSpans || [],
       hourlyRead: Number(cur.hourlyRead) || 0,
@@ -537,7 +556,7 @@ export async function loadDay(dayKey, start, end, { mode = "read" } = {}) {
     days.set(dayKey, entry);
     persistDay(entry);
     console.log(
-      `cache ${full ? "full" : "delta"} ${dayKey} +${flowDelta.length} flows now=${flows.length}` +
+      `cache ${full ? "full" : incremental ? "append" : "delta"} ${dayKey} +${flowDelta.length} flows now=${flowCount}` +
         (full && curFlows.length > flowDelta.length
           ? ` (kept ${curFlows.length - flowDelta.length} flows UniFi no longer returned)`
           : "")

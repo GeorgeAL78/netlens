@@ -102,6 +102,15 @@ function Data() {
       setMsg(err.message);
     }
   }
+  // Network map grouping (UU-C-165).
+  const [group, setGroup] = useState(null);
+  useEffect(() => {
+    api("/api/settings").then((x) => setGroup(x.groupGuests !== false)).catch(() => {});
+  }, []);
+  async function saveGroup(v) {
+    setGroup(v);
+    await api("/api/settings", { method: "PUT", body: JSON.stringify({ groupGuests: v }) }).catch(() => {});
+  }
   return (
     <SettingsSection icon="sliders" title="Updates" hint="How often NetLens reads UniFi by itself, and buttons for catching up by hand. UniFi keeps time detail in 5-minute steps, so reading more often only makes the newest numbers fresher.">
       <div className="setup-row">
@@ -113,6 +122,10 @@ function Data() {
           <button type="button" className="btn primary" onClick={saveEvery} disabled={!data || !every || every === String(data?.snapshotMinutes)}>Save</button>
         </div>
       </div>
+      <label className="small" style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+        <input type="checkbox" checked={group !== false} disabled={group == null} onChange={(e) => saveGroup(e.target.checked)} />
+        On the Network map, put virtual machines and containers under the device that runs them
+      </label>
       <div className="kv">
         <div><span>Last update</span><span>{ago(data?.fetchedAt)}</span></div>
         <div><span>Usage detail kept</span><span>{data?.retainDays ?? 30} days</span></div>

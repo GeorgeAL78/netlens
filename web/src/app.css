@@ -282,3 +282,11 @@ table.t tr.click:hover td { background: #141b26; }
 .cal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); margin-right: 4px; vertical-align: 1px; }
 .dimmed { opacity: 0.5; transition: opacity 0.15s; }
 .dimmed:hover, .dimmed:focus-within { opacity: 1; }
+
+/* Network map (UU-C-165): full width; hosts with their VMs / containers. */
+.page.wide { max-width: none; }
+.host { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.pill.guests { cursor: pointer; border-style: dashed; color: var(--muted); font-size: 12.5px; }
+.pill.guests.on { color: var(--text); }
+.guest-list { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; margin: 2px 0 4px 14px; padding-left: 10px; border-left: 1px dashed var(--line-2); }
+.pill.guest { font-size: 12.5px; }

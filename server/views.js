@@ -2,6 +2,7 @@ import * as db from "./db.js";
 import * as insights from "./insights.js";
 import { sessionize } from "./classify.js";
 import * as wifijoins from "./wifijoins.js";
+import { groupGuests } from "./guests.js";
 
 // Read-only views for the redesigned interface (UU-C-087): the day grid, the network map and
 // the findings feed. Like /api/report they read SQLite and the cache only — never UniFi.
@@ -176,7 +177,17 @@ export function networkMap({ bundle, now }) {
     if (parent) parent.clients.push(c);
     else loose.push(c);
   }
-  for (const n of nodes.values()) n.clients.sort((a, b) => b.bytes15m - a.bytes15m || String(a.name).localeCompare(String(b.name)));
+  // Containers and VMs under the device that runs them (UU-C-165).
+  const vendors = new Map(db.listStoredClients().map((c) => [String(c.mac).toLowerCase(), c.vendor || null]));
+  groupGuests([...nodes.values()], loose, vendors, now);
+  // Wi-Fi: weak signal first, then by traffic; wired by traffic (UU-C-165).
+  for (const n of nodes.values())
+    n.clients.sort(
+      (a, b) =>
+        Number(!a.wired && a.health === "warn" ? 0 : 1) - Number(!b.wired && b.health === "warn" ? 0 : 1) ||
+        b.bytes15m - a.bytes15m ||
+        String(a.name).localeCompare(String(b.name))
+    );
   const wan = db.latestWanSample();
   return {
     wan: wan ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, rxRate: wan.rx_rate, txRate: wan.tx_rate, ts: wan.ts } : null,

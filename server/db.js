@@ -286,6 +286,7 @@ export function readConnectionSettings() {
     trayMode: getSetting("tray_mode", "0") === "1",
     siemPort: getSetting("siem_port", ""),
     snapshotMinutes: clampMinutes(getSetting("snapshot_minutes", "5")),
+    groupGuests: getSetting("group_guests", "1") !== "0",
   };
 }
 
@@ -300,6 +301,7 @@ export function publicConnectionSettings() {
     trayMode: s.trayMode,
     siemPort: s.siemPort,
     snapshotMinutes: s.snapshotMinutes,
+    groupGuests: s.groupGuests,
     hasApiKey: Boolean(s.apiKey),
   };
 }

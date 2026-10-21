@@ -14,6 +14,47 @@ function csv(rows) {
   return rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
 }
 
+// Which device a VM / container runs on (UU-C-165): detected, or chosen here.
+function RunsOn({ mac }) {
+  const info = useApi(`/api/devices/${encodeURIComponent(mac)}/host`);
+  const list = useApi("/api/devices");
+  const [msg, setMsg] = useState("");
+  const d = info.data;
+  if (!d || (!d.guest && !d.choice && !d.host && !d.guests.length)) return null;
+  const hosts = (list.data?.devices || []).filter((x) => x.wired && !x.privateMac && x.mac !== mac).sort((a, b) => String(a.label).localeCompare(String(b.label)));
+  async function choose(v) {
+    setMsg("");
+    try {
+      await api(`/api/devices/${encodeURIComponent(mac)}/host`, { method: "POST", body: JSON.stringify({ host: v || null }) });
+      setMsg("Saved — the Network map uses it from now on.");
+      info.reload();
+    } catch (err) {
+      setMsg(err.message || String(err));
+    }
+  }
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>{d.guests.length ? "Runs" : "Runs on"}</h2>
+        {d.guest && <span className="dim small">{d.guest.kind === "vm" ? `virtual machine${d.guest.platform ? ` · ${d.guest.platform}` : ""}` : "container (made-up network address)"}</span>}
+      </div>
+      {d.guests.length > 0 && <p className="small" style={{ margin: 0 }}>{d.guests.map((g) => g.name).join(", ")}</p>}
+      {(d.guest || d.choice) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+          <select className="field" value={d.choice || ""} onChange={(e) => choose(e.target.value)} aria-label="Runs on">
+            <option value="">Automatic{d.host && !d.choice ? ` — ${d.host.name}${d.host.how === "presence" ? " (probably)" : ""}` : !d.choice ? " — not placed" : ""}</option>
+            {hosts.map((h) => <option key={h.mac} value={h.mac}>Runs on {h.label}</option>)}
+            <option value="none">Not a VM or container</option>
+          </select>
+          {d.host?.note && !d.choice && <span className="dim small">{d.host.note}</span>}
+          {!d.grouping && <span className="dim small">Grouping is off in Settings.</span>}
+        </div>
+      )}
+      {msg && <p className="dim small" style={{ margin: 0 }}>{msg}</p>}
+    </div>
+  );
+}
+
 export default function Device({ route }) {
   const mac = String(route.arg || "").toLowerCase();
   const date = route.query.d || todayKey();
@@ -273,6 +314,8 @@ export default function Device({ route }) {
               </p>
             )}
           </div>
+
+          <RunsOn mac={mac} />
 
           {/* Wi-Fi join attempts over 7 days, from UniFi's wifi-connectivity (UU-C-146). */}
           {jd && (

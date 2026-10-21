@@ -19,6 +19,7 @@ import * as presence from "./presence.js";
 import * as watchlist from "./watchlist.js";
 import * as wifijoins from "./wifijoins.js";
 import * as blockedrules from "./blockedrules.js";
+import * as guests from "./guests.js";
 import { siteCategory } from "./sitecats.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
@@ -101,6 +102,54 @@ app.use(
   })
 );
 app.use(express.json());
+
+// Answers remembered until the data changes (UU-C-166). The data only moves when NetLens reads
+// UniFi (a snapshot, Refresh) or something is changed through the API, but every visit used to
+// rebuild the page from scratch — and Node answers one request at a time, so a 5-second
+// 7-day report also held up every other page. GET answers of the read-only views are kept per
+// URL; any snapshot, background refresh or non-GET request starts a new version.
+const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/wifi-joins"]);
+const memo = new Map();
+let memoVersion = 0;
+let prewarmTimer = null;
+function dataChanged() {
+  memoVersion += 1;
+  memo.clear();
+  // Several background refreshes finish within seconds of a snapshot: build once, after them.
+  clearTimeout(prewarmTimer);
+  prewarmTimer = setTimeout(prewarmOverview, 3000);
+  prewarmTimer.unref?.();
+}
+function prewarmOverview() {
+  try {
+    const date = zonedDateKey(Date.now());
+    const key = `/api/findings?date=${date}`;
+    if (memo.get(key)?.v === memoVersion) return;
+    memo.set(key, { v: memoVersion, body: JSON.stringify(findingsBody({ date })) });
+  } catch (err) {
+    logError("prewarm overview", err);
+  }
+}
+app.use((req, res, next) => {
+  if (req.method !== "GET") {
+    res.on("finish", dataChanged);
+    return next();
+  }
+  if (!MEMO_PATHS.has(req.path)) return next();
+  const key = req.originalUrl;
+  const hit = memo.get(key);
+  if (hit && hit.v === memoVersion) return res.set("X-NetLens-Cache", "hit").type("json").send(hit.body);
+  const v = memoVersion;
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode !== 200 || v !== memoVersion) return json(body);
+    const text = JSON.stringify(body);
+    if (memo.size >= 200) memo.clear();
+    memo.set(key, { v, body: text });
+    return res.type("json").send(text);
+  };
+  next();
+});
 
 function sendError(res, source, err) {
   logError(source, err);
@@ -725,6 +774,7 @@ app.put("/api/settings", (req, res) => {
     }
     db.applyConnectionSettings(body);
     if (body.tz) tz = body.tz;
+    if (body.groupGuests != null) db.setSetting("group_guests", body.groupGuests ? "1" : "0");
     if (body.snapshotMinutes != null && body.snapshotMinutes !== "") {
       snapshotMinutes = db.clampMinutes(db.getSetting("snapshot_minutes", "5"));
       if (snapshotTimer) {
@@ -954,9 +1004,11 @@ app.get("/api/day", (req, res) => {
   }
 });
 
-app.get("/api/findings", (req, res) => {
-  try {
-    const ctx = dayContext(req.query);
+// Overview's feed. Also built right after each data change for today (prewarmOverview), so the
+// first visit after a snapshot is instant too (UU-C-166).
+function findingsBody(query) {
+  {
+    const ctx = dayContext(query);
     const maps = db.dpiMaps();
     const list = views.findings({
       ...ctx,
@@ -998,7 +1050,7 @@ app.get("/api/findings", (req, res) => {
     } catch (err) {
       logError("findings alerts", err); // never let alerts take the feed down
     }
-    res.json({
+    return {
       date: ctx.date,
       days: ctx.days || 1,
       today: ctx.today,
@@ -1010,7 +1062,13 @@ app.get("/api/findings", (req, res) => {
         trafficBytes: totals,
         blocked,
       },
-    });
+    };
+  }
+}
+
+app.get("/api/findings", (req, res) => {
+  try {
+    res.json(findingsBody(req.query));
   } catch (err) {
     sendError(res, "GET /api/findings", err);
   }
@@ -2064,6 +2122,39 @@ app.get("/api/devices/:mac/presence", (req, res) => {
   }
 });
 
+// Which device a VM / container runs on (UU-C-165): what NetLens detects, and the owner's choice.
+app.get("/api/devices/:mac/host", (req, res) => {
+  try {
+    const mac = String(req.params.mac || "").toLowerCase();
+    const now = Date.now();
+    const map = views.networkMap({ bundle: cache.readDays([zonedDateKey(now)]), now });
+    const hosts = [map.gateway, ...map.nodes].filter(Boolean).flatMap((n) => n.clients).concat(map.loose);
+    const host = hosts.find((h) => (h.guests || []).some((g) => g.mac === mac)) || null;
+    const self = hosts.find((h) => h.mac === mac) || host?.guests.find((g) => g.mac === mac) || null;
+    const vendor = db.listStoredClients().find((c) => String(c.mac).toLowerCase() === mac)?.vendor || null;
+    res.json({
+      mac,
+      guest: guests.guestKind(mac, vendor, self ? self.wired : true),
+      choice: guests.overrides()[mac] ?? null,
+      host: host ? { mac: host.mac, name: host.name, how: host.guests.find((g) => g.mac === mac)?.how, note: host.guests.find((g) => g.mac === mac)?.note || null } : null,
+      guests: (self?.guests || []).map((g) => ({ mac: g.mac, name: g.name, kind: g.kind, how: g.how })),
+      grouping: guests.groupingOn(),
+    });
+  } catch (err) {
+    sendError(res, "GET /api/devices/:mac/host", err);
+  }
+});
+
+// { host: "<mac>" | "none" | null } — null returns to automatic detection.
+app.post("/api/devices/:mac/host", (req, res) => {
+  try {
+    const choice = guests.setOverride(req.params.mac, req.body?.host ?? null);
+    res.json({ ok: true, choice });
+  } catch (err) {
+    sendError(res, "POST /api/devices/:mac/host", err);
+  }
+});
+
 // Network check for one device (UU-C-122): its last address from UniFi, LAN only.
 app.post("/api/devices/:mac/probe", async (req, res) => {
   try {
@@ -2266,11 +2357,12 @@ async function snapshot() {
     unifi
       .getKnownClients()
       .then((known) => presence.refresh({ known, online, now: end }))
+      .then(dataChanged)
       .catch((err) => logError("presence", err));
     // Wi-Fi join attempts (UU-C-146): UniFi keeps ~2 days, so read them every update.
-    wifijoins.refresh(end).catch((err) => logError("wifijoins", err));
+    wifijoins.refresh(end).then(dataChanged).catch((err) => logError("wifijoins", err));
     // Rule names for blocks stored before they were kept, while UniFi still has them (UU-C-152).
-    blockedrules.backfill(end, dayKeysForRange(end - 4 * 86400e3, end)).catch((err) => logError("blockedrules", err));
+    blockedrules.backfill(end, dayKeysForRange(end - 4 * 86400e3, end)).then(dataChanged).catch((err) => logError("blockedrules", err));
     // Addresses of watched sites, hourly, also in the background (UU-C-135).
     watchlist.refresh(end).catch((err) => logError("watchlist", err));
     // Alert rules against today's fresh numbers (UU-C-114).
@@ -2280,6 +2372,7 @@ async function snapshot() {
       logError("alerts", err);
     }
     db.metaSet("last_snapshot", end);
+    dataChanged();
     console.log(`snapshot ${new Date(end).toISOString()} clients=${online.length} today flows=${cache.status().keys.find((k) => k.key === todayKey)?.flows ?? 0}`);
   } catch (err) {
     logError("snapshot", err);
@@ -2334,6 +2427,7 @@ export function startHttpServer({ openBrowser = false } = {}) {
       if (!offline) {
         cache
           .warm(defaultCacheJobs(), { mode: "delta" })
+          .then(dataChanged)
           .catch((err) => logError("cache warmup", err));
       }
       if (openBrowser) launchBrowser();

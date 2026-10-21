@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { bytes, duration, go, href, speed, useApi } from "../lib.js";
 import { Failed, Loading, healthClass } from "../ui.jsx";
 
@@ -5,22 +6,51 @@ import { Failed, Loading, healthClass } from "../ui.jsx";
 // Chip size is traffic in the last 15 minutes; the dot is health. Click anything for its panel.
 
 const BAND = { ng: "2.4 GHz", na: "5 GHz", "6e": "6 GHz", "11be": "6 GHz" };
+const BAND_SHORT = { ng: "2.4", na: "5", "6e": "6", "11be": "6" };
+const KIND = { vm: "VM", container: "container" };
+// "3 containers", "1 VM", "2 VMs · 5 containers"
+const guestCount = (gs) => {
+  const vm = gs.filter((g) => g.kind === "vm").length;
+  const ct = gs.length - vm;
+  return [vm ? `${vm} VM${vm === 1 ? "" : "s"}` : null, ct ? `${ct} container${ct === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ");
+};
 const kindOf = (t) => (/uap/.test(t || "") ? "Access point" : /usw/.test(t || "") ? "Switch" : /udm|ugw|uxg/.test(t || "") ? "Gateway" : "Device");
 
 function size(b) {
   return b > 200e6 ? "l" : b > 10e6 ? "m" : "";
 }
 
-function Client({ c, sel }) {
-  return (
+// A device chip. Wi-Fi chips show band and signal (UU-C-165); a host shows its VMs / containers
+// folded into a second chip that opens them.
+function Client({ c, sel, selC, guest = false }) {
+  const [open, setOpen] = useState(false);
+  const gs = c.guests || [];
+  const wifi = !c.wired && c.radio;
+  const chip = (
     <a
-      className={`pill ${size(c.bytes15m)} ${sel ? "sel" : ""}`}
+      className={`pill ${size(c.bytes15m)} ${sel ? "sel" : ""} ${guest ? "guest" : ""}`}
       href={href("network", null, { c: c.mac })}
-      title={`${c.name} · ${bytes(c.bytes15m)} in 15 min`}
+      title={`${c.name} · ${bytes(c.bytes15m)} in 15 min${c.note ? ` · probably here: ${c.note}` : ""}`}
     >
       <span className={`status-dot ${healthClass(c.health)}`} />
       {c.name}
+      {wifi && <span className={`mono small ${c.signal != null && c.signal < -75 ? "warn" : "dim"}`}>{BAND_SHORT[c.radio] || ""}{c.signal != null ? ` · ${c.signal}` : ""}</span>}
+      {guest && c.kind && <span className="small dim">{KIND[c.kind]}{c.how === "presence" ? "?" : ""}</span>}
     </a>
+  );
+  if (!gs.length) return chip;
+  return (
+    <span className="host">
+      {chip}
+      <button className={`pill guests ${open ? "on" : ""}`} onClick={() => setOpen((v) => !v)} aria-expanded={open} title="Virtual machines and containers on this device">
+        {open ? "▾" : "▸"} {guestCount(gs)}
+      </button>
+      {open && (
+        <span className="guest-list">
+          {gs.map((g) => <Client key={g.mac} c={g} sel={selC === g.mac} selC={selC} guest />)}
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -38,7 +68,9 @@ function NodeStat({ n }) {
 
 function Panel({ data, route }) {
   const all = [data.gateway, ...data.nodes].filter(Boolean);
-  const client = route.query.c ? [...all.flatMap((n) => n.clients), ...data.loose].find((c) => c.mac === route.query.c) : null;
+  const flat = [...all.flatMap((n) => n.clients), ...data.loose];
+  const hostOf = route.query.c ? flat.find((h) => (h.guests || []).some((g) => g.mac === route.query.c)) || null : null;
+  const client = route.query.c ? flat.find((c) => c.mac === route.query.c) || hostOf?.guests.find((g) => g.mac === route.query.c) || null : null;
   const node = route.query.n ? all.find((n) => n.mac === route.query.n) : null;
   if (client) {
     return (
@@ -52,6 +84,10 @@ function Panel({ data, route }) {
           {client.wired ? <div><span>Link speed</span><span className="mono">{speed(client.speed)}</span></div> : <div><span>Signal</span><span className={`mono ${client.signal < -80 ? "warn" : ""}`}>{client.signal ?? "—"} dBm</span></div>}
           <div><span>Last 15 minutes</span><span className="mono">{bytes(client.bytes15m)}</span></div>
           <div><span>Connected</span><span className="mono">{duration(client.uptime)}</span></div>
+          {client.kind && <div><span>Kind</span><span>{client.kind === "vm" ? `Virtual machine${client.platform ? ` · ${client.platform}` : ""}` : "Container (made-up network address)"}</span></div>}
+          {hostOf && <div><span>Runs on</span><span>{hostOf.name}{client.how === "presence" ? " (probably)" : client.how === "confirmed" ? " (set by you)" : ""}</span></div>}
+          {client.note && <div><span /><span className="dim small">{client.note}</span></div>}
+          {client.guests?.length > 0 && <div><span>Runs</span><span>{guestCount(client.guests)}</span></div>}
         </div>
         <a className="btn primary" href={href("device", client.mac)}>Open {client.name}</a>
       </aside>
@@ -118,19 +154,7 @@ function Panel({ data, route }) {
       </aside>
     );
   }
-  return (
-    <aside className="panel" aria-label="Help">
-      <h2>Your network, live</h2>
-      <p className="muted" style={{ margin: 0 }}>
-        Click a device for its connection and traffic, or an access point or switch for its radios, clients and ports. Larger chips moved more data in the last 15 minutes.
-      </p>
-      <div className="legend" style={{ flexDirection: "column", gap: 8 }}>
-        <span><span className="status-dot" style={{ marginRight: 8 }} />healthy</span>
-        <span><span className="status-dot warn" style={{ marginRight: 8 }} />weak signal or slow link</span>
-        <span><span className="status-dot off" style={{ marginRight: 8 }} />offline</span>
-      </div>
-    </aside>
-  );
+  return null;
 }
 
 // The real topology (UU-C-093): each switch / AP hangs off the device and port it reports as its
@@ -185,7 +209,7 @@ function Branch({ node, all, byName, gateway, sel, selC, root = false }) {
                   ))}
                   {g.clients.length > 0 && (
                     <div className="chips">
-                      {g.clients.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} />)}
+                      {g.clients.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}
                     </div>
                   )}
                 </div>
@@ -199,7 +223,7 @@ function Branch({ node, all, byName, gateway, sel, selC, root = false }) {
                 <span className="mono small dim">{wifi.length} devices</span>
               </span>
               <div className="port-body">
-                <div className="chips">{wifi.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} />)}</div>
+                <div className="chips">{wifi.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}</div>
               </div>
             </div>
           )}
@@ -232,7 +256,7 @@ function Tree({ data, sel, selC }) {
             <strong>Elsewhere</strong>
             <span className="small dim">behind other devices</span>
           </span>
-          <div className="port-body"><div className="chips">{data.loose.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} />)}</div></div>
+          <div className="port-body"><div className="chips">{data.loose.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}</div></div>
         </div>
       )}
     </div>
@@ -246,11 +270,17 @@ export default function Network({ route }) {
   return (
     <div className="split">
       <div className="main">
-        <div className="page">
+        <div className="page wide">
           <div className="page-head">
             <div className="titles">
               <span className="dim small">Network · live, refreshes every minute</span>
               <h1>Your network</h1>
+            </div>
+            <div className="legend">
+              <span><span className="status-dot" style={{ marginRight: 6 }} />healthy</span>
+              <span><span className="status-dot warn" style={{ marginRight: 6 }} />weak signal or slow link</span>
+              <span><span className="status-dot off" style={{ marginRight: 6 }} />offline</span>
+              <span className="dim">· bigger chip = more data in 15 min · Wi-Fi: band (GHz) · signal (dBm) · click anything for details</span>
             </div>
           </div>
           {error && <Failed error={error} reload={reload} />}

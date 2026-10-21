@@ -422,3 +422,38 @@ export function blockedAll(days, from, to) {
     )
     .all(...days, from, to);
 }
+
+// Appending to an open day (UU-C-166). Rewriting the whole day on every update — read ~150k
+// rows into memory, merge, delete, insert them all again — froze the server for ~5 s each
+// time on a busy network. New rows get the next seq numbers; the day's summaries are rebuilt
+// in SQL (a scan, not a rewrite).
+export function flowKeysSince(day, since) {
+  const rows = db.prepare(`SELECT id, t, mac, domain, bytes FROM flows WHERE day = ? AND t >= ?`).all(day, since);
+  return new Set(rows.map((r) => r.id || `${r.t}|${r.mac}|${r.domain}|${r.bytes}`));
+}
+
+// Destinations UniFi resolved earlier today ("<ip>_<name>"), so a new bare-IP flow can borrow
+// the name like it does in a whole-day pass.
+export function namedAddresses(day) {
+  return db
+    .prepare(`SELECT DISTINCT domain FROM flows WHERE day = ? AND domain GLOB '[0-9]*.[0-9]*.[0-9]*.[0-9]*[._]*'`)
+    .all(day)
+    .map((r) => r.domain);
+}
+
+export function appendDay(day, rows, classifier) {
+  db.exec("BEGIN");
+  try {
+    let seq = db.prepare(`SELECT COALESCE(MAX(seq), -1) + 1 AS s FROM flows WHERE day = ?`).get(day).s;
+    for (const f of rows) insertFlow.run(day, seq++, ...COLS.map((c) => v(f[c])));
+    deleteDayGroups.run(day);
+    buildGroups.run(day);
+    rebuildSites(day);
+    upsertDay.run(day, seq, classifier);
+    db.exec("COMMIT");
+    return seq;
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
