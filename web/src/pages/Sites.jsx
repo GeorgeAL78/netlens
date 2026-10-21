@@ -106,7 +106,7 @@ export default function Sites({ route }) {
     <div className="page">
       <div className="page-head">
         <div className="titles">
-          <span className="dim small">Sites</span>
+          <span className="dim small">Activity · Sites</span>
           <h1>{device || "All devices"}</h1>
           <span className="muted">
             {scope}

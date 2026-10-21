@@ -14,16 +14,30 @@ import Sites from "./pages/Sites.jsx";
 
 // The shell of the redesigned interface (UU-C-087): one top bar — home, the three views,
 // search and settings — and the page the URL names.
+// Five menus, one question each (UU-C-163). Activity groups four pages that keep their own
+// addresses (old links still work); a tab bar under the top bar switches between them.
 const TABS = [
-  ["home", "Home"],
-  ["day", "Day"],
-  ["usage", "Usage"], // apps, categories and the app picker (UU-C-106)
-  ["sites", "Sites"], // every site each device connected to (UU-C-135)
-  ["network", "Network"],
-  ["security", "Security"],
-  ["devices", "Devices"], // new devices, vendor, names saved in UniFi (UU-C-118)
-  ["alerts", "Alerts"], // daily limits per app / device (UU-C-114)
+  ["home", "Overview", ["home"]], // what happened
+  ["activity", "Activity", ["day", "usage", "sites", "alerts"]], // what devices were doing
+  ["devices", "Devices", ["devices", "device"]], // what is on the network (UU-C-118)
+  ["network", "Network", ["network"]], // is the equipment OK
+  ["security", "Protection", ["security"]], // what got stopped
 ];
+const ACTIVITY = [
+  ["day", "By hour"],
+  ["usage", "Apps"], // apps, categories and the app picker (UU-C-106)
+  ["sites", "Sites"], // every site each device connected to (UU-C-135)
+  ["alerts", "Limits"], // daily limits per app / device (UU-C-114)
+];
+const LAST_ACTIVITY = "netlens.activity";
+const lastActivity = () => {
+  try {
+    const v = localStorage.getItem(LAST_ACTIVITY);
+    return ACTIVITY.some(([id]) => id === v) ? v : "day";
+  } catch {
+    return "day";
+  }
+};
 
 // Top-bar search (UU-C-112): devices, plus apps and categories of the last 7 days — an app or
 // category opens Usage filtered to it. Loaded on first focus.
@@ -141,6 +155,15 @@ export default function App() {
   };
   const Page = pages[route.page] || Home;
   const fired = useFiredToday(route.page);
+  const inActivity = ACTIVITY.some(([id]) => id === route.page);
+  useEffect(() => {
+    if (!inActivity) return;
+    try {
+      localStorage.setItem(LAST_ACTIVITY, route.page);
+    } catch {
+      /* remembered for this visit only */
+    }
+  }, [route.page, inActivity]);
   // Bumped by Refresh: remounts the page so it loads everything again.
   const [refreshKey, setRefreshKey] = useState(0);
   return (
@@ -152,10 +175,10 @@ export default function App() {
           {version && <small>{/^\d/.test(version) ? `v${version}` : version}</small>}
         </a>
         <nav className="tabs" aria-label="Views">
-          {TABS.map(([id, label]) => (
-            <a key={id} href={href(id)} className={route.page === id ? "on" : ""}>
+          {TABS.map(([id, label, pagesOf]) => (
+            <a key={id} href={href(id === "activity" ? lastActivity() : id)} className={pagesOf.includes(route.page) ? "on" : ""}>
               {label}
-              {id === "alerts" && fired > 0 && <span className="count" title="Alerts that fired today">{fired}</span>}
+              {id === "activity" && fired > 0 && <span className="count" title="Limits reached today">{fired}</span>}
             </a>
           ))}
         </nav>
@@ -168,6 +191,16 @@ export default function App() {
           </svg>
         </a>
       </header>
+      {inActivity && (
+        <nav className="subtabs" aria-label="Activity">
+          {ACTIVITY.map(([id, label]) => (
+            <a key={id} href={href(id, null, id === "alerts" || !route.query.d ? null : { d: route.query.d })} className={route.page === id ? "on" : ""}>
+              {label}
+              {id === "alerts" && fired > 0 && <span className="count" title="Limits reached today">{fired}</span>}
+            </a>
+          ))}
+        </nav>
+      )}
       <Page key={refreshKey} route={route} version={version} />
     </>
   );

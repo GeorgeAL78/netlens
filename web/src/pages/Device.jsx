@@ -108,7 +108,7 @@ export default function Device({ route }) {
   return (
     <div className="page narrow">
       <div className="crumbs">
-        <a href={href("home")}>Home</a>
+        <a href={href("devices")}>Devices</a>
         <span>/</span>
         <a href={href("day", null, { d: date })}>Day</a>
         <span>/</span>

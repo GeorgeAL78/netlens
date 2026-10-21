@@ -88,9 +88,9 @@ export default function Usage({ route }) {
   return (
     <div className="page">
       <div className="crumbs">
-        <a href={href("home")}>Home</a>
+        <span>Activity</span>
         <span>/</span>
-        <a href={href("usage", null, range === "day" ? { d: q.d } : { r: range })}>Usage</a>
+        <a href={href("usage", null, range === "day" ? { d: q.d } : { r: range })}>Apps</a>
         {q.from && (
           <>
             <span>/</span>
@@ -100,7 +100,7 @@ export default function Usage({ route }) {
       </div>
       <div className="page-head">
         <div className="titles">
-          <h1>{appLabel || device || "Usage"}{q.from ? ` · ${scope}` : ""}</h1>
+          <h1>{appLabel || device || "Apps"}{q.from ? ` · ${scope}` : ""}</h1>
           <span className="muted">
             {[device && appLabel ? device : null, range === "day" ? dayLabel(date) : `last ${range.replace("d", " days")}`].filter(Boolean).join(" · ")}
             {q.from ? " · every figure covers only this hour" : ""}
@@ -138,7 +138,7 @@ export default function Usage({ route }) {
           {q.mac && <a className="btn small" href={href("device", q.mac, { d: q.d })}>Open device</a>}
           {(q.mac || q.app || q.cat) && (
             <a className="btn small" href={href("alerts", null, { mac: q.mac, macLabel: device, app: q.app, appLabel: appLabel, cat: q.cat, catLabel: catLabel })}>
-              Alert me…
+              Set a limit…
             </a>
           )}
         </div>

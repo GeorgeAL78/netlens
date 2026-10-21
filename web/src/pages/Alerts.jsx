@@ -97,7 +97,7 @@ export default function Alerts({ route }) {
   }
 
   async function remove(rule) {
-    if (!window.confirm(`Delete the alert “${rule.label}”?`)) return;
+    if (!window.confirm(`Delete the limit “${rule.label}”?`)) return;
     await api(`/api/alerts/${rule.id}`, { method: "DELETE" }).catch(() => {});
     alerts.reload();
   }
@@ -108,14 +108,14 @@ export default function Alerts({ route }) {
     <div className="page">
       <div className="page-head">
         <div className="titles">
-          <span className="dim small">Alerts</span>
+          <span className="dim small">Activity · Limits</span>
           <h1>Daily limits</h1>
-          <span className="muted">NetLens checks every 5 minutes and flags a rule once a day when it passes. It only watches — nothing is blocked.</span>
+          <span className="muted">NetLens checks with every update and flags a limit once a day when it is passed. It only watches — nothing is blocked.</span>
         </div>
       </div>
 
       <div className="card">
-        <h2 style={{ fontSize: 16 }}>New alert</h2>
+        <h2 style={{ fontSize: 16 }}>New limit</h2>
         <div className="grid g3" style={{ alignItems: "start" }}>
           <Pick
             label="Device"
@@ -146,7 +146,7 @@ export default function Alerts({ route }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <button className="btn primary" disabled={busy} onClick={add}>Add alert</button>
+          <button className="btn primary" disabled={busy} onClick={add}>Add limit</button>
           <span className="muted small">
             {target?.label || "All traffic"} on {device?.label || "any device"}, over {limitValue() ? amount(metric, limitValue()) : "—"}
             {metric === "time" ? " of use" : ""} in a day
@@ -160,7 +160,7 @@ export default function Alerts({ route }) {
       {alerts.data && (
         <div className="card" style={{ padding: "6px 10px" }}>
           <div className="rows">
-            {!rules.length && <div className="empty">No alerts yet. Add one above, or use “Alert me” on a Usage screen.</div>}
+            {!rules.length && <div className="empty">No limits yet. Add one above, or use “Set a limit” on the Apps screen.</div>}
             {rules.map((r) => {
               const share = Math.min(1, r.today.value / r.limit);
               return (

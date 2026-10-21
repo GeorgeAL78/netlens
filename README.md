@@ -16,24 +16,24 @@ which UniFi itself deletes after a day or a week.
 | | |
 | --- | --- |
 | ![Home — today's findings](assets/screenshots/home.png) | ![Day — every device by hour](assets/screenshots/day.png) |
-| **Home** — findings in plain language, alerts on top | **Day** — every device by hour |
+| **Overview** — findings in plain language, limits on top | **Activity › By hour** — every device by hour |
 | ![Usage — apps, categories and top apps](assets/screenshots/usage.png) | ![Device — traffic, signal and events](assets/screenshots/device.png) |
-| **Usage** — top apps, search by app, category or device | **Device** — its day, apps, sessions and events |
+| **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, apps, sessions and events |
 | ![Network — live map with access-point detail](assets/screenshots/network.png) | ![Security — blocked intrusion with full detail](assets/screenshots/security.png) |
-| **Network** — live map, access point selected | **Security** — blocked intrusion with its full record |
+| **Network** — live map, access point selected | **Protection** — blocked intrusion with its full record |
 | ![Devices — new devices, maker and where they connect](assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) |
-| **Devices** — new devices, maker, switch port or access point, rename | **Alerts** — daily limits per app and device |
+| **Devices** — new devices, maker, switch port or access point, rename | **Activity › Limits** — daily limits per app and device |
 | ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) | |
-| **Sites** — every site each device connected to, filtered by category | |
+| **Activity › Sites** — every site each device connected to, filtered by category | |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
 ## Features
 
-- **Home** — what happened today, in plain language: the day's big transfers, devices on weak
+- **Overview** — what happened today, in plain language: the day's big transfers, devices on weak
   Wi-Fi or slow wired links, blocked intrusions and firewall hits, repeat offenders, new
   devices, equipment problems — each linking to the details.
-- **Day** — every device as a row, the day's hours as columns: when each device was busy, when it
+- **Activity › By hour** — every device as a row, the day's hours as columns: when each device was busy, when it
   roamed or reconnected, when something was blocked. Click any hour to see it in 5-minute steps.
 - **Network** — a live map: internet → gateway → switches and access points → devices. Click an
   access point for its radios and clients, a switch for its ports (speed, PoE, errors).
@@ -46,17 +46,17 @@ which UniFi itself deletes after a day or a week.
   on top, with an Unblock button, and every device has Block / Unblock. Failed Wi-Fi joins
   (couldn't log in, no IP address, DNS failed…) are listed per device with the usual cause,
   kept 90 days.
-- **Sites** — every site each device connected to over the last 30 days, with a filter per
+- **Activity › Sites** — every site each device connected to over the last 30 days, with a filter per
   category (social, gaming, school, ads and tracking, AI, adult…), search, and the times of
   each connection. Taken from UniFi's connection records, not a DNS log (UniFi has none). When a
   browser's secure DNS hides the name, NetLens names the address if it belongs to a watched
   site, from its own hourly lookups.
-- **Alerts** — daily limits on time in use or data for an app or category on a device, e.g.
+- **Activity › Limits** — daily limits on time in use or data for an app or category on a device, e.g.
   YouTube on the kids' tablet over 2 hours. Flagged on Home and the Alerts tab; watch only.
-- **Security** — intrusion attempts and firewall blocks with the blocked connection's full
+- **Protection** — intrusion attempts and firewall blocks with the blocked connection's full
   record (IPS signature, policy, both ends, traffic); investigate an outside address; hide noisy
   rules.
-- **Usage** — apps, categories and devices for a day, an hour or up to 90 days; one search box
+- **Activity › Apps** — apps, categories and devices for a day, an hour or up to 90 days; one search box
   for an app, category or device, and the top apps one click away. **Every number on
   a screen comes from one source and adds up**; a built-in audit (`npm run audit`) checks every
   day × device × app combination.

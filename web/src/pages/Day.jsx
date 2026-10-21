@@ -47,7 +47,7 @@ export default function Day({ route }) {
     <div className="page">
       <div className="page-head">
         <div className="titles">
-          <span className="dim small">Day</span>
+          <span className="dim small">Activity · By hour</span>
           {data && (
             <p className="lede">
               {bytes(data.network.total)}

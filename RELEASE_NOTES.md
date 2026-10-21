@@ -1,2 +1,6 @@
 ### Changed
-- Security has two tabs: Blocks & intrusions, and Ads & trackers. The ads tab has the same layout: a chart by day, top devices and blocked sites, device and site filters, one line per device and blocked site, and a detail panel with every blocked lookup.
+- Menus rearranged around one question each: **Overview** (was Home), **Activity** (By hour, Apps, Sites and Limits — was Day, Usage, Sites and Alerts — as tabs), **Devices**, **Network**, **Protection** (was Security). Old links still work.
+- Alerts are called Limits; "Alert me…" is "Set a limit…". Overview's filters and labels use the new names.
+
+### Fixed
+- The Limits page said NetLens checks "every 5 minutes" although the interval is a setting.

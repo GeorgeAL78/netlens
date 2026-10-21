@@ -203,7 +203,7 @@ export default function Security({ route }) {
         <div className="page">
           <div className="page-head">
             <div className="titles">
-              <span className="dim small">Security</span>
+              <span className="dim small">Protection</span>
               <h1>{ip ? `Address ${ip}` : "Blocked traffic"}</h1>
               {data && (
                 <span className="muted">

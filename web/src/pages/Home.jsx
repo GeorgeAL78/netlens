@@ -6,14 +6,14 @@ import { Bars, DayStep, Failed, Loading, levelColor } from "../ui.jsx";
 // to the place that shows it in full.
 
 const FILTERS = [
-  ["all", "Everything"],
-  ["look", "Needs a look"],
-  ["usage", "Usage"],
+  ["all", "All"],
+  ["look", "Needs attention"],
+  ["usage", "Activity"],
   ["link", "Wi-Fi & wired"],
-  ["security", "Security"],
-  ["equipment", "Equipment"],
+  ["security", "Protection"],
+  ["equipment", "Network"],
 ];
-const TAG = { alert: "ALERT", usage: "USAGE", wifi: "WI-FI", wired: "WIRED", security: "SECURITY", device: "NEW DEVICE", equipment: "EQUIPMENT", data: "DATA" };
+const TAG = { alert: "LIMIT", usage: "ACTIVITY", wifi: "WI-FI", wired: "WIRED", security: "PROTECTION", device: "NEW DEVICE", equipment: "NETWORK", data: "DATA" };
 
 function actionsFor(f, date, days) {
   const a = [];
@@ -21,7 +21,7 @@ function actionsFor(f, date, days) {
   if (f.list) return [{ label: "Open in Usage", to: href("usage", null, days ? { r: Number(days) <= 7 ? "7d" : "30d" } : { d: date }) }];
   if (f.alert) {
     a.push({ label: "Open in Usage", to: href("usage", null, { d: f.alert.day, mac: f.alert.mac, app: f.alert.app, cat: f.alert.cat }) });
-    a.push({ label: "Alerts", to: href("alerts") });
+    a.push({ label: "Limits", to: href("alerts") });
     return a;
   }
   // The burst's own day, which in a 3–30 day view is not necessarily today.
@@ -98,7 +98,7 @@ export default function Home({ route }) {
               <article key={f.id} className={`finding lv-${f.level}`}>
                 <div className="meta">
                   <span className="tag" style={{ color: levelColor[f.level] }}>
-                    {f.level === "info" ? TAG[f.kind] || "NOTE" : "NEEDS A LOOK"}
+                    {f.level === "info" ? TAG[f.kind] || "NOTE" : "NEEDS ATTENTION"}
                   </span>
                   <span>·</span>
                   <span>{f.level === "info" ? "" : `${TAG[f.kind] || ""} · `}{days ? shortDate(f.ts) : clock(f.ts)}</span>
@@ -175,10 +175,10 @@ export default function Home({ route }) {
             </div>
             <div className="card">
               <span className="dim small">Jump to</span>
-              <a href={href("day", null, { d: date })}>Every device that day</a>
+              <a href={href("day", null, { d: date })}>Activity by hour</a>
               <a href={href("usage", null, { d: date })}>Apps and categories</a>
               <a href={href("network")}>Network map</a>
-              <a href={href("security")}>Security events</a>
+              <a href={href("security")}>Blocked traffic</a>
             </div>
           </aside>
         </div>
