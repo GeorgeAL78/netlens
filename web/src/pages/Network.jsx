@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bytes, duration, go, href, speed, useApi } from "../lib.js";
+import { ago, bytes, duration, go, href, shortDate, speed, useApi } from "../lib.js";
 import { Failed, Loading, healthClass } from "../ui.jsx";
 
 // Network — the map (UU-C-087): Internet → gateway → switches / access points → devices.
@@ -30,10 +30,11 @@ function Client({ c, sel, selC, guest = false }) {
     <a
       className={`pill ${size(c.bytes15m)} ${sel ? "sel" : ""} ${guest ? "guest" : ""}`}
       href={href("network", null, { c: c.mac })}
-      title={`${c.name} · ${bytes(c.bytes15m)} in 15 min${c.note ? ` · probably here: ${c.note}` : ""}`}
+      title={`${c.name} · ${bytes(c.bytes15m)} in 15 min${c.note ? ` · probably here: ${c.note}` : ""}${c.placed ? ` · last seen here ${ago(c.placed.ts)} — UniFi now only knows it is ${c.placed.nowAt}` : ""}`}
     >
       <span className={`status-dot ${healthClass(c.health)}`} />
       {c.name}
+      {c.placed && <span className="dim small" aria-label="last seen here">↺</span>}
       {wifi && <span className={`mono small ${c.signal != null && c.signal < -75 ? "warn" : "dim"}`}>{BAND_SHORT[c.radio] || ""}{c.signal != null ? ` · ${c.signal}` : ""}</span>}
       {guest && c.kind && <span className="small dim">{KIND[c.kind]}{c.how === "presence" ? "?" : ""}</span>}
     </a>
@@ -85,6 +86,7 @@ function Panel({ data, route }) {
           <div><span>Last 15 minutes</span><span className="mono">{bytes(client.bytes15m)}</span></div>
           <div><span>Connected</span><span className="mono">{duration(client.uptime)}</span></div>
           {client.kind && <div><span>Kind</span><span>{client.kind === "vm" ? `Virtual machine${client.platform ? ` · ${client.platform}` : ""}` : "Container (made-up network address)"}</span></div>}
+          {client.placed && <div><span>Place</span><span>last seen here {shortDate(client.placed.ts)}; UniFi now only knows it is {client.placed.nowAt}</span></div>}
           {hostOf && <div><span>Runs on</span><span>{hostOf.name}{client.how === "presence" ? " (probably)" : client.how === "confirmed" ? " (set by you)" : ""}</span></div>}
           {client.note && <div><span /><span className="dim small">{client.note}</span></div>}
           {client.guests?.length > 0 && <div><span>Runs</span><span>{guestCount(client.guests)}</span></div>}
@@ -280,7 +282,7 @@ export default function Network({ route }) {
               <span><span className="status-dot" style={{ marginRight: 6 }} />healthy</span>
               <span><span className="status-dot warn" style={{ marginRight: 6 }} />weak signal or slow link</span>
               <span><span className="status-dot off" style={{ marginRight: 6 }} />offline</span>
-              <span className="dim">· bigger chip = more data in 15 min · Wi-Fi: band (GHz) · signal (dBm) · click anything for details</span>
+              <span className="dim">· bigger chip = more data in 15 min · Wi-Fi: band (GHz) · signal (dBm) · ↺ last seen there · click anything for details</span>
             </div>
           </div>
           {error && <Failed error={error} reload={reload} />}

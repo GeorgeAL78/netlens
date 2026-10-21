@@ -76,6 +76,8 @@ db.exec(`
     PRIMARY KEY (mac, ts)
   );
   CREATE INDEX IF NOT EXISTS client_samples_ts ON client_samples (ts);
+  -- Per-device history lookups, e.g. a device's last exact place (UU-C-168).
+  CREATE INDEX IF NOT EXISTS client_samples_mac ON client_samples (mac, ts);
   CREATE TABLE IF NOT EXISTS device_samples (
     ts INTEGER NOT NULL,
     mac TEXT NOT NULL,
@@ -661,6 +663,25 @@ export function pruneLiveSamples(before) {
 export function queryClientSamples(start, end, mac) {
   const sql = `SELECT * FROM client_samples WHERE ts >= ? AND ts < ?${mac ? " AND mac = ?" : ""} ORDER BY ts`;
   return mac ? db.prepare(sql).all(start, end, mac) : db.prepare(sql).all(start, end);
+}
+
+// The last exact place of each wired device (UU-C-168): its newest sample since `since` on a
+// real port — not on a link to another UniFi device (`uplinkKeys`: "<parentMac>|<port>").
+export function lastExactPlaces(macs, since, uplinkKeys) {
+  const out = new Map();
+  if (!macs.length) return out;
+  const rows = db
+    .prepare(
+      `SELECT mac, ap_mac AS apMac, port, ts FROM client_samples
+       WHERE mac IN (${macs.map(() => "?").join(",")}) AND wired = 1 AND port IS NOT NULL AND ap_mac IS NOT NULL AND ts >= ?
+       ORDER BY ts DESC`
+    )
+    .all(...macs, since);
+  for (const r of rows) {
+    if (out.has(r.mac) || uplinkKeys.has(`${r.apMac}|${r.port}`)) continue;
+    out.set(r.mac, { apMac: r.apMac, port: r.port, ts: r.ts });
+  }
+  return out;
 }
 
 export function queryDeviceSamples(start, end) {

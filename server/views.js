@@ -177,6 +177,33 @@ export function networkMap({ bundle, now }) {
     if (parent) parent.clients.push(c);
     else loose.push(c);
   }
+  // A switch forgets a quiet device's port, and UniFi then reports only the uplink it last saw
+  // the address on (a container drawn on the gateway's cable to the switch) or nothing at all.
+  // Such a device goes back to the last exact place NetLens recorded for it in 30 days, marked
+  // as remembered (UU-C-168). Before the grouping, so it sees the corrected port.
+  const macOfName = new Map([...nodes.values()].map((n) => [n.name, n.mac]));
+  const uplinkKeys = new Set();
+  for (const n of nodes.values()) {
+    const parent = n.uplink?.device && macOfName.get(n.uplink.device);
+    if (parent && n.uplink.port != null) uplinkKeys.add(`${parent}|${n.uplink.port}`);
+  }
+  const misplaced = [];
+  for (const n of nodes.values()) for (const c of n.clients) if (c.wired && uplinkKeys.has(`${n.mac}|${c.port}`)) misplaced.push([c, n]);
+  for (const c of loose) if (c.wired) misplaced.push([c, null]);
+  if (misplaced.length) {
+    const hits = db.lastExactPlaces(misplaced.map(([c]) => c.mac), now - 30 * 86400e3, uplinkKeys);
+    for (const [c, from] of misplaced) {
+      const hit = hits.get(c.mac);
+      const to = hit && nodes.get(hit.apMac);
+      if (!to) continue;
+      const nowAt = from ? `somewhere behind ${from.name} port ${c.port}` : "not on any port UniFi can see";
+      if (from) from.clients = from.clients.filter((x) => x !== c);
+      else loose.splice(loose.indexOf(c), 1);
+      c.port = hit.port;
+      c.placed = { from: "memory", ts: hit.ts, nowAt };
+      to.clients.push(c);
+    }
+  }
   // Containers and VMs under the device that runs them (UU-C-165).
   const vendors = new Map(db.listStoredClients().map((c) => [String(c.mac).toLowerCase(), c.vendor || null]));
   groupGuests([...nodes.values()], loose, vendors, now);
