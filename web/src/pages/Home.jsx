@@ -154,7 +154,7 @@ export default function Home({ route }) {
                         {now.internet.latency != null ? ` · ${now.internet.latency} ms` : ""}
                       </span>
                       {now.internet.ip ? <span className="mono small">{now.internet.ip}</span> : null}
-                      {now.internet.availability != null ? <span className="mono small dim">up {now.internet.availability}%</span> : null}
+                      {now.internet.availability != null ? <span className="mono small dim">up {+Number(now.internet.availability).toFixed(2)}%</span> : null}
                       {data.today && wanNow(now.internet, now.internet.link) ? <span className="mono small">{wanNow(now.internet, now.internet.link)}</span> : now.internet.link ? <span className="mono small dim">WAN link {speed(now.internet.link)}</span> : null}
                     </span>
                   </div>

@@ -250,7 +250,7 @@ function Tree({ data, sel, selC }) {
           {data.wan?.latency != null ? ` · ${data.wan.latency} ms` : ""}
         </span>
         {data.wan?.ip ? <span className="mono small">{data.wan.ip}</span> : null}
-        {data.wan?.availability != null ? <span className="mono small dim">up {data.wan.availability}%</span> : null}
+        {data.wan?.availability != null ? <span className="mono small dim">up {+Number(data.wan.availability).toFixed(2)}%</span> : null}
         {wanNow(data.wan, gateway.uplink?.speed) ? <span className="mono small">{wanNow(data.wan, gateway.uplink?.speed)}</span> : null}
         {gateway.uplink?.speed ? <span className="mono small dim">WAN link {speed(gateway.uplink.speed)}</span> : null}
       </div>

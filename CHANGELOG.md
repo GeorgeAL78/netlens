@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.14.4 — 2026-10-21
+
+### Fixed
+- "% up" showed UniFi's raw figure (99.93060000240803%); it is rounded to two decimals.
+
 ## 2.14.3 — 2026-10-21
 
 ### Added
