@@ -1,2 +1,6 @@
+### Added
+- Overview › Right now and the Network map's Internet box: provider, public IP, % up (UniFi's WAN monitor), and current download / upload speed with how much of the WAN link it uses.
+
 ### Fixed
-- Overview › Top devices named a device's biggest recognised app even when it was a sliver of its traffic (tower.lan's 237 GB of Real-Debrid downloads showed as "GitHub" — 1.3 GB of container updates). A main app now has to be at least a fifth of the device's traffic; otherwise the destination from the connection records is shown ("mostly real-debrid.com"). The percentage now says "of all traffic".
+- The same "biggest app, however small" mistake in two more places: Overview's unusual-usage note and the Apps page's "Busiest app" card now show the real top entry when no named app is at least a fifth of the traffic.
+- A bare IP address is never used as a device's "mostly …" label.

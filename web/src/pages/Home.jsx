@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bytes, clock, go, href, shortDate, todayKey, useApi } from "../lib.js";
+import { bytes, clock, go, href, shortDate, speed, todayKey, useApi, wanNow } from "../lib.js";
 import { Bars, DayStep, Failed, Loading, levelColor } from "../ui.jsx";
 
 // Home — the feed (UU-C-087): what happened today, in plain language, each finding linking
@@ -147,9 +147,15 @@ export default function Home({ route }) {
                 {now?.internet && (
                   <div>
                     <span>Internet</span>
-                    <span className={now.internet.status === "ok" ? "ok" : "warn"}>
-                      {now.internet.status === "ok" ? "OK" : now.internet.status || "unknown"}
-                      {now.internet.latency != null ? ` · ${now.internet.latency} ms` : ""}
+                    <span className="stack" style={{ alignItems: "flex-end", gap: 2 }}>
+                      {now.internet.isp && <span>{now.internet.isp}</span>}
+                      <span className={now.internet.status === "ok" ? "ok" : "warn"}>
+                        {now.internet.status === "ok" ? "OK" : now.internet.status || "unknown"}
+                        {now.internet.latency != null ? ` · ${now.internet.latency} ms` : ""}
+                      </span>
+                      {now.internet.ip ? <span className="mono small">{now.internet.ip}</span> : null}
+                      {now.internet.availability != null ? <span className="mono small dim">up {now.internet.availability}%</span> : null}
+                      {data.today && wanNow(now.internet, now.internet.link) ? <span className="mono small">{wanNow(now.internet, now.internet.link)}</span> : now.internet.link ? <span className="mono small dim">WAN link {speed(now.internet.link)}</span> : null}
                     </span>
                   </div>
                 )}

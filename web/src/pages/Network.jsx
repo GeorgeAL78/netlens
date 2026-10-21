@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ago, bytes, duration, go, href, shortDate, speed, useApi } from "../lib.js";
+import { ago, bytes, duration, go, href, shortDate, speed, useApi, wanNow } from "../lib.js";
 import { Failed, Loading, healthClass } from "../ui.jsx";
 
 // Network — the map (UU-C-087): Internet → gateway → switches / access points → devices.
@@ -249,6 +249,9 @@ function Tree({ data, sel, selC }) {
           {data.wan?.status === "ok" ? "OK" : data.wan?.status || "unknown"}
           {data.wan?.latency != null ? ` · ${data.wan.latency} ms` : ""}
         </span>
+        {data.wan?.ip ? <span className="mono small">{data.wan.ip}</span> : null}
+        {data.wan?.availability != null ? <span className="mono small dim">up {data.wan.availability}%</span> : null}
+        {wanNow(data.wan, gateway.uplink?.speed) ? <span className="mono small">{wanNow(data.wan, gateway.uplink?.speed)}</span> : null}
         {gateway.uplink?.speed ? <span className="mono small dim">WAN link {speed(gateway.uplink.speed)}</span> : null}
       </div>
       <Branch node={gateway} all={all} byName={byName} gateway={gateway} sel={sel} selC={selC} root />

@@ -86,6 +86,16 @@ export function rate(kbps) {
   return kbps >= 1e6 ? `${(kbps / 1e6).toFixed(2)} Gbps` : kbps >= 1000 ? `${Math.round(kbps / 1000)} Mbps` : `${kbps} kbps`;
 }
 
+// The WAN right now (UU-C-172): "↓ 120 Mbps · ↑ 8 Mbps · 12% of 1 Gbps". Rates in bytes/s; the
+// busier direction against the link speed (full duplex).
+export function wanNow(w, linkMbps) {
+  if (!w || (w.rxRate == null && w.txRate == null)) return null;
+  const kbps = (b) => Math.round(((b || 0) * 8) / 1000);
+  const busiest = Math.max(w.rxRate || 0, w.txRate || 0);
+  const share = linkMbps ? Math.round(((busiest * 8) / 1e6 / linkMbps) * 100) : null;
+  return `↓ ${rate(kbps(w.rxRate))} · ↑ ${rate(kbps(w.txRate))}${share != null ? ` · ${share}% of ${speed(linkMbps)}` : ""}`;
+}
+
 export function speed(mbps) {
   if (mbps == null) return "—";
   return mbps >= 1000 ? `${+(mbps / 1000).toFixed(1)} Gbps` : `${mbps} Mbps`;

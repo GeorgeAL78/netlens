@@ -218,7 +218,7 @@ export function networkMap({ bundle, now }) {
     );
   const wan = db.latestWanSample();
   return {
-    wan: wan ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, rxRate: wan.rx_rate, txRate: wan.tx_rate, ts: wan.ts } : null,
+    wan: wan ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, rxRate: wan.rx_rate, txRate: wan.tx_rate, ip: wan.data?.ip || null, ts: wan.ts } : null,
     gateway: gateway ? nodes.get(gateway.mac) : null,
     nodes: [...nodes.values()].filter((n) => !gateway || n.mac !== gateway.mac),
     loose,
@@ -286,7 +286,8 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     if (!periodDays.length) return null;
     const by = new Map();
     for (const g of flowstore.groups(periodDays, d.mac)) {
-      if (!g.app || g.category === "Local network" || /^(Unidentified|DNS|HTTPS?)$/.test(g.app)) continue;
+      // A bare address names nothing a person would recognise.
+      if (!g.app || g.category === "Local network" || /^(Unidentified|DNS|HTTPS?)$/.test(g.app) || /^[\d.:]+$/.test(g.app)) continue;
       by.set(g.app, (by.get(g.app) || 0) + g.bytes);
     }
     const top = [...by].sort((a, b) => b[1] - a[1])[0];
@@ -354,7 +355,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
           level: "warn",
           ts: start,
           title: `${nameOf(d.mac)} used ${(d.bytes / usual).toFixed(1)}× its usual ${when}`,
-          text: `${fmtGB(d.bytes)}, against about ${fmtGB(usual)} on a normal ${days ? `${nDays} days` : "day"}${mainApp(d) ? `; mostly ${mainApp(d)}` : ""}.`,
+          text: `${fmtGB(d.bytes)}, against about ${fmtGB(usual)} on a normal ${days ? `${nDays} days` : "day"}${mainApp(d) ? `; mostly ${mainApp(d)}` : topDestination(d) ? `; ${topDestination(d)}` : ""}.`,
           mac: d.mac,
           hourly: barsFor(d.mac),
           barDays: days ? nDays : null,

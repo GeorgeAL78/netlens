@@ -1057,7 +1057,19 @@ function findingsBody(query) {
       tz,
       findings: [...alerts, ...list],
       now: {
-        internet: wan ? { status: wan.status, isp: wan.isp, latency: wan.latency } : null,
+        // With the WAN link speed, like the Network map's Internet box (UU-C-172).
+        internet: wan
+          ? {
+              status: wan.status,
+              isp: wan.isp,
+              latency: wan.latency,
+              link: db.latestDeviceSamples().find((d) => /udm|ugw|uxg/.test(d.type || ""))?.data?.uplink?.speed ?? null,
+              ip: wan.data?.ip || null,
+              availability: wan.availability ?? null, // % up, UniFi's own WAN monitor
+              rxRate: wan.rx_rate ?? null, // bytes/s right now
+              txRate: wan.tx_rate ?? null,
+            }
+          : null,
         online: { total: onlineMacs.size, wired: [...onlineMacs.values()].filter(Boolean).length },
         trafficBytes: totals,
         blocked,

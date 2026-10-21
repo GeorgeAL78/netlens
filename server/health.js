@@ -95,6 +95,8 @@ function wanRow(health, ts) {
     rxRate: num(wan["rx_bytes-r"]),
     txRate: num(wan["tx_bytes-r"]),
     data: {
+      // The public address the ISP gave the gateway (UU-C-172).
+      ip: wan.wan_ip || null,
       monitors: (stats.monitors || stats.alerting_monitors || []).map((m) => ({
         target: m.target,
         type: m.type,

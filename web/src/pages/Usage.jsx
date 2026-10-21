@@ -81,7 +81,10 @@ export default function Usage({ route }) {
     },
     { label: "Protocols and background", items: choices.filter((a) => a.source !== "local" && isPlumbing(a)).map(appItem) },
   ];
-  const busiest = (r?.apps || []).find((a) => !isPlumbing(a)) || r?.apps?.[0]; // a real app, not SSL/TLS
+  // A real app rather than SSL/TLS — but only when it is a real part of the traffic; otherwise the
+  // honest top entry (UU-C-172: a device with 236 GB of SSL/TLS showed "GitHub 1.3 GB").
+  const realApp = (r?.apps || []).find((a) => !isPlumbing(a));
+  const busiest = realApp && realApp.totalBytes >= 0.2 * (r?.totals?.bytes || 0) ? realApp : r?.apps?.[0];
   const appsMax = Math.max(1, ...(r?.apps || []).map((a) => a.totalBytes));
   const catTotal = Math.max(1, (r?.categories || []).reduce((n, c) => n + c.totalBytes, 0));
 
