@@ -249,8 +249,8 @@ export function Finder({ groups, placeholder, browse = false, className = "" }) 
 
 // A size with its unit made distinct (UU-C-178): GB and TB in bold with the unit in the accent
 // colour, MB and below plain with a quiet unit — "236 GB" cannot be read as MB next to "218 MB".
-export function Bytes({ n }) {
-  const text = bytes(n);
+export function Bytes({ n, text: given }) {
+  const text = given ?? bytes(n);
   const m = /^(.*?)\s([A-Z]+)$/.exec(text);
   if (!m) return text;
   const big = m[2] === "GB" || m[2] === "TB";

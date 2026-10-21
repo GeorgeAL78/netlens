@@ -184,7 +184,7 @@ export default function Usage({ route }) {
               <div className="card tight stat">
                 <span className="label">Busiest app</span>
                 <span className="value small ellipsis">{busiest?.app || "—"}</span>
-                <span className="sub">{busiest ? `${bytes(busiest.totalBytes)} · ${busiest.category}` : ""}</span>
+                <span className="sub">{busiest ? <><Bytes n={busiest.totalBytes} /> · {busiest.category}</> : ""}</span>
               </div>
             )}
             <div className="card tight stat">

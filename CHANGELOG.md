@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.15.2 — 2026-10-21
+
+### Fixed
+- The distinct GB / TB sizes were missing in three places: a device's "Sessions and events", Overview's top-devices and top-apps lists, and the Apps page's "Busiest app" card.
+
 ## 2.15.1 — 2026-10-21
 
 ### Changed

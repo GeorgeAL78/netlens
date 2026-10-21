@@ -114,7 +114,7 @@ export default function Home({ route }) {
                           {x.mac ? <a href={href("device", x.mac, { d: date })} className="ellipsis">{x.label}</a> : <span className="ellipsis">{x.label}</span>}
                           {x.sub && <span className="dim small ellipsis">{x.sub}</span>}
                         </span>
-                        <span className="mono small">{x.value}</span>
+                        <span className="mono small">{/^[\d.]+ [KMGT]?B$/.test(String(x.value)) ? <Bytes text={x.value} /> : x.value}</span>
                       </div>
                     ))}
                   </div>

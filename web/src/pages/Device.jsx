@@ -95,7 +95,7 @@ export default function Device({ route }) {
   const appsMax = Math.max(1, ...(r?.apps || []).map((a) => a.totalBytes));
   const items = useMemo(() => {
     const list = [];
-    for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.site ? `${s.site} (${s.app})` : s.app, detail: s.sites?.length ? s.sites.map((x) => (x.addresses > 1 ? `${x.name} (${x.addresses} addresses)` : x.name)).join(", ") : (s.domains || []).join(", "), v: bytes(s.bytes), kind: "session" });
+    for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.site ? `${s.site} (${s.app})` : s.app, detail: s.sites?.length ? s.sites.map((x) => (x.addresses > 1 ? `${x.name} (${x.addresses} addresses)` : x.name)).join(", ") : (s.domains || []).join(", "), v: bytes(s.bytes), n: s.bytes, kind: "session" });
     for (const e of r?.siem?.events || []) list.push({ ts: e.ts, at: clock(e.ts), what: e.name, detail: [e.via, e.duration, e.usageDown && `↓ ${e.usageDown}`].filter(Boolean).join(" · "), v: "", kind: "event" });
     for (const x of w?.roams || []) if (!list.some((i) => i.kind === "event" && Math.abs(i.ts - x.ts) < 2000)) list.push({ ts: x.ts, at: clock(x.ts), what: "Roamed", detail: x.msg || x.via || "", v: "", kind: "event" });
     // Failed Wi-Fi joins of this day, one line per hour and problem (UU-C-146).
@@ -399,7 +399,7 @@ export default function Device({ route }) {
                       <span style={{ color: i.kind === "session" ? "var(--accent)" : i.kind === "joinfail" ? "var(--bad)" : "#c8d2df" }}>{i.what}</span>
                       <span className="dim small ellipsis">{i.detail}</span>
                     </span>
-                    <span className="mono small">{i.v}</span>
+                    <span className="mono small">{i.n != null ? <Bytes n={i.n} /> : i.v}</span>
                   </div>
                 ))}
               </div>
