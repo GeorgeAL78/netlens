@@ -78,7 +78,9 @@ export function bytes(n) {
     v /= 1000;
     i += 1;
   }
-  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
+  // GB and TB keep a decimal (UU-C-178): "237 GB" over a "236 GB" session looked like a
+  // missing gigabyte when they were 236.5 and 236.3.
+  return `${i === 0 || (v >= 100 && i < 3) ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
 }
 
 export function rate(kbps) {

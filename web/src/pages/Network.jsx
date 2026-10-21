@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ago, bytes, duration, go, href, shortDate, speed, useApi, wanNow } from "../lib.js";
-import { Failed, Loading, healthClass } from "../ui.jsx";
+import { Failed, Loading, healthClass, Bytes } from "../ui.jsx";
 
 // Network — the map (UU-C-087): Internet → gateway → switches / access points → devices.
 // Chip size is traffic in the last 15 minutes; the dot is health. Click anything for its panel.
@@ -112,7 +112,7 @@ function Panel({ data, route }) {
         <div className="kv">
           <div><span>Connection</span><span>{client.wired ? `Wired${client.port != null ? ` · port ${client.port}` : ""}` : `Wi-Fi ${BAND[client.radio] || ""}${client.essid ? ` · ${client.essid}` : ""}`}</span></div>
           {client.wired ? <div><span>Link speed</span><span className="mono">{speed(client.speed)}</span></div> : <div><span>Signal</span><span className={`mono ${client.signal < -80 ? "warn" : ""}`}>{client.signal ?? "—"} dBm</span></div>}
-          <div><span>Last 15 minutes</span><span className="mono">{bytes(client.bytes15m)}</span></div>
+          <div><span>Last 15 minutes</span><span className="mono"><Bytes n={client.bytes15m} /></span></div>
           <div><span>Connected</span><span className="mono">{duration(client.uptime)}</span></div>
           {client.kind && <div><span>Kind</span><span>{client.kind === "vm" ? `Virtual machine${client.platform ? ` · ${client.platform}` : ""}` : "Container (made-up network address)"}</span></div>}
           {client.placed && <div><span>Place</span><span>last seen here {shortDate(client.placed.ts)}; UniFi now only knows it is {client.placed.nowAt}</span></div>}

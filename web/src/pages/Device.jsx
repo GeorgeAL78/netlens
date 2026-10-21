@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
 import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi } from "../lib.js";
-import { DayStep, Failed, Loading, Meter } from "../ui.jsx";
+import { DayStep, Failed, Loading, Meter, Bytes } from "../ui.jsx";
 
 // One device (UU-C-087): its day — traffic, signal and events by hour — its connection,
 // apps, sessions and events, and blocking. Everything links back to the hour or event.
@@ -95,7 +95,7 @@ export default function Device({ route }) {
   const appsMax = Math.max(1, ...(r?.apps || []).map((a) => a.totalBytes));
   const items = useMemo(() => {
     const list = [];
-    for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.app, detail: (s.domains || []).join(", "), v: bytes(s.bytes), kind: "session" });
+    for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.site ? `${s.site} (${s.app})` : s.app, detail: s.sites?.length ? s.sites.map((x) => (x.addresses > 1 ? `${x.name} (${x.addresses} addresses)` : x.name)).join(", ") : (s.domains || []).join(", "), v: bytes(s.bytes), kind: "session" });
     for (const e of r?.siem?.events || []) list.push({ ts: e.ts, at: clock(e.ts), what: e.name, detail: [e.via, e.duration, e.usageDown && `↓ ${e.usageDown}`].filter(Boolean).join(" · "), v: "", kind: "event" });
     for (const x of w?.roams || []) if (!list.some((i) => i.kind === "event" && Math.abs(i.ts - x.ts) < 2000)) list.push({ ts: x.ts, at: clock(x.ts), what: "Roamed", detail: x.msg || x.via || "", v: "", kind: "event" });
     // Failed Wi-Fi joins of this day, one line per hour and problem (UU-C-146).
@@ -199,8 +199,8 @@ export default function Device({ route }) {
           <div className="grid g4">
             <div className="card tight stat">
               <span className="label">{isToday ? "Today" : "That day"}</span>
-              <span className="value">{bytes(r.totals.bytes)}</span>
-              <span className="sub">↓ {bytes(r.totals.rx)} · ↑ {bytes(r.totals.tx)}</span>
+              <span className="value"><Bytes n={r.totals.bytes} /></span>
+              <span className="sub">↓ <Bytes n={r.totals.rx} /> · ↑ <Bytes n={r.totals.tx} /></span>
             </div>
             {wired ? (
               <>
@@ -374,14 +374,14 @@ export default function Device({ route }) {
                 <a key={a.appId} href={href("usage", null, { d: date, mac, app: a.appId })} style={{ color: "var(--text)", display: "grid", gap: 4 }}>
                   <span style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                     <span className="ellipsis">{a.app} <span className="dim small">· {a.category}</span></span>
-                    <span className="mono">{bytes(a.totalBytes)}</span>
+                    <span className="mono"><Bytes n={a.totalBytes} /></span>
                   </span>
                   <Meter share={a.totalBytes / appsMax} />
                 </a>
               ))}
               {r.localBytes > 0 && (
                 <p className="dim small" style={{ margin: 0 }}>
-                  Plus {bytes(r.localBytes)} inside your own network ({r.localServices.slice(0, 3).map((s) => s.app).join(", ")}), which UniFi does not count.
+                  Plus <Bytes n={r.localBytes} /> inside your own network ({r.localServices.slice(0, 3).map((s) => s.app).join(", ")}), which UniFi does not count.
                 </p>
               )}
             </div>

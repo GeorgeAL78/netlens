@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { bytes, go, href, speed, todayKey, useApi } from "../lib.js";
-import { DayStep, Failed, Loading, healthClass } from "../ui.jsx";
+import { DayStep, Failed, Loading, healthClass, Bytes } from "../ui.jsx";
 
 // Day — every device as a row, the day's hours as columns (UU-C-087). Colour is traffic in
 // that hour; ○ roams/connects, ▲ blocked traffic, ✕ failed Wi-Fi joins; hatched = no data.
@@ -50,13 +50,13 @@ export default function Day({ route }) {
           <span className="dim small">Activity · By hour</span>
           {data && (
             <p className="lede">
-              {bytes(data.network.total)}
+              <Bytes n={data.network.total} />
               <span className="soft">{data.today ? " so far" : ""}</span>
               {top && top.total > 0 && (
                 <>
                   <span className="soft"> — busiest </span>
                   <a href={href("device", top.mac, { d: date })}>{top.name}</a>
-                  <span className="soft"> with {bytes(top.total)}.</span>
+                  <span className="soft"> with <Bytes n={top.total} />.</span>
                 </>
               )}
             </p>
@@ -125,7 +125,7 @@ export default function Day({ route }) {
                   onClick={() => !cellState(h) && go("usage", null, { d: date, from: data.hours[h], to: data.hours[h] + HOUR })}
                 />
               ))}
-              <span className="tot">{bytes(data.network.total)}</span>
+              <span className="tot"><Bytes n={data.network.total} /></span>
 
               {rows.map((r) => [
                 <a key={`${r.mac}-n`} className="who" href={href("device", r.mac, { d: date })} style={{ borderTop: "1px solid #171d28", paddingTop: 6 }}>
@@ -150,7 +150,7 @@ export default function Day({ route }) {
                     </button>
                   );
                 }),
-                <span key={`${r.mac}-t`} className="tot">{bytes(r.total)}</span>,
+                <span key={`${r.mac}-t`} className="tot"><Bytes n={r.total} /></span>,
               ])}
             </div>
             {!rows.length && <div className="empty">No devices for this filter on this day.</div>}

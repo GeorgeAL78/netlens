@@ -1274,6 +1274,35 @@ app.post("/api/log", (req, res) => {
 
 // The usage report (UU-C-114: a function so alert rules reuse exactly what Usage shows).
 // Synchronous and UniFi-free by rule — see scripts/check-report-isolation.mjs.
+// UU-C-178: sessions and the Apps table say where encrypted traffic went.
+const PLUMBING_SESSION = /^(SSL\/TLS|Unidentified|QUIC|HTTPS?|DTLS)$/;
+function sessionSites(domains) {
+  const by = new Map();
+  for (const d of domains || []) {
+    if (!d || d === "unknown") continue;
+    const { name, ip } = splitHost(d);
+    if (/^[\d.:]+$/.test(name)) continue;
+    const site = registrableDomain(name) || name;
+    const x = by.get(site) || { name: site, addresses: new Set() };
+    if (ip) x.addresses.add(ip);
+    by.set(site, x);
+  }
+  return [...by.values()].map((x) => ({ name: x.name, addresses: x.addresses.size }));
+}
+function topDestinationsOf(groups) {
+  const by = new Map();
+  let total = 0;
+  for (const g of groups) {
+    total += g.bytes || 0;
+    if (!g.rawApp || g.rawApp === "Local network" || g.category === "Local network" || /^(Unidentified|DNS|HTTPS?)$/.test(g.rawApp) || /^[\d.:]+$/.test(g.rawApp)) continue;
+    by.set(g.rawApp, (by.get(g.rawApp) || 0) + (g.bytes || 0));
+  }
+  return [...by]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([name, bytes]) => ({ name, bytes, share: total ? bytes / total : 0 }));
+}
+
 function buildReport(query) {
   {
     const mac = (query.mac || "").toLowerCase();
@@ -1667,6 +1696,10 @@ function buildReport(query) {
       bytes: s.bytes,
       flowCount: s.flowCount,
       domains: s.domains,
+      // Site names, each once (UU-C-178): UniFi writes "<ip>_<name>", one entry per address.
+      sites: sessionSites(s.domains),
+      // An "encrypted" or unidentified session is named after where it went: "real-debrid.com".
+      site: PLUMBING_SESSION.test(s.app || "") ? sessionSites(s.domains)[0]?.name || null : null,
       domainsBasis: s.domainsBasis,
       source: s.source,
     }));
@@ -1844,6 +1877,9 @@ function buildReport(query) {
       sessions,
       sessionCount,
       sessionsOmitted,
+      // Where the traffic in scope went, from the connection records (UU-C-178): explains an
+      // "SSL/TLS" row ("mostly real-debrid.com").
+      topDestinations: topDestinationsOf(flowGroups),
       time: { inUseMs, sessions: rawSessions.length },
       apps,
       appChoices,

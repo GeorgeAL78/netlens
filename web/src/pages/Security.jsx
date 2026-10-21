@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { bytes, go, href, shortDate, useApi } from "../lib.js";
-import { Failed, Loading } from "../ui.jsx";
+import { Failed, Loading, Bytes } from "../ui.jsx";
 
 // Security (UU-C-087, one list since UU-C-156): every block as one line — an intrusion, or a
 // device blocked by one of your rules in one burst. UniFi's System Log event for a burst (when it
@@ -90,7 +90,7 @@ function Panel({ x, range, tab, all, onHide, hidden }) {
           ))}
         </div>
       )}
-      {d?.traffic && <div className="kv"><div><span>Traffic</span><span className="mono">{d.traffic.packetsTotal ?? "—"} packets · {bytes(d.traffic.bytesTx)} ↑ {bytes(d.traffic.bytesRx)} ↓{d.traffic.durationMs ? ` · ${(d.traffic.durationMs / 1000).toFixed(1)} s` : ""}</span></div></div>}
+      {d?.traffic && <div className="kv"><div><span>Traffic</span><span className="mono">{d.traffic.packetsTotal ?? "—"} packets · <Bytes n={d.traffic.bytesTx} /> ↑ <Bytes n={d.traffic.bytesRx} /> ↓{d.traffic.durationMs ? ` · ${(d.traffic.durationMs / 1000).toFixed(1)} s` : ""}</span></div></div>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {x.mac && <a className="btn primary" href={href("device", x.mac)}>{x.device}</a>}
         {outside && <a className="btn" href={href("security", null, { ip: outside, r: "90d" })}>Investigate {outside}{same > 1 ? ` (${same})` : ""}</a>}

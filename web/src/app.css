@@ -290,3 +290,8 @@ table.t tr.click:hover td { background: #141b26; }
 .pill.guests.on { color: var(--text); }
 .guest-list { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; margin: 2px 0 4px 14px; padding-left: 10px; border-left: 1px dashed var(--line-2); }
 .pill.guest { font-size: 12.5px; }
+
+/* Sizes (UU-C-178): the unit tells MB from GB at a glance. */
+.size .size-unit { color: var(--dim); font-size: 0.85em; }
+.size.size-big { font-weight: 600; }
+.size.size-big .size-unit { color: var(--accent); font-weight: 600; }
