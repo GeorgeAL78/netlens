@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.14.2 — 2026-10-21
+
+### Fixed
+- Overview › Top devices named a device's biggest recognised app even when it was a sliver of its traffic (tower.lan's 237 GB of Real-Debrid downloads showed as "GitHub" — 1.3 GB of container updates). A main app now has to be at least a fifth of the device's traffic; otherwise the destination from the connection records is shown ("mostly real-debrid.com"). The percentage now says "of all traffic".
+
 ## 2.14.1 — 2026-10-21
 
 ### Fixed

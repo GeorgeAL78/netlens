@@ -1,2 +1,2 @@
 ### Fixed
-- Network map: a device that has gone quiet (often a container) is no longer drawn on the cable between two switches, or under "Elsewhere". When UniFi only knows it is somewhere behind a switch, the map keeps it at the last exact port NetLens saw it on in the last 30 days, marked ↺ (hover or click for when, and what UniFi reports now).
+- Overview › Top devices named a device's biggest recognised app even when it was a sliver of its traffic (tower.lan's 237 GB of Real-Debrid downloads showed as "GitHub" — 1.3 GB of container updates). A main app now has to be at least a fifth of the device's traffic; otherwise the destination from the connection records is shown ("mostly real-debrid.com"). The percentage now says "of all traffic".

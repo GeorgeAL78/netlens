@@ -3,6 +3,7 @@ import * as insights from "./insights.js";
 import { sessionize } from "./classify.js";
 import * as wifijoins from "./wifijoins.js";
 import { groupGuests } from "./guests.js";
+import * as flowstore from "./flowstore.js";
 
 // Read-only views for the redesigned interface (UU-C-087): the day grid, the network map and
 // the findings feed. Like /api/report they read SQLite and the cache only — never UniFi.
@@ -268,7 +269,29 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       }
     }
   }
-  const mainApp = (d) => [...(d?.apps || new Map()).entries()].sort((x, y) => y[1] - x[1])[0]?.[0] || null;
+  // A device's main app only when it is a real part of its traffic (UU-C-170): tower.lan's
+  // 237 GB of Real-Debrid downloads were "SSL/TLS" to UniFi, and the card named its 1.3 GB of
+  // GitHub (container updates) instead.
+  const mainApp = (d) => {
+    const top = [...(d?.apps || new Map()).entries()].sort((x, y) => y[1] - x[1])[0];
+    return top && top[1] >= 0.2 * d.bytes ? top[0] : null;
+  };
+  // When UniFi only says "encrypted", the connection records usually name the destination.
+  const periodDays = [];
+  for (let t = start; t < end; t += 6 * HOUR) {
+    const k = dayKey ? dayKey(t) : null;
+    if (k && !periodDays.includes(k)) periodDays.push(k);
+  }
+  const topDestination = (d) => {
+    if (!periodDays.length) return null;
+    const by = new Map();
+    for (const g of flowstore.groups(periodDays, d.mac)) {
+      if (!g.app || g.category === "Local network" || /^(Unidentified|DNS|HTTPS?)$/.test(g.app)) continue;
+      by.set(g.app, (by.get(g.app) || 0) + g.bytes);
+    }
+    const top = [...by].sort((a, b) => b[1] - a[1])[0];
+    return top && top[1] >= 0.2 * d.bytes ? `mostly ${top[0]}` : null;
+  };
   // No real app: say what the traffic is — unidentified usually means a VPN (WireGuard).
   const whatItIs = (d) => {
     const top = [...(d?.other || new Map()).entries()].sort((x, y) => y[1] - x[1])[0]?.[0];
@@ -285,7 +308,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       title: `Top devices ${when}: ${nameOf(topDevices[0].mac)} ${fmtGB(topDevices[0].bytes)}, ${nameOf(topDevices[1].mac)} ${fmtGB(topDevices[1].bytes)}${topDevices[2] ? ", …" : ""}`,
       text: null,
       // A device with no recognisable app is usually encrypted end to end (a VPN).
-      list: topDevices.map((d) => ({ label: nameOf(d.mac), sub: [mainApp(d) || whatItIs(d), `${pct(d.bytes)}%`].join(" · "), value: fmtGB(d.bytes), mac: d.mac })),
+      list: topDevices.map((d) => ({ label: nameOf(d.mac), sub: [mainApp(d) || topDestination(d) || whatItIs(d), `${pct(d.bytes)}% of all traffic`].join(" · "), value: fmtGB(d.bytes), mac: d.mac })),
     });
   }
   const topApps = [...byApp.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 5);
