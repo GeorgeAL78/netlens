@@ -15,12 +15,12 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 
 | | |
 | --- | --- |
-| ![Home — today's findings](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/home.png) | ![Day — every device by hour](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/day.png) |
+| ![Overview — findings and the internet line](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/home.png) | ![Day — every device by hour](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/day.png) |
 | **Overview** — findings in plain language, limits on top | **Activity › By hour** — every device by hour |
 | ![Usage — apps, categories and top apps](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/usage.png) | ![Device — traffic, signal and events](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/device.png) |
 | **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, apps, sessions and events |
-| ![Network — live map with access-point detail](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/network.png) | ![Security — blocked intrusion with full detail](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/security.png) |
-| **Network** — live map, access point selected | **Protection** — blocked intrusion with its full record |
+| ![Network — live map with access-point detail](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/network.png) | ![Protection — blocks and intrusions with filters](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/security.png) |
+| **Network** — live map: internet line, VMs and containers under their host, access point selected | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
 | ![Devices — new devices, maker and where they connect](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) |
 | **Devices** — new devices, maker, switch port or access point, rename | **Activity › Limits** — daily limits per app and device |
 | ![Sites — every site each device connected to, by category](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/sites.png) | |
@@ -33,7 +33,7 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 - **Overview** — today's findings in plain language: big transfers, weak Wi-Fi, slow links, blocked
   threats, new devices, equipment problems.
 - **Activity › By hour** — devices × hours: when each device was busy, roamed or got blocked.
-- **Network** — live map of gateway, switches, access points and devices, with radio and port details.
+- **Network** — live map with Wi-Fi band and signal, VMs and containers under their host, the internet line with public-IP history.
 - **Device** — traffic, signal or link speed, apps, sessions, events, online history, block / unblock.
 - **Devices** — new devices first, with maker and switch port or access point; rename (saved in UniFi);
   offline devices checked on the network every 5 minutes; blocked devices listed with Unblock;
@@ -41,7 +41,7 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 - **Activity › Sites** — every site each device connected to (30 days), filtered by category; addresses hidden
   by secure DNS named when they belong to a watched site.
 - **Activity › Limits** — daily limits on time or data for an app on a device, flagged on Overview.
-- **Protection** — blocked intrusions and firewall hits with the full connection record.
+- **Protection** — every block as one incident (intrusions, your firewall rules and app blocks), with filters; ads and trackers on their own tab.
 - **Activity › Apps** — apps, categories and devices for a day, an hour or 90 days, one search box for all
   three; every number adds up.
 - Local-network traffic shown separately; missing data marked, never shown as a quiet hour.
