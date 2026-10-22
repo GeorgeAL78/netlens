@@ -15,6 +15,8 @@ const RANGES = [
   ["90d", "90 days"],
 ];
 const RISK = { high: "dangerous", medium: "suspicious", low: "low risk" };
+// UniFi's IPS categories are short codes; the opaque ones spelled out (UU-C-183).
+const IPS_CATEGORY = { ciarmy: "CINS Army reputation list", dshield: "DShield block list", tor: "Tor exit node", compromised: "known compromised host" };
 const HIDE_KEY = "netlens.hiddenRules";
 const PRIVATE = /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./;
 
@@ -64,12 +66,12 @@ function Panel({ x, range, tab, all, onHide, hidden }) {
       <div className="kv">
         {x.rule && x.kind === "rule" && <div><span>Rule</span><span>{x.rule}{d?.policyType ? ` · ${d.policyType.replace(/_/g, " ").toLowerCase()}` : ""}</span></div>}
         {d?.signatureId && <div><span>Signature ID</span><span className="mono">{d.signatureId}</span></div>}
-        {d?.category && <div><span>Category</span><span>{d.category}</span></div>}
+        {d?.category && <div><span>Category</span><span>{IPS_CATEGORY[String(d.category).toLowerCase()] || d.category}</span></div>}
         {d?.cve && <div><span>CVE</span><span>{d.cve}</span></div>}
         <div><span>Action</span><span>blocked · {x.n} attempt{x.n === 1 ? "" : "s"}</span></div>
         {(x.services.length > 0 || d?.service) && <div><span>Service</span><span>{x.services.length ? x.services.join(" · ") : [d.service, d.protocol, d.direction].filter(Boolean).join(" · ")}</span></div>}
         <div><span>Device</span><span>{x.device}{(c?.deviceIp || d?.source?.ip) ? <span className="mono"> · {c?.deviceIp || d?.source?.ip}</span> : null}</span></div>
-        <div><span>{x.siteCount > 1 ? `Sites (${x.siteCount})` : "Destination"}</span><span>{x.sites[0]?.name || "—"}{x.sites[0]?.n > 1 && x.siteCount > 1 ? ` ×${x.sites[0].n}` : ""}</span></div>
+        <div><span>{x.siteCount > 1 ? `Sites (${x.siteCount})` : d?.inbound ? "From" : "Destination"}</span><span>{x.sites[0]?.name || "—"}{x.sites[0]?.n > 1 && x.siteCount > 1 ? ` ×${x.sites[0].n}` : ""}</span></div>
         {x.sites.slice(1, 8).map((s) => (
           <div key={s.name}><span /><span>{s.name}{s.n > 1 ? <span className="dim"> ×{s.n}</span> : null}</span></div>
         ))}
@@ -77,6 +79,7 @@ function Panel({ x, range, tab, all, onHide, hidden }) {
         {x.addresses.length > 0 && <div><span>Addresses</span><span className="mono">{x.addresses.slice(0, 4).map((a) => a.ip).join(", ")}{x.addresses.length > 4 ? ` +${x.addresses.length - 4}` : ""}</span></div>}
         {(d?.inNetwork || d?.outNetwork) && <div><span>Networks</span><span>{d.inNetwork || "—"} → {d.outNetwork || "—"}</span></div>}
       </div>
+      {d?.inbound && <p className="dim small" style={{ margin: 0 }}>Sent from outside to {x.device}. Without a port forward, it only gets in as an answer to something the device sent first, such as a ping.</p>}
       {e && <p className="dim small" style={{ margin: 0 }}>UniFi logged this {x.kind === "intrusion" ? "intrusion" : "block"} in its System Log{d?.traffic?.count > 1 ? ` (${d.traffic.count} attempts to one address)` : ""}.</p>}
       {d?.advanced && <p className="dim small" style={{ margin: 0, overflowWrap: "anywhere" }}>{d.advanced}</p>}
       {c?.attempts?.length > 0 && (

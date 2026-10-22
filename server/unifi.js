@@ -312,7 +312,11 @@ export async function getBlockedFlows({ startMs, endMs }) {
 }
 
 function slimFlow(flow) {
-  const dest = flow.destination || {};
+  let dest = flow.destination || {};
+  // From outside to a device, UniFi names the device on both ends; the other end is then the
+  // source address (UU-C-183).
+  const sip = String(flow.source?.ip || "");
+  if (dest.mac && dest.mac === flow.source?.mac && /^\d{1,3}(\.\d{1,3}){3}$/.test(sip) && !/^(10|127|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(sip)) dest = { host_name: sip };
   const td = flow.traffic_data || {};
   const destination = {};
   if (dest.host_name != null) destination.host_name = dest.host_name;

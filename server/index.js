@@ -911,7 +911,15 @@ function buildIncidents(start, end) {
   // Attach firewall events; the ones with no connection records become their own incidents.
   for (const it of sys.items) {
     if (it.kind === "Threat blocked") {
-      incidents.push({ kind: "intrusion", mac: String(it.detail?.source?.mac || "").toLowerCase() || null, deviceName: it.source, rule: it.signature || it.policy || null, first: it.ts, last: it.ts, n: it.detail?.traffic?.count || 1, sites: new Map([[it.domain || it.target || "unknown", 1]]), addrs: new Map(it.target && IPV4_RE.test(it.target) ? [[it.target, 1]] : []), services: new Set(), event: it });
+      const mac = String(it.detail?.source?.mac || "").toLowerCase() || null;
+      // From outside to the device: the other end is the outside address, not the device.
+      const other = it.detail?.inbound ? it.detail.destination.ip : it.target;
+      // The blocked connection behind it is the same intrusion, not a block by a rule
+      // ("CINS Army Reputation List" is the IPS list that matched) (UU-C-183).
+      const pol = it.detail?.policy;
+      const dup = pol && mac ? incidents.findIndex((x) => x.kind === "rule" && !x.event && x.mac === mac && x.rule === pol && it.ts >= x.first - 180e3 && it.ts <= x.last + 180e3) : -1;
+      if (dup >= 0) incidents.splice(dup, 1);
+      incidents.push({ kind: "intrusion", mac, deviceName: it.source, rule: it.signature || it.policy || null, first: it.ts, last: it.ts, n: it.detail?.traffic?.count || 1, sites: new Map([[(it.detail?.inbound ? other : it.domain || it.target) || "unknown", 1]]), addrs: new Map(other && IPV4_RE.test(other) ? [[other, 1]] : []), services: new Set(), event: it });
       continue;
     }
     const mac = String(it.detail?.source?.mac || "").toLowerCase() || null;

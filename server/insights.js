@@ -474,6 +474,25 @@ export function wifiClient(start, end, mac, tz) {
 
 // ---- threats ----------------------------------------------------------------------------
 
+// A packet from outside to a device (a ping reply, a probe): UniFi records the outside address
+// as the source but puts the device's own name on both ends, and flips the networks. Turn it
+// round so the source is the device and the destination the outside address (UU-C-183).
+const PRIVATE_IP = /^(10|127|192\.168|172\.(1[6-9]|2\d|3[01]))\./;
+export function inboundFixed(d) {
+  const s = d?.source;
+  const t = d?.destination;
+  if (!s?.ip || !t?.ip || PRIVATE_IP.test(s.ip) || !PRIVATE_IP.test(t.ip) || !s.name || s.name !== t.name) return d;
+  return {
+    ...d,
+    inbound: true,
+    inNetwork: d.outNetwork,
+    outNetwork: d.inNetwork,
+    source: { ...s, ip: t.ip, network: t.network || s.network, subnet: t.subnet || s.subnet },
+    destination: { name: null, domain: null, ip: s.ip, port: s.port, region: s.region, zone: null, network: null },
+    domain: null,
+  };
+}
+
 export function threats(start, end) {
   const rows = db.querySiemEvents(start, end, null).filter((e) => e.kind === "log" && /security/i.test(e.category || ""));
   // Signatures read from the matching flow records (UU-C-071); none for firewall blocks.
@@ -481,7 +500,7 @@ export function threats(start, end) {
   const items = rows.map((e) => {
     const p = e.data?.params || {};
     const firewall = /TRAFFIC_BLOCKED/.test(e.data?.key || "");
-    const ips = sigs.get(e.uid) || null;
+    const ips = inboundFixed(sigs.get(e.uid) || null);
     return {
       uid: e.uid,
       ts: e.ts,
