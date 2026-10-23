@@ -855,16 +855,28 @@ const splitHost = (raw) => {
   return m ? { name: m[2], ip: m[1] } : { name: raw || "unknown", ip: /^\d{1,3}(\.\d{1,3}){3}$/.test(String(raw || "")) ? raw : null };
 };
 
-// UniFi's flow API and its System Log can name the same firewall rule differently ("Kids Wi-Fi
-// Blocks" vs "Block YouTube on Kids Wi-Fi"). A blocked connection that lines up with a firewall
-// event for the same device (±3 min) takes the event's name, so both lists agree (UU-C-155).
-// Returns (row with mac, policy, first/last or t) -> rule name.
+// A blocked connection keeps the rule name UniFi gave it: the connection records carry rules'
+// current names, and System Log events are mapped to them by id (UU-C-185). Only a connection
+// with no rule name, or just a type label (FIREWALL), takes the name of a firewall event for the
+// same device (±3 min) (UU-C-155). Taking any nearby event's name relabelled a device's blocks by
+// one rule with another rule that fired at the same time ("Apple Full Block" read "Kids Wi-Fi
+// Blocks"). Returns (row with mac, policy, first/last or t) -> rule name.
+const TYPE_LABEL = /^(FIREWALL|[A-Z]+_[A-Z_]+)( \+ (FIREWALL|[A-Z]+_[A-Z_]+))*$/;
 function systemLogRuleNames(items, nameOf) {
   const fw = items
     .filter((i) => i.kind === "Firewall block" && i.policy)
     .map((i) => ({ mac: String(i.detail?.source?.mac || "").toLowerCase() || null, name: i.source, ts: i.ts, policy: i.policy }));
+  // Renamed rules: blocks stored under the old name read the current one.
+  let renames = new Map();
+  try {
+    renames = new Map(JSON.parse(db.getSetting("policy_renames", "[]")));
+  } catch {
+    /* none known */
+  }
+  for (const i of items) if (i.logged && i.policy && i.logged !== i.policy) renames.set(i.logged, i.policy);
   return (r) => {
-    if (/ad.?block/i.test(r.policy || "")) return r.policy || null;
+    const own = renames.get(r.policy) || r.policy;
+    if (own && !TYPE_LABEL.test(own)) return own;
     const a = (r.first ?? r.t) - 180e3;
     const b = (r.last ?? r.t) + 180e3;
     const ev = fw.find((e) => (e.mac ? e.mac === r.mac : e.name === nameOf(r.mac)) && e.ts >= a && e.ts <= b);

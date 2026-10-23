@@ -291,11 +291,33 @@ export async function findBlockedFlow({ ts, mac, srcIp, dstIp, ips = false }) {
 // Raw UniFi flow objects carry ~40 fields; only these are ever read (classify.js
 // hostsFromFlow / bytesFromFlow / timeFromFlow / annotateFlow, cache.js flowId).
 // Projecting here keeps the cache an order of magnitude smaller on disk.
+// Rule id -> current name, learned from the connection records (UU-C-185). The System Log keeps
+// the name a rule had when it fired; its events carry the id ("<id>", or "obj_<id>_<n>" for an
+// Object), so a renamed rule reads the same in both.
+const policyNames = new Map(JSON.parse(db.getSetting("policy_names", "[]")));
+function learnPolicyNames(all) {
+  let changed = false;
+  for (const p of all) {
+    if (p.id && p.name && policyNames.get(p.id) !== p.name) {
+      // Blocks stored under the old name show the new one.
+      const old = policyNames.get(p.id);
+      if (old) db.setSetting("policy_renames", JSON.stringify([...new Map([...JSON.parse(db.getSetting("policy_renames", "[]")), [old, p.name]])]));
+      policyNames.set(p.id, p.name);
+      changed = true;
+    }
+  }
+  // Rare: a new rule, or a rename.
+  if (changed) {
+    db.setSetting("policy_names", JSON.stringify([...policyNames]));
+  }
+}
+
 // Which rule decided a connection (UU-C-148): the rules' own names ("Ad Blocking", "Kids Wi-Fi
 // Blocks"); bare type labels (FIREWALL) only when no rule is named. CONNTRACK is just "an
 // allowed, tracked connection".
 function policyOf(flow) {
   const all = (flow.policies || []).filter(Boolean);
+  learnPolicyNames(all);
   const not = (v) => v && !/^CONNTRACK$/i.test(v);
   const named = all.map((p) => p.name).filter(not);
   const list = named.length ? named : all.map((p) => p.internal_type || p.type).filter(not);

@@ -493,10 +493,22 @@ export function inboundFixed(d) {
   };
 }
 
+// A System Log rule by its current name (UU-C-185): ids learned from the connection records.
+function ruleNames() {
+  let names = new Map();
+  try {
+    names = new Map(JSON.parse(db.getSetting("policy_names", "[]")));
+  } catch {
+    /* the System Log's own names */
+  }
+  return (trigger) => (trigger?.n ? names.get(/^obj_([0-9a-f]+)_\d+$/i.exec(String(trigger.i || ""))?.[1] || trigger.i) || trigger.n : null);
+}
+
 export function threats(start, end) {
   const rows = db.querySiemEvents(start, end, null).filter((e) => e.kind === "log" && /security/i.test(e.category || ""));
   // Signatures read from the matching flow records (UU-C-071); none for firewall blocks.
   const sigs = db.ipsDetails(start, end);
+  const currentRuleName = ruleNames();
   const items = rows.map((e) => {
     const p = e.data?.params || {};
     const firewall = /TRAFFIC_BLOCKED/.test(e.data?.key || "");
@@ -511,7 +523,9 @@ export function threats(start, end) {
       title: e.name,
       source: p.SRC_CLIENT?.n || p.SRC_IP?.n || null,
       target: p.DST_CLIENT?.n || p.DST_IP?.n || null,
-      policy: p.TRIGGER?.n || ips?.policy || null,
+      policy: currentRuleName(p.TRIGGER) || ips?.policy || null,
+      // The name the rule had when it fired.
+      logged: p.TRIGGER?.n || null,
       signature: ips?.signature || null,
       signatureId: ips?.signatureId || null,
       ipsCategory: ips?.category || null,

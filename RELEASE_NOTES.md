@@ -1,3 +1,3 @@
 ### Fixed
-- Protection: an intrusion from outside (a probe or a ping reply from an address on a reputation list) showed your own device as its destination, the outside address as your device's IP, and the networks the wrong way round. It now reads from the outside address to your device, "FIOS → Default", and notes that such a packet only gets in as an answer to something the device sent.
-- The same intrusion no longer shows a second time as "Blocked by CINS Army Reputation List": UniFi's blocked connection behind an IPS alert is folded into the alert. IPS categories are spelled out ("CINS Army reputation list" instead of "ciarmy").
+- Protection showed blocks under the wrong rule: a device's blocks took the name of any other rule that fired for it within three minutes, so an iPad's Apple blocks read "Kids Wi-Fi Blocks" or "Kids Wi-Fi Blocks Public DNS". Each block now keeps the rule UniFi recorded for it.
+- Renamed rules and Objects read their current name everywhere: System Log events are matched to rules by id, and blocks stored under an old name ("Apple") show the new one ("Apple Full Block").
