@@ -1,3 +1,2 @@
 ### Fixed
-- Protection showed blocks under the wrong rule: a device's blocks took the name of any other rule that fired for it within three minutes, so an iPad's Apple blocks read "Kids Wi-Fi Blocks" or "Kids Wi-Fi Blocks Public DNS". Each block now keeps the rule UniFi recorded for it.
-- Renamed rules and Objects read their current name everywhere: System Log events are matched to rules by id, and blocks stored under an old name ("Apple") show the new one ("Apple Full Block").
+- ChatGPT (and DeepSeek) were shown in the category "TopSites-Adult", which is where UniFi's app database files them. UniFi's "TopSites-…" categories now take NetLens's own category when every app in them is one NetLens knows (ChatGPT, DeepSeek → AI); otherwise they read "Popular sites (shopping)", "Popular sites (news)" and so on. Real adult sites stay in UniFi's separate "Adult" category.

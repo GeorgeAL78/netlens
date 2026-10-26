@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "node:fs";
 import path from "node:path";
 import { dbFile, databaseDir } from "./paths.js";
+import { appCategory } from "./sitecats.js";
 
 const db = new DatabaseSync(dbFile);
 db.exec("PRAGMA journal_mode = WAL");
@@ -397,9 +398,19 @@ export function listStoredClients() {
 // and other calls connect, and UniFi files most call traffic under it.
 const DISPLAY_NAMES = { STUN: "Calls (FaceTime, WhatsApp, Meet…)" };
 
+// UniFi files some apps under "TopSites-<subject>" buckets that can be wrong: ChatGPT and
+// DeepSeek sit in "TopSites-Adult" (UU-C-187). Such a category takes NetLens's own category when
+// every app UniFi put in it maps to the same one, else reads "Popular sites (adult)".
+function topSitesName(id, name, apps) {
+  const m = /^TopSites-(.+)$/i.exec(name);
+  if (!m) return name;
+  const own = new Set(Object.entries(apps).filter(([appId]) => Number(appId) >> 16 === Number(id)).map(([, n]) => appCategory(n)));
+  return own.size === 1 && !own.has(null) ? [...own][0] : `Popular sites (${m[1].toLowerCase()})`;
+}
+
 export function dpiMaps() {
   const apps = Object.fromEntries(db.prepare(`SELECT id, name FROM dpi_apps`).all().map((r) => [r.id, DISPLAY_NAMES[r.name] || r.name]));
-  const cats = Object.fromEntries(db.prepare(`SELECT id, name FROM dpi_cats`).all().map((r) => [r.id, r.name]));
+  const cats = Object.fromEntries(db.prepare(`SELECT id, name FROM dpi_cats`).all().map((r) => [r.id, topSitesName(r.id, r.name, apps)]));
   return { apps, cats };
 }
 

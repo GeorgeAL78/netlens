@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.15.5 — 2026-10-26
+
+### Fixed
+- ChatGPT (and DeepSeek) were shown in the category "TopSites-Adult", which is where UniFi's app database files them. UniFi's "TopSites-…" categories now take NetLens's own category when every app in them is one NetLens knows (ChatGPT, DeepSeek → AI); otherwise they read "Popular sites (shopping)", "Popular sites (news)" and so on. Real adult sites stay in UniFi's separate "Adult" category.
+
 ## 2.15.4 — 2026-10-22
 
 ### Fixed

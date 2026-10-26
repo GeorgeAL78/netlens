@@ -26,11 +26,22 @@ const LIST = {
     "wikipedia.org", "wikimedia.org", "khanacademy.org", "duolingo.com", "quizlet.com", "instructure.com", "schoology.com",
     "kahoot.it", "kahoot.com", "brainly.com", "chegg.com", "coursera.org", "edx.org", "ixl.com", "prodigygame.com", "clever.com",
   ],
-  AI: ["openai.com", "chatgpt.com", "oaiusercontent.com", "claude.ai", "anthropic.com", "perplexity.ai", "character.ai", "gemini.google.com", "copilot.microsoft.com", "poe.com"],
+  AI: ["openai.com", "chatgpt.com", "oaiusercontent.com", "claude.ai", "anthropic.com", "perplexity.ai", "character.ai", "gemini.google.com", "copilot.microsoft.com", "poe.com", "deepseek.com", "mistral.ai", "grok.com", "x.ai", "meta.ai"],
   News: ["bbc.co.uk", "bbc.com", "cnn.com", "nytimes.com", "foxnews.com", "washingtonpost.com", "theguardian.com", "reuters.com", "apnews.com", "nbcnews.com", "weather.com"],
 };
 
 const byDomain = new Map(Object.entries(LIST).flatMap(([cat, list]) => list.map((d) => [d, cat])));
+
+// An app by its name ("ChatGPT" -> chatgpt.com -> AI), for UniFi's vague "TopSites-…" categories
+// (UU-C-187). Names are matched to a listed site's first label, whole, ignoring case and spaces.
+const byLabel = new Map();
+for (const [d, cat] of byDomain) {
+  const label = d.split(".")[0];
+  if (label.length >= 4 && !byLabel.has(label)) byLabel.set(label, cat);
+}
+export function appCategory(name) {
+  return byLabel.get(String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "")) || null;
+}
 
 // "gemini.google.com" is matched whole before its registrable domain.
 export function siteCategory(host) {
