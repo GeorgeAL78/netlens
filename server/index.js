@@ -1024,6 +1024,30 @@ app.get("/api/day", (req, res) => {
   }
 });
 
+// Hidden findings (UU-C-189): "don't show this again for this device". A finding is known by its
+// id without the period or time at the end ("link-<mac>", "alert-<rule>", "burst-<mac>"), and
+// comes back if it turns more serious than when it was hidden (info < warn < bad).
+const LEVELS = { info: 0, warn: 1, bad: 2 };
+const hideKeyOf = (f) => String(f.id).replace(/-(\d{10,}|\d{4}-\d{2}-\d{2})$/, "");
+function hiddenFindings() {
+  try {
+    return new Map(JSON.parse(db.getSetting("hidden_findings", "[]")).map((h) => [h.key, h]));
+  } catch {
+    return new Map();
+  }
+}
+
+app.post("/api/findings/hidden", (req, res) => {
+  const key = String(req.body?.key || "").slice(0, 200);
+  const level = LEVELS[req.body?.level] != null ? req.body.level : "info";
+  if (!key) return res.status(400).json({ error: "key required" });
+  const all = hiddenFindings();
+  if (req.body?.hidden === false) all.delete(key);
+  else all.set(key, { key, level, title: String(req.body?.title || "").slice(0, 200), at: Date.now() });
+  db.setSetting("hidden_findings", JSON.stringify([...all.values()]));
+  res.json({ ok: true, hidden: all.size });
+});
+
 // Overview's feed. Also built right after each data change for today (prewarmOverview), so the
 // first visit after a snapshot is instant too (UU-C-166).
 function findingsBody(query) {
@@ -1075,7 +1099,12 @@ function findingsBody(query) {
       days: ctx.days || 1,
       today: ctx.today,
       tz,
-      findings: [...alerts, ...list],
+      ...(() => {
+        const hidden = hiddenFindings();
+        const all = [...alerts, ...list].map((f) => ({ ...f, hideKey: hideKeyOf(f) }));
+        const off = (f) => hidden.has(f.hideKey) && LEVELS[f.level] <= LEVELS[hidden.get(f.hideKey).level];
+        return { findings: all.filter((f) => !off(f)), hidden: all.filter(off) };
+      })(),
       now: {
         // With the WAN link speed, like the Network map's Internet box (UU-C-172).
         internet: wan

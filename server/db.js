@@ -676,6 +676,16 @@ export function queryClientSamples(start, end, mac) {
   return mac ? db.prepare(sql).all(start, end, mac) : db.prepare(sql).all(start, end);
 }
 
+// Each wired device's fastest link since `since`, in Mbps (UU-C-189): a device that never linked
+// faster than it does now is at its usual speed, not on a bad cable.
+export function fastestWiredLinks(macs, since) {
+  if (!macs.length) return new Map();
+  const rows = db
+    .prepare(`SELECT mac, MAX(tx_rate) AS rate FROM client_samples WHERE mac IN (${macs.map(() => "?").join(", ")}) AND wired = 1 AND ts >= ? GROUP BY mac`)
+    .all(...macs, since);
+  return new Map(rows.filter((r) => r.rate != null).map((r) => [r.mac, Math.round(r.rate / 1000)]));
+}
+
 // The last exact place of each wired device (UU-C-168): its newest sample since `since` on a
 // real port — not on a link to another UniFi device (`uplinkKeys`: "<parentMac>|<port>").
 export function lastExactPlaces(macs, since, uplinkKeys) {

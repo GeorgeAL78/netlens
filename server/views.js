@@ -433,10 +433,14 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
   }
 
   // Slow or renegotiated wired links.
-  for (const c of insights.wiredList(start, end).clients) {
-    if (c.speed != null && c.speed <= 100) {
-      out.push({ id: `link-${c.mac}`, kind: "wired", level: "warn", ts: c.lastSeen, title: `${c.name} links at only ${c.speed} Mbps`, text: `${c.switch || "Switch"}${c.port != null ? ` port ${c.port}` : ""}. Many TVs and small devices top out at 100 Mbps; a cable or port can cause it too.`, mac: c.mac });
-    } else if (c.lowSpans?.length && c.topSpeed != null) {
+  const wired = insights.wiredList(start, end).clients;
+  const fastest = db.fastestWiredLinks(wired.map((c) => c.mac), end - 30 * 86400e3);
+  for (const c of wired) {
+    // A device that never linked faster in 30 days (a TV, a smart plug) is at its usual speed:
+    // nothing to fix (UU-C-189). A slow link matters when the device used to be faster.
+    const best = Math.max(fastest.get(c.mac) ?? 0, c.topSpeed ?? 0) || null;
+    if (c.speed != null && best != null && best <= c.speed && !c.lowSpans?.length) continue;
+    if (c.lowSpans?.length && c.topSpeed != null) {
       // Asleep or a bad link? A sleeping PC keeps its link at 10 Mbps (Wake-on-LAN) and moves
       // next to nothing; a real cable or port problem shows up while the device is busy.
       const bytesIn = (a, b) => bundle.buckets.reduce((n, r) => (r[1] === c.mac && r[0] >= a && r[0] < b ? n + r[4] + r[5] : n), 0);
@@ -450,6 +454,8 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
         const when = spans.map((sp) => `${clock(sp.from)}${sp.recovered ? `–${clock(sp.to)}` : " on"}`).join(", ");
         out.push({ id: `sleep-${c.mac}`, kind: "wired", level: "info", ts: last.from, title: `${c.name} slept ${when}`, text: `Its link drops to ${Math.min(...spans.map((sp) => sp.speed))} Mbps while it sleeps, which is normal for a PC that can be woken over the network; it runs at ${c.topSpeed} Mbps when awake.`, mac: c.mac });
       }
+    } else if (c.speed != null && c.speed <= 100 && best > c.speed) {
+      out.push({ id: `link-${c.mac}`, kind: "wired", level: "warn", ts: c.lastSeen, title: `${c.name} links at only ${c.speed} Mbps`, text: `It linked at ${best} Mbps in the last 30 days. ${c.switch || "Switch"}${c.port != null ? ` port ${c.port}` : ""}: a cable or port is the usual cause.`, mac: c.mac });
     }
   }
 

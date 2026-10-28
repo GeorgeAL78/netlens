@@ -295,3 +295,7 @@ table.t tr.click:hover td { background: #141b26; }
 .size .size-unit { color: var(--dim); font-size: 0.85em; }
 .size.size-big { font-weight: 600; }
 .size.size-big .size-unit { color: var(--accent); font-weight: 600; }
+
+/* A low-key action next to the real ones (UU-C-189). */
+.btn.quiet { background: transparent; border-color: transparent; color: var(--muted, inherit); }
+.btn.quiet:hover { border-color: var(--line, currentColor); }

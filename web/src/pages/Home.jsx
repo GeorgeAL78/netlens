@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { bytes, clock, go, href, shortDate, speed, todayKey, useApi, wanNow } from "../lib.js";
+import { api, bytes, clock, go, href, shortDate, speed, todayKey, useApi, wanNow } from "../lib.js";
 import { Bars, DayStep, Failed, Loading, levelColor, Bytes } from "../ui.jsx";
 
 // Home — the feed (UU-C-087): what happened today, in plain language, each finding linking
@@ -50,6 +50,7 @@ export default function Home({ route }) {
   const picked = !days && route.query.d && route.query.d !== todayKey();
   const range = days || (picked ? "day" : "today");
   const [filter, setFilter] = useState("all");
+  const [showHidden, setShowHidden] = useState(false);
   const path = days ? `/api/findings?days=${days}` : `/api/findings?date=${date}`;
   const { data, error, loading, reload } = useApi(path, range === "today" || days ? 5 * 60 * 1000 : 0);
   const list = (data?.findings || []).filter((f) => {
@@ -59,6 +60,11 @@ export default function Home({ route }) {
     return f.kind === filter;
   });
   const look = (data?.findings || []).filter((f) => f.level !== "info").length;
+  // "Don't show this again" (UU-C-189), kept on the server; it comes back if it gets worse.
+  const hide = (f, hidden = true) =>
+    api("/api/findings/hidden", { method: "POST", body: JSON.stringify({ key: f.hideKey, level: f.level, title: f.title, hidden }) })
+      .catch(() => {})
+      .then(reload);
   const now = data?.now;
   return (
     <div className="page">
@@ -136,9 +142,28 @@ export default function Home({ route }) {
                       {a.label}
                     </a>
                   ))}
+                  <button className="btn small quiet" style={{ marginLeft: "auto" }} title="Don't show this again — it comes back if it gets worse" onClick={() => hide(f)}>
+                    Hide
+                  </button>
                 </div>
               </article>
             ))}
+            {data.hidden?.length > 0 && (
+              <div className="card" style={{ gap: 8 }}>
+                <button className="btn small quiet" style={{ alignSelf: "flex-start" }} onClick={() => setShowHidden(!showHidden)} aria-expanded={showHidden}>
+                  Hidden ({data.hidden.length}) {showHidden ? "▴" : "▾"}
+                </button>
+                {showHidden &&
+                  data.hidden.map((f) => (
+                    <div key={f.id} className="row small" style={{ gridTemplateColumns: "minmax(0, 1fr) auto", cursor: "default" }}>
+                      <span className="ellipsis dim">{f.title}</span>
+                      <button className="btn small" onClick={() => hide(f, false)}>
+                        Show again
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
           <aside style={{ flex: "1 1 260px", maxWidth: 320, display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="card">
