@@ -13,6 +13,9 @@ Third-party data bundled in server/data/:
 - ip2asn.tsv.gz — derived from IPinfo Lite. IP address data powered by IPinfo
   (https://ipinfo.io), licensed CC BY-SA 4.0. The derived file is shared under the same
   licence.
+- oui.tsv.gz — device makers by address prefix, derived from Wireshark's manuf file
+  (https://www.wireshark.org, GPL-2.0-or-later), itself built from the IEEE's public OUI
+  listings (https://standards-oui.ieee.org).
 
 Ideas, not code: the Wi-Fi presence definitions (dwell time, favourite access point, presence
 pattern) follow unifi-toolkit's Wi-Fi Stalker by Crosstalk Solutions (MIT), and the choice of

@@ -35,6 +35,7 @@ import {
   localHostName,
 } from "./classify.js";
 import { logError } from "./log.js";
+import { makerOf } from "./oui.js";
 
 const app = express();
 
@@ -2207,7 +2208,7 @@ function storedDevices(now) {
         name: c.name && c.name.toLowerCase() !== mac ? c.name : null,
         hostname: c.hostname || null,
         label: nameOf(mac),
-        vendor: c.vendor || null,
+        vendor: c.vendor || makerOf(mac),
         privateMac: isPrivateMac(mac),
         firstSeen,
         lastSeen: s?.ts || null,
@@ -2250,7 +2251,7 @@ app.get("/api/devices", async (_req, res) => {
           name: u.name || null,
           hostname: u.hostname || null,
           label: u.name || u.hostname || nameOf(mac),
-          vendor: u.oui || null,
+          vendor: u.oui || makerOf(mac),
           privateMac: isPrivateMac(mac),
           firstSeen,
           lastSeen: u.last_seen ? u.last_seen * 1000 : null,

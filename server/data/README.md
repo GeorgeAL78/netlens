@@ -8,6 +8,7 @@ network is the thing being measured.
 | --- | --- | --- |
 | `public_suffix_list.dat` | https://publicsuffix.org/list/public_suffix_list.dat | MPL-2.0 (header retained) |
 | `ip2asn.tsv.gz` | IPinfo Lite, https://ipinfo.io | CC BY-SA 4.0 — **attribution required** |
+| `oui.tsv.gz` | Wireshark `manuf`, built from the IEEE's public OUI listings | GPL-2.0-or-later |
 
 Both are snapshots. To refresh, download from the source URL above and replace the file —
 no other change is needed. Bump `CLASSIFIER_VERSION` in `server/classify.js` afterwards so
@@ -23,6 +24,16 @@ IPINFO_TOKEN=... node scripts/build-ip2asn.mjs
 ```
 
 The token is read from the environment and must never be committed.
+
+`oui.tsv.gz` is **generated** too: `prefix<TAB>maker`, for the addresses UniFi knows no maker for
+(`server/oui.js`). No classifier is involved, so no version to bump. Rebuild with:
+
+```
+node scripts/build-oui.mjs manuf.gz
+```
+
+after downloading https://www.wireshark.org/download/automated/data/manuf.gz (at most once a
+week, its header asks; the IEEE's own files refuse scripted downloads).
 
 **Attribution:** IP address data powered by [IPinfo](https://ipinfo.io), licensed
 CC BY-SA 4.0. Keep this notice if the repository is ever made public.
