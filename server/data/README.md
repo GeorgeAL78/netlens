@@ -15,8 +15,8 @@ no other change is needed. Bump `CLASSIFIER_VERSION` in `server/classify.js` aft
 cached days are re-annotated with the new data.
 
 `ip2asn.tsv.gz` is **generated**, not the publisher's file: `scripts/build-ip2asn.mjs`
-collapses IPinfo's /24-granular CSV (3.6M rows, 272 MB) into 395,159 ranges, 4.1 MB
-gzipped. Columns: range start, range end, operator (the `as_domain`, falling back to
+collapses IPinfo's CSV (as of 2026-11-04: 1.4M IPv4 rows, of which 1.08M name an owner) into
+408,706 ranges, 4.2 MB gzipped. Columns: range start, range end, operator (the `as_domain`, falling back to
 `as_name`). Rebuild with:
 
 ```

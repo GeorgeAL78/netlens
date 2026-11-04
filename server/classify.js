@@ -160,7 +160,7 @@ const RULES = [
 // Bumped whenever classification output changes. cache.js compares it per day file and
 // re-annotates in place on restore, so improvements reach already-cached days without
 // refetching from UniFi.
-export const CLASSIFIER_VERSION = 8;
+export const CLASSIFIER_VERSION = 9;
 
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 const IPV6 = /^[0-9a-f]{0,4}(:[0-9a-f]{0,4}){2,}$/i;

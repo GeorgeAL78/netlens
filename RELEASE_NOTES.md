@@ -1,2 +1,2 @@
-### Fixed
-- Devices: "Unknown maker" for ordinary devices that UniFi has no maker for (a Sony TV, Ring cameras, a Canon printer). NetLens now names them from a copy of the public address registry bundled with the app. UniFi's own answer still comes first, nothing is looked up online, and a device using a private address still reads that it hides its maker.
+### Changed
+- Refreshed the two bundled lists: who runs an IP address (IPinfo Lite) and the public suffix list, both as of 2026-11-04. Connections UniFi could not name are labelled again from them, so the first start after this update takes a minute or two longer. Traffic figures do not change.
