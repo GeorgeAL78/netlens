@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, bytes, clock, dayLabel, go, href, todayKey, useApi } from "../lib.js";
-import { DayStep, Failed, Finder, Loading, Bytes } from "../ui.jsx";
+import { DayStep, Failed, Finder, Loading, Bytes, Split } from "../ui.jsx";
 
 // Sites (UU-C-135): every site each device connected to, from the connection records NetLens
 // keeps (30 days), with a chip per category. Not a DNS log — UniFi has none — and a browser
@@ -61,11 +61,11 @@ function Hits({ q, s }) {
   return (
     <div className="rows" style={{ gap: 2 }}>
       {rows.map((h, i) => (
-        <div key={i} className="row small" style={{ gridTemplateColumns: "130px minmax(0, 1fr) minmax(0, 1fr) 80px", cursor: "default", padding: "4px 8px" }}>
+        <div key={i} className="row small" style={{ gridTemplateColumns: "130px minmax(0, 1fr) minmax(0, 1fr) auto", cursor: "default", padding: "4px 8px" }}>
           <span className="mono dim">{when(h.t)}</span>
           <a href={href("device", h.mac)} className="ellipsis">{h.device}</a>
           <span className="dim mono ellipsis">{h.domain}{h.ip && h.ip !== h.domain ? ` · ${h.ip}` : ""}</span>
-          <span className="mono" style={{ textAlign: "right" }}><Bytes n={h.bytes} /></span>
+          <span className="mono" style={{ textAlign: "right" }}><Bytes n={h.bytes} /><Split down={h.down} up={h.up} /></span>
         </div>
       ))}
       {!rows.length && <div className="dim small">No timed connections.</div>}
@@ -194,7 +194,7 @@ export default function Sites({ route }) {
                       </td>
                     )}
                     <td className="num">{s.n.toLocaleString()}</td>
-                    <td className="num"><Bytes n={s.bytes} /></td>
+                    <td className="num"><Bytes n={s.bytes} /><Split down={s.down} up={s.up} /></td>
                     <td className="dim small mono">{span(s.first, s.last)}</td>
                   </tr>,
                   open === s.key && (

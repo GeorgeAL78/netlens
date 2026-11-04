@@ -62,6 +62,13 @@ function flowId(flow) {
 // smaller than the raw slim flow, since the nested source/destination/traffic_data
 // objects collapse away. Trade-off: editing a rule in classify.js now needs a
 // Refetch all to take effect, instead of applying on the next request.
+// History files and old day files from before UU-C-191 carry rows with down and up swapped.
+export const FLOW_DIRECTION = 2;
+const rowsWithDirection = (holder, rows) =>
+  holder.flowDirection === FLOW_DIRECTION
+    ? rows
+    : rows.map((r) => (r && typeof r.app === "string" && typeof r.t === "number" ? { ...r, bytesRx: r.bytesTx, bytesTx: r.bytesRx } : r));
+
 function toCachedFlow(raw) {
   if (raw && typeof raw.app === "string" && typeof raw.t === "number") return raw;
   const row = annotateFlow(raw);
@@ -200,6 +207,7 @@ export function* exportDays() {
       // The flows follow the day as {type:"flows"} chunks (flowstore.iterDay).
       flows: [],
       flowsFollow: e.flowCount || 0,
+      flowDirection: FLOW_DIRECTION,
       flowsInDb: false,
       buckets: e.buckets || [],
       bucketSpans: e.bucketSpans || [],
@@ -244,7 +252,7 @@ export function importDay(incoming) {
   const carried = !incoming.flowsInDb && (incoming.flows || []).length > 0;
   let flowCount = current?.flowCount || 0;
   if (carried) {
-    const flows = currentFlows(incoming.flows, incoming.classifierVersion);
+    const flows = currentFlows(rowsWithDirection(incoming, incoming.flows), incoming.classifierVersion);
     flowstore.writeDay(dayKey, flows, CLASSIFIER_VERSION);
     flowCount = flows.length;
   }
@@ -311,7 +319,7 @@ function restore() {
         let source = null;
         let classifier = CLASSIFIER_VERSION;
         if (inFile) {
-          source = entry.flows;
+          source = rowsWithDirection(entry, entry.flows);
           classifier = fileClassifier;
         } else if (stored && stored.classifier !== CLASSIFIER_VERSION) {
           source = flowstore.readDay(dayKey);

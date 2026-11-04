@@ -335,18 +335,24 @@ export async function getBlockedFlows({ startMs, endMs }) {
 
 function slimFlow(flow) {
   let dest = flow.destination || {};
+  let inbound = false;
   // From outside to a device, UniFi names the device on both ends; the other end is then the
   // source address (UU-C-183).
   const sip = String(flow.source?.ip || "");
-  if (dest.mac && dest.mac === flow.source?.mac && /^\d{1,3}(\.\d{1,3}){3}$/.test(sip) && !/^(10|127|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(sip)) dest = { host_name: sip };
+  if (dest.mac && dest.mac === flow.source?.mac && /^\d{1,3}(\.\d{1,3}){3}$/.test(sip) && !/^(10|127|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(sip)) {
+    dest = { host_name: sip };
+    inbound = true;
+  }
   const td = flow.traffic_data || {};
   const destination = {};
   if (dest.host_name != null) destination.host_name = dest.host_name;
   if (dest.client_name != null) destination.client_name = dest.client_name;
   if (dest.id != null) destination.id = dest.id;
   if (Array.isArray(dest.domains) && dest.domains.length) destination.domains = dest.domains;
-  const rx = Number(td.bytes_rx || 0);
-  const tx = Number(td.bytes_tx || 0);
+  // The source is the outside address here, so what it sent is what the device received; turned
+  // round so that the record reads as if the device had started it (UU-C-191).
+  const rx = Number((inbound ? td.bytes_tx : td.bytes_rx) || 0);
+  const tx = Number((inbound ? td.bytes_rx : td.bytes_tx) || 0);
   const start = Number(flow.flow_start_time || flow.time || 0);
   const end = Number(flow.flow_end_time || 0) || start + Number(flow.duration_milliseconds || 0);
   const slim = {

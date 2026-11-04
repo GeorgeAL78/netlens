@@ -32,6 +32,7 @@ import {
   isInfrastructureDomain,
   domainFoldsIntoApp,
   registrableDomain,
+  localHostName,
 } from "./classify.js";
 import { logError } from "./log.js";
 
@@ -1063,6 +1064,8 @@ function findingsBody(query) {
       dayKey: zonedDateKey,
     });
     const totals = ctx.bundle.traffic.reduce((n, c) => n + c.usage.reduce((m, u) => m + (u.totalBytes || u.bytesRx + u.bytesTx), 0), 0);
+    const totalDown = ctx.bundle.traffic.reduce((n, c) => n + c.usage.reduce((m, u) => m + u.bytesRx, 0), 0);
+    const totalUp = ctx.bundle.traffic.reduce((n, c) => n + c.usage.reduce((m, u) => m + u.bytesTx, 0), 0);
     const wan = db.latestWanSample();
     const online = db.queryClientSamples(ctx.now - 15 * 60 * 1000, ctx.now + 1, null);
     const onlineMacs = new Map();
@@ -1121,6 +1124,8 @@ function findingsBody(query) {
           : null,
         online: { total: onlineMacs.size, wired: [...onlineMacs.values()].filter(Boolean).length },
         trafficBytes: totals,
+        trafficDown: totalDown,
+        trafficUp: totalUp,
         blocked,
       },
     };
@@ -1338,6 +1343,64 @@ function sessionSites(domains) {
   }
   return [...by.values()].map((x) => ({ name: x.name, addresses: x.addresses.size }));
 }
+// Where a session counted by UniFi went (UU-C-192). UniFi's usage data says which app and when; its
+// connection records say where; nothing links the two. Taking whatever the device talked to at
+// the time stamped one big transfer on every app running beside it, and listed local devices
+// under internet traffic. Now a destination is only named when it fits: never on the local
+// network, never more than 125% of the session's bytes, not claimed by an overlapping session of
+// the device, and either named like the app (at least 2% of it) or, in a session of 50 MB or more,
+// at least a quarter of it. Below 50 MB size proves nothing: many small connections are the same
+// size, which read as "eBay: claude.ai". Best fits are placed first, a site named like the app
+// before all.
+const MATCH_MAX = 1.25;
+const MATCH_MIN_NAMED = 0.02;
+const MATCH_MIN_BY_SIZE = 0.25;
+const MATCH_SIZE_FROM = 50e6;
+const GENERIC_APP_WORD = /^(static|content|user|service|services|online|transfer|calling|update|updates|video|file|files|apis|store|mobile|news|mail|cloud|http|https|quic|unidentified|wi-fi|wifi|with)$/;
+function matchDestinations(sessions, lookup) {
+  const pairs = [];
+  for (const s of sessions) {
+    const sites = new Map();
+    for (const { domain, bytes } of lookup(s)) {
+      if (!domain || domain === "unknown" || localHostName(domain)) continue;
+      const { name } = splitHost(domain);
+      const site = registrableDomain(name) || name;
+      const x = sites.get(site) || { site, ip: /^[\d.:]+$/.test(name), bytes: 0, raw: [] };
+      x.bytes += bytes;
+      x.raw.push(domain);
+      sites.set(site, x);
+    }
+    const words = (String(s.app || "").toLowerCase().match(/[a-z0-9]{4,}/g) || []).filter((w) => !GENERIC_APP_WORD.test(w));
+    for (const x of sites.values()) {
+      if (x.bytes > MATCH_MAX * s.bytes) continue;
+      const named = words.some((w) => x.site.includes(w));
+      const fits = named ? x.bytes >= MATCH_MIN_NAMED * s.bytes : s.bytes >= MATCH_SIZE_FROM && x.bytes >= MATCH_MIN_BY_SIZE * s.bytes;
+      if (fits) pairs.push({ s, ...x, named, off: Math.abs(Math.log(x.bytes / s.bytes)) });
+    }
+    s.matched = [];
+    s.matchedBytes = 0;
+  }
+  pairs.sort((a, b) => b.named - a.named || a.off - b.off);
+  const claimed = new Map();
+  for (const p of pairs) {
+    const { s } = p;
+    if (s.matched.length >= 3 || s.matchedBytes + p.bytes > MATCH_MAX * s.bytes) continue;
+    const key = `${s.mac}|${p.site}`;
+    const taken = claimed.get(key) || [];
+    if (taken.some((o) => s.start <= o.end && o.start <= s.end)) continue;
+    claimed.set(key, [...taken, s]);
+    s.matched.push(p);
+    s.matchedBytes += p.bytes;
+  }
+  for (const s of sessions) {
+    s.matched.sort((a, b) => b.bytes - a.bytes);
+    s.domains = s.matched.flatMap((m) => m.raw);
+    s.domainsBasis = s.matched.length ? "size" : "none";
+    // A session of "encrypted" traffic can take the name of a site only if that site is most of it.
+    s.mainSite = s.matched.find((m) => !m.ip && m.bytes >= 0.5 * s.bytes)?.site || null;
+  }
+}
+
 function topDestinationsOf(groups) {
   const by = new Map();
   let total = 0;
@@ -1412,15 +1475,20 @@ function buildReport(query) {
         t,
         label: grain === "hour" ? `${String(zonedHour(t)).padStart(2, "0")}:00` : grain === "5min" ? zonedClock(t) : zonedDateKey(t),
         totalBytes: 0,
+        down: 0,
+        up: 0,
         // Share of this bar's time that has 5-minute detail, 0..1. Daily bars come from
         // day totals and flow screens from flow timestamps, so both are always whole.
         coverage:
           grain === "day" || basis === "flows" || until <= t ? 1 : Math.min(1, coveredMs(t, until) / (until - t)),
       });
     }
-    const place = (t, bytes) => {
+    const place = (t, bytes, down, up) => {
       const bucket = timelineMap.get(start + Math.floor(Math.max(0, t - start) / step) * step);
-      if (bucket) bucket.totalBytes += bytes;
+      if (!bucket) return;
+      bucket.totalBytes += bytes;
+      bucket.down += Number(down || 0);
+      bucket.up += Number(up || 0);
     };
 
     const deviceNames = new Map();
@@ -1484,16 +1552,6 @@ function buildReport(query) {
         ? flowstore.rowsForApps(flowDays, mac || null, selectedFilter.apps, selectedFilter.localDomains, span).map(named)
         : [];
 
-    // What a device talked to during a session, from flows.db by device and time.
-    const destinationsFor = (s) => {
-      // Ranked by bytes, not by whether the name looks like the app. Preferring
-      // name-matches put apple-dns.net (a few KB) ahead of the 570 MB that actually went
-      // to aaplimg.com during an App Store download — the same name-matching trap this
-      // redesign removes. These are what the device talked to at the time, labelled so.
-      const top = flowstore.destinations(flowDays, s.mac, s.start - BUCKET_MS, s.end, 3);
-      return { domains: top.domains, domainsBasis: top.any ? "device" : null };
-    };
-
     const SESSION_GAP = 10 * 60 * 1000;
     // Listed individually above this; the rest is summarised so the list still adds up.
     const SESSION_LIST_MIN = 1024 * 1024;
@@ -1541,7 +1599,7 @@ function buildReport(query) {
             maps
           );
           const bytes = dayRows.reduce((n, r) => n + r.totalBytes, 0);
-          place(Math.max(day.start, start), bytes);
+          place(Math.max(day.start, start), bytes, dayRows.reduce((n, r) => n + r.bytesRx, 0), dayRows.reduce((n, r) => n + r.bytesTx, 0));
           chartBytes += bytes;
         }
       } else {
@@ -1549,7 +1607,7 @@ function buildReport(query) {
           // In 5-minute bars an hourly row (an hour UniFi only kept as one total) has no place:
           // it stays in the header and is reported as not drawn, never spread into fake detail.
           if (grain === "5min" && r.tEnd - r.t > step) continue;
-          place(r.t, r.bytes);
+          place(r.t, r.bytes, r.bytesRx, r.bytesTx);
           chartBytes += r.bytes;
         }
       }
@@ -1595,7 +1653,7 @@ function buildReport(query) {
       };
       for (const r of matchedFlows) {
         if (!r.t) continue;
-        place(r.t, r.bytes);
+        place(r.t, r.bytes, r.bytesRx, r.bytesTx);
         chartBytes += r.bytes;
       }
       rawSessions = sessionize(matchedFlows, { gapMs: SESSION_GAP, minBytes: 0, keyBy: "mac+app" }).map((s) => ({
@@ -1731,7 +1789,9 @@ function buildReport(query) {
     const small = rawSessions.filter((s) => s.bytes < SESSION_LIST_MIN);
     const sessionCount = listed.length;
     // Destinations only for the sessions actually listed: one indexed query each.
-    const sessions = capSessions(listed).map((s) => (s.source === "dpi" ? { ...s, ...destinationsFor(s) } : s)).map((s) => ({
+    const kept = capSessions(listed);
+    matchDestinations(kept.filter((s) => s.source === "dpi"), (s) => flowstore.destinations(flowDays, s.mac, s.start - BUCKET_MS, s.end, 15).rows);
+    const sessions = kept.map((s) => ({
       app: s.app,
       category: s.category,
       mac: s.mac,
@@ -1743,12 +1803,15 @@ function buildReport(query) {
       durationMs: s.durationMs,
       activeSeconds: s.activeSeconds,
       bytes: s.bytes,
+      down: s.bytesRx,
+      up: s.bytesTx,
       flowCount: s.flowCount,
       domains: s.domains,
+      matchedBytes: s.matchedBytes,
       // Site names, each once (UU-C-178): UniFi writes "<ip>_<name>", one entry per address.
       sites: sessionSites(s.domains),
       // An "encrypted" or unidentified session is named after where it went: "real-debrid.com".
-      site: PLUMBING_SESSION.test(s.app || "") ? sessionSites(s.domains)[0]?.name || null : null,
+      site: !PLUMBING_SESSION.test(s.app || "") ? null : s.source === "dpi" ? s.mainSite : sessionSites(s.domains)[0]?.name || null,
       domainsBasis: s.domainsBasis,
       source: s.source,
     }));
@@ -1758,6 +1821,14 @@ function buildReport(query) {
       count: small.length + (listed.length - sessions.length) + trickle.length,
       bytes:
         small.reduce((n, s) => n + s.bytes, 0) + (listedBytes - shownBytes) + trickle.reduce((n, r) => n + r.bytes, 0),
+      ...(() => {
+        const shown = new Set(kept);
+        const rest = [...listed.filter((s) => !shown.has(s)), ...small];
+        return {
+          down: rest.reduce((n, s) => n + Number(s.bytesRx || 0), 0) + trickle.reduce((n, r) => n + Number(r.bytesRx || 0), 0),
+          up: rest.reduce((n, s) => n + Number(s.bytesTx || 0), 0) + trickle.reduce((n, r) => n + Number(r.bytesTx || 0), 0),
+        };
+      })(),
     };
 
     const activity = flowstore
@@ -1782,11 +1853,17 @@ function buildReport(query) {
     // numbers, and mixing the two sources is what UU-C-043 removed (UU-F-051).
     const localByApp = new Map();
     let localBytes = 0;
+    let localDown = 0;
+    let localUp = 0;
     for (const row of flowGroups) {
       if (row.category !== "Local network") continue;
       localBytes += row.bytes;
-      const cur = localByApp.get(row.app) || { app: row.app, bytes: 0, byMac: new Map() };
+      localDown += row.down || 0;
+      localUp += row.up || 0;
+      const cur = localByApp.get(row.app) || { app: row.app, bytes: 0, down: 0, up: 0, byMac: new Map() };
       cur.bytes += row.bytes;
+      cur.down += row.down || 0;
+      cur.up += row.up || 0;
       cur.byMac.set(row.mac, (cur.byMac.get(row.mac) || 0) + row.bytes);
       localByApp.set(row.app, cur);
     }
@@ -1799,6 +1876,8 @@ function buildReport(query) {
           app: l.app,
           value: `svc:${l.app}`,
           bytes: l.bytes,
+          down: l.down,
+          up: l.up,
           topDevice: top ? deviceNames.get(top[0]) || top[0] : null,
           deviceCount: l.byMac.size,
         };
@@ -1861,7 +1940,7 @@ function buildReport(query) {
     const choiceByKey = new Map();
     const normName = (n) => String(n || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
     for (const a of aggregateApps(scopedRows, maps)) {
-      choiceByKey.set(normName(a.app), { value: String(a.appId), app: a.app, category: a.category, totalBytes: a.totalBytes, source: "unifi" });
+      choiceByKey.set(normName(a.app), { value: String(a.appId), app: a.app, category: a.category, totalBytes: a.totalBytes, down: a.bytesRx, up: a.bytesTx, source: "unifi" });
     }
     const detected = new Map();
     for (const row of flowGroups) {
@@ -1907,6 +1986,8 @@ function buildReport(query) {
       totals,
       // Flow-derived and reported apart from `totals`, which stays UniFi's own count.
       localBytes: basis === "flows" ? 0 : localBytes,
+      localDown: basis === "flows" ? 0 : localDown,
+      localUp: basis === "flows" ? 0 : localUp,
       localServices: basis === "flows" ? [] : localServices,
       unplacedBytes,
       lostSpans,
@@ -1988,12 +2069,14 @@ function siteIndex(query) {
     const key = `${group && site !== "No name" ? registrableDomain(site) || site : site}\u0000${category}`;
     let s = sites.get(key);
     if (!s) {
-      s = { key, site: key.split("\u0000")[0], category, apps: new Map(), n: 0, bytes: 0, first: null, last: 0, macs: new Map(), ip: null, how: null, raw: new Set() };
+      s = { key, site: key.split("\u0000")[0], category, apps: new Map(), n: 0, bytes: 0, down: 0, up: 0, first: null, last: 0, macs: new Map(), ip: null, how: null, raw: new Set() };
       sites.set(key, s);
     }
     s.apps.set(app, (s.apps.get(app) || 0) + r.bytes + r.n);
     s.n += r.n;
     s.bytes += r.bytes;
+    s.down += r.down || 0;
+    s.up += r.up || 0;
     if (r.first && (!s.first || r.first < s.first)) s.first = r.first;
     if (r.last > s.last) s.last = r.last;
     s.macs.set(r.mac, (s.macs.get(r.mac) || 0) + r.n);
@@ -2026,6 +2109,8 @@ function buildSites(query) {
       category: s.category,
       n: s.n,
       bytes: s.bytes,
+      down: s.down,
+      up: s.up,
       first: s.first,
       last: s.last,
       devices: s.macs.size,
@@ -2089,7 +2174,7 @@ app.get("/api/sites/hits", (req, res) => {
     const nameOf = insights.names();
     const rows = s ? flowstore.siteHits(days, mac, [...s.raw].filter((d) => d != null), 50, span) : [];
     res.json({
-      hits: rows.map((r) => ({ t: r.t, tEnd: r.tEnd, mac: r.mac, device: nameOf(r.mac), bytes: r.bytes || 0, domain: r.domain, ip: r.ip || null })),
+      hits: rows.map((r) => ({ t: r.t, tEnd: r.tEnd, mac: r.mac, device: nameOf(r.mac), bytes: r.bytes || 0, down: r.bytesRx || 0, up: r.bytesTx || 0, domain: r.domain, ip: r.ip || null })),
     });
   } catch (err) {
     sendError(res, "GET /api/sites/hits", err);

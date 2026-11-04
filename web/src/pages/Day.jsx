@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { bytes, go, href, speed, todayKey, useApi } from "../lib.js";
-import { DayStep, Failed, Loading, healthClass, Bytes } from "../ui.jsx";
+import { bytes, go, href, speed, todayKey, useApi, splitTip } from "../lib.js";
+import { DayStep, Failed, Loading, healthClass, Bytes, Split } from "../ui.jsx";
 
 // Day — every device as a row, the day's hours as columns (UU-C-087). Colour is traffic in
 // that hour; ○ roams/connects, ▲ blocked traffic, ✕ failed Wi-Fi joins; hatched = no data.
@@ -40,7 +40,7 @@ export default function Day({ route }) {
   const rows = (data?.rows || []).filter((r) => (show === "all" ? true : show === "wired" ? r.link?.wired : r.link && !r.link.wired));
   const max = Math.max(1, ...(data?.rows || []).flatMap((r) => r.hourly));
   const netMax = Math.max(1, ...(data?.network.hourly || [0]));
-  const cols = "minmax(180px, 250px) repeat(24, minmax(0, 1fr)) 84px";
+  const cols = "minmax(180px, 250px) repeat(24, minmax(0, 1fr)) 124px";
   const top = data?.rows?.[0];
   const cellState = (h) => (data.detail[h] == null ? "later" : data.detail[h] ? "" : "nodata");
   return (
@@ -51,7 +51,8 @@ export default function Day({ route }) {
           {data && (
             <p className="lede">
               <Bytes n={data.network.total} />
-              <span className="soft">{data.today ? " so far" : ""}</span>
+              <span className="soft">{data.today ? " so far" : ""}{data.network.down || data.network.up ? " · " : ""}</span>
+              {data.network.down || data.network.up ? <span className="soft">↓ <Bytes n={data.network.down} /> ↑ <Bytes n={data.network.up} /></span> : null}
               {top && top.total > 0 && (
                 <>
                   <span className="soft"> — busiest </span>
@@ -121,11 +122,11 @@ export default function Day({ route }) {
                   key={h}
                   className={`cell ${cellState(h)}`}
                   style={cellState(h) ? undefined : { background: shade(v, netMax) }}
-                  title={`${String(h).padStart(2, "0")}:00 · ${bytes(v)}`}
+                  title={`${String(h).padStart(2, "0")}:00 · ${bytes(v)}${splitTip(data.network.hourlyDown?.[h], data.network.hourlyUp?.[h])}`}
                   onClick={() => !cellState(h) && go("usage", null, { d: date, from: data.hours[h], to: data.hours[h] + HOUR })}
                 />
               ))}
-              <span className="tot"><Bytes n={data.network.total} /></span>
+              <span className="tot"><Bytes n={data.network.total} /><Split down={data.network.down} up={data.network.up} /></span>
 
               {rows.map((r) => [
                 <a key={`${r.mac}-n`} className="who" href={href("device", r.mac, { d: date })} style={{ borderTop: "1px solid #171d28", paddingTop: 6 }}>
@@ -143,14 +144,14 @@ export default function Day({ route }) {
                       key={`${r.mac}-${h}`}
                       className={`cell ${st}`}
                       style={st ? undefined : { background: shade(v, max), color: m?.block || m?.fail ? "var(--bad)" : undefined }}
-                      title={`${r.name} · ${String(h).padStart(2, "0")}:00 · ${bytes(v)}${m?.roam ? ` · ${m.roam} roam(s)` : ""}${m?.conn ? ` · ${m.conn} connect(s)` : ""}${m?.block ? ` · ${m.block} blocked` : ""}${m?.fail ? ` · ${m.fail} failed Wi-Fi join(s)` : ""}`}
+                      title={`${r.name} · ${String(h).padStart(2, "0")}:00 · ${bytes(v)}${splitTip(r.hourlyDown?.[h], r.hourlyUp?.[h])}${m?.roam ? ` · ${m.roam} roam(s)` : ""}${m?.conn ? ` · ${m.conn} connect(s)` : ""}${m?.block ? ` · ${m.block} blocked` : ""}${m?.fail ? ` · ${m.fail} failed Wi-Fi join(s)` : ""}`}
                       onClick={() => !st && go("usage", null, { d: date, from: data.hours[h], to: data.hours[h] + HOUR, mac: r.mac })}
                     >
                       {st ? "" : mark(m)}
                     </button>
                   );
                 }),
-                <span key={`${r.mac}-t`} className="tot"><Bytes n={r.total} /></span>,
+                <span key={`${r.mac}-t`} className="tot"><Bytes n={r.total} /><Split down={r.down} up={r.up} /></span>,
               ])}
             </div>
             {!rows.length && <div className="empty">No devices for this filter on this day.</div>}

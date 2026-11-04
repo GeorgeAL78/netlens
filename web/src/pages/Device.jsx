@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 
-import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi } from "../lib.js";
-import { DayStep, Failed, Loading, Meter, Bytes } from "../ui.jsx";
+import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi, sessionDetail, splitTip } from "../lib.js";
+import { DayStep, Failed, Loading, Meter, Bytes, Split } from "../ui.jsx";
 
 // One device (UU-C-087): its day — traffic, signal and events by hour — its connection,
 // apps, sessions and events, and blocking. Everything links back to the hour or event.
@@ -95,7 +95,7 @@ export default function Device({ route }) {
   const appsMax = Math.max(1, ...(r?.apps || []).map((a) => a.totalBytes));
   const items = useMemo(() => {
     const list = [];
-    for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.site ? `${s.site} (${s.app})` : s.app, detail: s.sites?.length ? s.sites.map((x) => (x.addresses > 1 ? `${x.name} (${x.addresses} addresses)` : x.name)).join(", ") : (s.domains || []).join(", "), v: bytes(s.bytes), n: s.bytes, kind: "session" });
+    for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.site ? `${s.site} (${s.app})` : s.app, detail: sessionDetail(s), v: bytes(s.bytes), n: s.bytes, down: s.down, up: s.up, kind: "session" });
     for (const e of r?.siem?.events || []) list.push({ ts: e.ts, at: clock(e.ts), what: e.name, detail: [e.via, e.duration, e.usageDown && `↓ ${e.usageDown}`].filter(Boolean).join(" · "), v: "", kind: "event" });
     for (const x of w?.roams || []) if (!list.some((i) => i.kind === "event" && Math.abs(i.ts - x.ts) < 2000)) list.push({ ts: x.ts, at: clock(x.ts), what: "Roamed", detail: x.msg || x.via || "", v: "", kind: "event" });
     // Failed Wi-Fi joins of this day, one line per hour and problem (UU-C-146).
@@ -133,7 +133,7 @@ export default function Device({ route }) {
   }
 
   function exportCsv() {
-    const body = csv([["time", "type", "what", "detail", "data"], ...items.map((i) => [new Date(i.ts).toISOString(), i.kind, i.what, i.detail, i.v])]);
+    const body = csv([["time", "type", "what", "detail", "data", "down", "up"], ...items.map((i) => [new Date(i.ts).toISOString(), i.kind, i.what, i.detail, i.v, i.down != null ? bytes(i.down) : "", i.up != null ? bytes(i.up) : ""])]);
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([body], { type: "text/csv" }));
     a.download = `netlens-${name.replace(/[^\w.-]+/g, "_")}-${date}.csv`;
@@ -266,7 +266,7 @@ export default function Device({ route }) {
                     key={h}
                     className={`cell ${later ? "later" : nodata ? "nodata" : ""}`}
                     style={later || nodata ? undefined : { background: b.totalBytes > 0 ? `color-mix(in srgb, var(--cell-4) ${Math.round(25 + 75 * Math.sqrt(b.totalBytes / tmax))}%, var(--cell-0))` : "var(--cell-0)" }}
-                    title={b ? `${b.label} · ${bytes(b.totalBytes)}` : ""}
+                    title={b ? `${b.label} · ${bytes(b.totalBytes)}${splitTip(b.down, b.up)}` : ""}
                     onClick={() => !later && !nodata && b && go("usage", null, { d: date, from: b.t, to: b.t + HOUR, mac })}
                   />
                 );
@@ -371,17 +371,17 @@ export default function Device({ route }) {
               </div>
               {!r.apps.length && <span className="dim">No traffic counted.</span>}
               {r.apps.slice(0, 8).map((a) => (
-                <a key={a.appId} href={href("usage", null, { d: date, mac, app: a.appId })} style={{ color: "var(--text)", display: "grid", gap: 4 }}>
+                <a key={a.appId} href={href("usage", null, { d: date, mac, app: a.appId })} style={{ color: "var(--text)", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 4 }}>
                   <span style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <span className="ellipsis">{a.app} <span className="dim small">· {a.category}</span></span>
-                    <span className="mono"><Bytes n={a.totalBytes} /></span>
+                    <span className="ellipsis" style={{ minWidth: 0 }}>{a.app} <span className="dim small">· {a.category}</span></span>
+                    <span className="mono" style={{ textAlign: "right", flexShrink: 0 }}><Bytes n={a.totalBytes} /><Split down={a.bytesRx} up={a.bytesTx} /></span>
                   </span>
                   <Meter share={a.totalBytes / appsMax} />
                 </a>
               ))}
               {r.localBytes > 0 && (
                 <p className="dim small" style={{ margin: 0 }}>
-                  Plus <Bytes n={r.localBytes} /> inside your own network ({r.localServices.slice(0, 3).map((s) => s.app).join(", ")}), which UniFi does not count.
+                  Plus <Bytes n={r.localBytes} />{Number(r.localDown) || Number(r.localUp) ? <> (↓ <Bytes n={r.localDown} /> ↑ <Bytes n={r.localUp} />)</> : null} inside your own network ({r.localServices.slice(0, 3).map((s) => s.app).join(", ")}), which UniFi does not count.
                 </p>
               )}
             </div>
@@ -399,7 +399,7 @@ export default function Device({ route }) {
                       <span style={{ color: i.kind === "session" ? "var(--accent)" : i.kind === "joinfail" ? "var(--bad)" : "#c8d2df" }}>{i.what}</span>
                       <span className="dim small ellipsis">{i.detail}</span>
                     </span>
-                    <span className="mono small">{i.n != null ? <Bytes n={i.n} /> : i.v}</span>
+                    <span className="mono small" style={{ textAlign: "right" }}>{i.n != null ? <><Bytes n={i.n} /><Split down={i.down} up={i.up} /></> : i.v}</span>
                   </div>
                 ))}
               </div>

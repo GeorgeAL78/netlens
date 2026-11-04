@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { api, bytes, clock, go, href, shortDate, speed, todayKey, useApi, wanNow } from "../lib.js";
-import { Bars, DayStep, Failed, Loading, levelColor, Bytes } from "../ui.jsx";
+import { api, bytes, clock, go, href, shortDate, speed, todayKey, useApi, wanNow, splitTip } from "../lib.js";
+import { Bars, DayStep, Failed, Loading, levelColor, Bytes, Split } from "../ui.jsx";
 
 // Home — the feed (UU-C-087): what happened today, in plain language, each finding linking
 // to the place that shows it in full.
@@ -120,7 +120,7 @@ export default function Home({ route }) {
                           {x.mac ? <a href={href("device", x.mac, { d: date })} className="ellipsis">{x.label}</a> : <span className="ellipsis">{x.label}</span>}
                           {x.sub && <span className="dim small ellipsis">{x.sub}</span>}
                         </span>
-                        <span className="mono small">{/^[\d.]+ [KMGT]?B$/.test(String(x.value)) ? <Bytes text={x.value} /> : x.value}</span>
+                        <span className="mono small" style={{ textAlign: "right" }}>{/^[\d.]+ [KMGT]?B$/.test(String(x.value)) ? <Bytes text={x.value} /> : x.value}<Split down={x.down} up={x.up} /></span>
                       </div>
                     ))}
                   </div>
@@ -131,7 +131,7 @@ export default function Home({ route }) {
                     items={f.hourly.map((v, i) => ({
                       value: v,
                       // One bar per hour for a day, per day for a range (UU-C-127).
-                      tip: f.barDays ? `day ${i + 1} of ${f.barDays} · ${bytes(v)}` : `${String(i).padStart(2, "0")}:00 · ${bytes(v)}`,
+                      tip: `${f.barDays ? `day ${i + 1} of ${f.barDays}` : `${String(i).padStart(2, "0")}:00`} · ${bytes(v)}${splitTip(f.hourlyDown?.[i], f.hourlyUp?.[i])}`,
                       color: !f.barDays && f.span && new Date(f.span.from).getHours() === i ? "var(--cell-5)" : "var(--cell-2)",
                     }))}
                   />
@@ -194,7 +194,7 @@ export default function Home({ route }) {
                 )}
                 <div>
                   <span>Traffic</span>
-                  <span className="mono"><Bytes n={now.trafficBytes} /></span>
+                  <span className="mono" style={{ textAlign: "right" }}><Bytes n={now.trafficBytes} /><Split down={now.trafficDown} up={now.trafficUp} /></span>
                 </div>
                 <div>
                   <span>Blocked</span>

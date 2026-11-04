@@ -493,6 +493,14 @@ export function inboundFixed(d) {
   };
 }
 
+// Stored as the connection record counts it: bytesTx reached the source, which is the device
+// unless the record was turned round above (UU-C-191).
+function withDirection(d) {
+  if (!d?.traffic) return d;
+  const { bytesRx, bytesTx } = d.traffic;
+  return { ...d, traffic: { ...d.traffic, down: d.inbound ? bytesRx : bytesTx, up: d.inbound ? bytesTx : bytesRx } };
+}
+
 // A System Log rule by its current name (UU-C-185): ids learned from the connection records.
 function ruleNames() {
   let names = new Map();
@@ -512,7 +520,7 @@ export function threats(start, end) {
   const items = rows.map((e) => {
     const p = e.data?.params || {};
     const firewall = /TRAFFIC_BLOCKED/.test(e.data?.key || "");
-    const ips = inboundFixed(sigs.get(e.uid) || null);
+    const ips = withDirection(inboundFixed(sigs.get(e.uid) || null));
     return {
       uid: e.uid,
       ts: e.ts,

@@ -1,5 +1,5 @@
-import { bytes, clock, dayLabel, duration, go, href, isPlumbing, todayKey, useApi } from "../lib.js";
-import { Bars, DayStep, Failed, Finder, Loading, Meter, Bytes } from "../ui.jsx";
+import { bytes, clock, dayLabel, duration, go, href, isPlumbing, todayKey, useApi, sessionDetail, splitTip } from "../lib.js";
+import { Bars, DayStep, Failed, Finder, Loading, Meter, Bytes, Split } from "../ui.jsx";
 
 // Usage (UU-C-087): apps, categories, devices and sessions for a day, an hour or a range.
 // Every figure on the page comes from one basis and adds up — header = apps = categories =
@@ -44,7 +44,7 @@ export default function Usage({ route }) {
   const chart = (r?.timeline || []).map((b) => ({
     value: b.totalBytes,
     nodata: b.lost >= 0.99,
-    tip: `${b.label} · ${bytes(b.totalBytes)}${b.fillBytes ? ` (+${bytes(b.fillBytes)} daily total only)` : ""}`,
+    tip: `${b.label} · ${bytes(b.totalBytes)}${splitTip(b.down, b.up)}${b.fillBytes ? ` (+${bytes(b.fillBytes)} daily total only)` : ""}`,
     onClick:
       r.grain === "day"
         ? () => go("usage", null, { ...q, r: null, d: b.label, from: null, to: null })
@@ -91,7 +91,8 @@ export default function Usage({ route }) {
   // carried at least half of the recorded traffic.
   const firstPlumbing = (r?.apps || []).find((a) => isPlumbing(a));
   const explainRow =
-    firstPlumbing && firstPlumbing.totalBytes >= 0.5 * (r?.totals?.bytes || 0) && r?.topDestinations?.[0]?.share >= 0.5 ? firstPlumbing : null;
+    // The destination must also fit the row's size (UU-C-192).
+    firstPlumbing && firstPlumbing.totalBytes >= 0.5 * (r?.totals?.bytes || 0) && r?.topDestinations?.[0]?.share >= 0.5 && r.topDestinations[0].bytes >= 0.5 * firstPlumbing.totalBytes && r.topDestinations[0].bytes <= 1.25 * firstPlumbing.totalBytes ? firstPlumbing : null;
   const appsMax = Math.max(1, ...(r?.apps || []).map((a) => a.totalBytes));
   const catTotal = Math.max(1, (r?.categories || []).reduce((n, c) => n + c.totalBytes, 0));
 
@@ -133,7 +134,7 @@ export default function Usage({ route }) {
           <span className="dim small">Top apps</span>
           {topApps.map((a) => (
             <button key={a.value} className={`btn small ${String(q.app) === String(a.value) ? "on" : ""}`} onClick={() => set({ app: String(q.app) === String(a.value) ? null : a.value, cat: null })}>
-              {a.app.replace(/ \(.*\)$/, "")} <span className="dim"><Bytes n={a.totalBytes} /></span>
+              {a.app.replace(/ \(.*\)$/, "")} <span className="dim"><Bytes n={a.totalBytes} /></span> {Number(a.down) || Number(a.up) ? <span className="dim small">↓ <Bytes n={a.down} /> ↑ <Bytes n={a.up} /></span> : null}
             </button>
           ))}
         </div>
@@ -177,20 +178,20 @@ export default function Usage({ route }) {
               <div className="card tight stat">
                 <span className="label">Busiest device</span>
                 <span className="value small ellipsis">{r.clients[0]?.name || "—"}</span>
-                <span className="sub"><Bytes n={r.clients[0]?.totalBytes} /></span>
+                <span className="sub"><Bytes n={r.clients[0]?.totalBytes} /> · <Split down={r.clients[0]?.bytesRx} up={r.clients[0]?.bytesTx} /></span>
               </div>
             )}
             {!q.app && (
               <div className="card tight stat">
                 <span className="label">Busiest app</span>
                 <span className="value small ellipsis">{busiest?.app || "—"}</span>
-                <span className="sub">{busiest ? <><Bytes n={busiest.totalBytes} /> · {busiest.category}</> : ""}</span>
+                <span className="sub">{busiest ? <><Bytes n={busiest.totalBytes} /> · <Split down={busiest.bytesRx} up={busiest.bytesTx} /> · {busiest.category}</> : ""}</span>
               </div>
             )}
             <div className="card tight stat">
               <span className="label">Inside your network</span>
               <span className="value"><Bytes n={r.localBytes} /></span>
-              <span className="sub">not counted by UniFi</span>
+              <span className="sub"><Split down={r.localDown} up={r.localUp} />{Number(r.localDown) || Number(r.localUp) ? " · " : ""}not counted by UniFi</span>
             </div>
           </div>
 
@@ -233,7 +234,7 @@ export default function Usage({ route }) {
                         </td>
                         <td className="muted">{a.category}</td>
                         <td className="muted small">{(a.topDevices || []).map((d) => d.name).join(", ")}</td>
-                        <td className="num"><Bytes n={a.totalBytes} /></td>
+                        <td className="num"><Bytes n={a.totalBytes} /><Split down={a.bytesRx} up={a.bytesTx} /></td>
                       </tr>
                     ))}
                     {!r.apps.length && <tr><td colSpan={4} className="dim">No traffic counted.</td></tr>}
@@ -251,7 +252,7 @@ export default function Usage({ route }) {
                   onClick={() => c.catId != null && set({ cat: String(q.cat) === String(c.catId) ? null : c.catId, app: null })}
                 >
                   <span className="stack"><span className="ellipsis">{c.category}</span><Meter share={c.totalBytes / catTotal} color="var(--ok)" /></span>
-                  <span className="mono small"><Bytes n={c.totalBytes} /></span>
+                  <span className="mono small" style={{ textAlign: "right" }}><Bytes n={c.totalBytes} /><Split down={c.bytesRx} up={c.bytesTx} /></span>
                 </button>
               ))}
               {r.localServices?.length > 0 && (
@@ -260,7 +261,7 @@ export default function Usage({ route }) {
                   {r.localServices.slice(0, 6).map((s) => (
                     <button key={s.value} className="row" style={{ gridTemplateColumns: "minmax(0, 1fr) auto" }} onClick={() => set({ app: s.value })}>
                       <span className="stack"><span className="ellipsis">{s.app}</span><span className="dim small">{s.topDevice}</span></span>
-                      <span className="mono small"><Bytes n={s.bytes} /></span>
+                      <span className="mono small" style={{ textAlign: "right" }}><Bytes n={s.bytes} /><Split down={s.down} up={s.up} /></span>
                     </button>
                   ))}
                 </>
@@ -275,7 +276,7 @@ export default function Usage({ route }) {
                 {r.clients.slice(0, 15).map((c) => (
                   <button key={c.mac} className="row" style={{ gridTemplateColumns: "minmax(0, 1fr) auto" }} onClick={() => set({ mac: c.mac })}>
                     <span className="stack"><span className="ellipsis">{c.name}</span><Meter share={c.totalBytes / Math.max(1, r.clients[0]?.totalBytes || 1)} /></span>
-                    <span className="mono small"><Bytes n={c.totalBytes} /></span>
+                    <span className="mono small" style={{ textAlign: "right" }}><Bytes n={c.totalBytes} /><Split down={c.bytesRx} up={c.bytesTx} /></span>
                   </button>
                 ))}
               </div>
@@ -284,19 +285,19 @@ export default function Usage({ route }) {
               <div className="card-head"><h2>Sessions</h2><span className="hint">{r.sessionCount} over 1 MB</span></div>
               <div className="rows">
                 {r.sessions.slice(0, 40).map((s, i) => (
-                  <div key={i} className="row" style={{ gridTemplateColumns: "120px minmax(0, 1fr) 90px" }}>
+                  <div key={i} className="row" style={{ gridTemplateColumns: "120px minmax(0, 1fr) auto" }}>
                     <span className="mono small dim">{s.at.split(", ").pop()} – {s.endAt.split(", ").pop()}</span>
                     <span className="stack">
                       <span>{s.site ? <>{s.site} <span className="dim">({s.app})</span></> : s.app} <span className="dim">on</span> <a href={href("device", s.mac, { d: q.d })}>{s.device}</a></span>
-                      <span className="dim small ellipsis">{s.sites?.length ? s.sites.map((x) => (x.addresses > 1 ? `${x.name} (${x.addresses} addresses)` : x.name)).join(", ") : (s.domains || []).join(", ")}</span>
+                      <span className="dim small ellipsis">{sessionDetail(s)}</span>
                     </span>
-                    <span className="mono small" style={{ textAlign: "right" }}><Bytes n={s.bytes} /></span>
+                    <span className="mono small" style={{ textAlign: "right" }}><Bytes n={s.bytes} /><Split down={s.down} up={s.up} /></span>
                   </div>
                 ))}
                 {r.sessionsOmitted?.count > 0 && (
                   <div className="row dim small" style={{ gridTemplateColumns: "1fr auto" }}>
                     <span>{r.sessionsOmitted.count} smaller sessions and background traffic</span>
-                    <span className="mono"><Bytes n={r.sessionsOmitted.bytes} /></span>
+                    <span className="mono" style={{ textAlign: "right" }}><Bytes n={r.sessionsOmitted.bytes} /><Split down={r.sessionsOmitted.down} up={r.sessionsOmitted.up} /></span>
                   </div>
                 )}
                 {!r.sessions.length && !r.sessionsOmitted?.count && <div className="dim">No sessions.</div>}

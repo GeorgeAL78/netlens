@@ -82,9 +82,18 @@ db.exec(`CREATE INDEX IF NOT EXISTS flows_blocked ON flows (day, t) WHERE action
 // An early build named connection-tracking blocks "CONNTRACK"; they are UniFi's invalid-traffic rule.
 db.exec(`UPDATE flows SET policy = 'Block Invalid Traffic' WHERE action = 'blocked' AND policy = 'CONNTRACK'`);
 
+// Down and up per group and site (UU-C-191). The summaries of existing days are rebuilt a day at a
+// time, in the background and on first use, by ensureSummaries.
+const hasSplit = (table) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === "down");
+const splitAdded = !hasSplit("flow_sites") || !hasSplit("flow_groups");
+for (const table of ["flow_sites", "flow_groups"]) if (!hasSplit(table)) db.exec(`ALTER TABLE ${table} ADD COLUMN down INTEGER; ALTER TABLE ${table} ADD COLUMN up INTEGER`);
+if (splitAdded) db.exec(`DELETE FROM flow_site_days`);
+
 const COLS = ["t", "tEnd", "mac", "app", "category", "domain", "bytes", "bytesRx", "bytesTx", "service", "action", "kind", "confidence", "source", "ip", "id", "policy"];
 const insertFlow = db.prepare(
-  `INSERT INTO flows (day, seq, t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id, policy)
+  // The columns keep the connection record's own view (UU-C-191): rx is what the device sent, so
+  // a row's bytesTx goes there. Rows stored before read correctly, with nothing to migrate.
+  `INSERT INTO flows (day, seq, t, t_end, mac, app, category, domain, bytes, tx, rx, service, action, kind, confidence, source, ip, id, policy)
    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 const deleteDayFlows = db.prepare(`DELETE FROM flows WHERE day = ?`);
@@ -93,9 +102,9 @@ const deleteDayMeta = db.prepare(`DELETE FROM flow_days WHERE day = ?`);
 const deleteDaySites = db.prepare(`DELETE FROM flow_sites WHERE day = ?`);
 const deleteDaySiteMark = db.prepare(`DELETE FROM flow_site_days WHERE day = ?`);
 const buildSites = db.prepare(`
-  INSERT INTO flow_sites (day, domain, app, category, mac, ip, n, bytes, first, last)
+  INSERT INTO flow_sites (day, domain, app, category, mac, ip, n, bytes, first, last, down, up)
   SELECT day, domain, app, category, mac, MAX(ip), COUNT(*), COALESCE(SUM(bytes), 0),
-         MIN(CASE WHEN t > 0 THEN t END), MAX(t)
+         MIN(CASE WHEN t > 0 THEN t END), MAX(t), COALESCE(SUM(tx), 0), COALESCE(SUM(rx), 0)
   FROM flows WHERE day = ? GROUP BY domain, app, category, mac`);
 const markSites = db.prepare(`INSERT OR REPLACE INTO flow_site_days (day) VALUES (?)`);
 const siteDaysBuilt = () => new Set(db.prepare(`SELECT day FROM flow_site_days`).all().map((r) => r.day));
@@ -106,9 +115,9 @@ function rebuildSites(day) {
   markSites.run(day);
 }
 const buildGroups = db.prepare(`
-  INSERT INTO flow_groups (day, app, category, mac, ldomain, bytes, first_seq)
+  INSERT INTO flow_groups (day, app, category, mac, ldomain, bytes, first_seq, down, up)
   SELECT day, app, category, mac, CASE WHEN app = 'Local network' THEN domain END AS ld,
-         COALESCE(SUM(bytes), 0), MIN(seq)
+         COALESCE(SUM(bytes), 0), MIN(seq), COALESCE(SUM(tx), 0), COALESCE(SUM(rx), 0)
   FROM flows WHERE day = ? GROUP BY app, category, mac, ld`);
 const upsertDay = db.prepare(
   `INSERT INTO flow_days (day, count, classifier) VALUES (?, ?, ?)
@@ -132,8 +141,8 @@ function toRow(r) {
     t: r.t,
     tEnd: r.t_end,
     bytes: r.bytes,
-    bytesRx: r.rx,
-    bytesTx: r.tx,
+    bytesRx: r.tx,
+    bytesTx: r.rx,
     service: r.service,
     action: r.action,
     mac: r.mac,
@@ -207,7 +216,8 @@ const inList = (days) => days.map(() => "?").join(",") || "NULL";
 // Groups for these days, in first-seen order across them (days ascending, then seq).
 export function groups(days, mac) {
   if (!days.length) return [];
-  const sql = `SELECT day, app, category, mac, ldomain, bytes, first_seq AS firstSeq FROM flow_groups
+  ensureSummaries(days);
+  const sql = `SELECT day, app, category, mac, ldomain, bytes, down, up, first_seq AS firstSeq FROM flow_groups
     WHERE day IN (${inList(days)})${mac ? " AND mac = ?" : ""} ORDER BY day, first_seq`;
   return db.prepare(sql).all(...days, ...(mac ? [mac] : []));
 }
@@ -217,7 +227,7 @@ export function groups(days, mac) {
 export function groupsInRange(days, mac, from, to) {
   if (!days.length) return [];
   const sql = `SELECT day, app, category, mac, CASE WHEN app = 'Local network' THEN domain END AS ldomain,
-      COALESCE(SUM(bytes), 0) AS bytes, MIN(seq) AS firstSeq
+      COALESCE(SUM(bytes), 0) AS bytes, COALESCE(SUM(tx), 0) AS down, COALESCE(SUM(rx), 0) AS up, MIN(seq) AS firstSeq
     FROM flows WHERE day IN (${inList(days)}) AND t >= ? AND t < ?${mac ? " AND mac = ?" : ""}
     GROUP BY day, app, category, mac, ldomain ORDER BY day, firstSeq`;
   return db.prepare(sql).all(...days, from, to, ...(mac ? [mac] : []));
@@ -284,7 +294,7 @@ export function latest(days, mac, filter, limit, span) {
 // the cache's order) — the order the report's in-memory version produced.
 const destStmt = new Map();
 export function destinations(days, mac, from, to, limit = 3) {
-  if (!days.length) return { domains: [], any: false };
+  if (!days.length) return { domains: [], rows: [], any: false };
   const key = days.length;
   let stmt = destStmt.get(key);
   if (!stmt) {
@@ -297,7 +307,7 @@ export function destinations(days, mac, from, to, limit = 3) {
     destStmt.set(key, stmt);
   }
   const rows = stmt.all(mac, from, to, ...days, limit);
-  return { domains: rows.map((r) => (r.domain == null ? undefined : r.domain)), any: rows.length > 0 };
+  return { domains: rows.map((r) => (r.domain == null ? undefined : r.domain)), rows: rows.map((r) => ({ domain: r.domain, bytes: r.b || 0 })), any: rows.length > 0 };
 }
 
 // Every destination of these days, one row per (domain, app, category, device) with its
@@ -314,19 +324,25 @@ export function siteSummary(days, mac, span) {
     args.push(mac);
   }
   const sql = `SELECT domain, app, category, MAX(ip) AS ip, mac, COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS bytes,
+      COALESCE(SUM(tx), 0) AS down, COALESCE(SUM(rx), 0) AS up,
       MIN(CASE WHEN t > 0 THEN t END) AS first, MAX(t) AS last
     FROM flows WHERE ${where} GROUP BY domain, app, category, mac`;
   return db.prepare(sql).all(...args);
 }
 
-// Whole days come from flow_sites; days written before it existed are built on first use.
-function ensureSites(days) {
+// Whole days come from flow_sites and flow_groups; days written before they had what is asked of
+// them are built on first use.
+function ensureSummaries(days) {
   const built = siteDaysBuilt();
   const missing = days.filter((d) => !built.has(d));
   if (!missing.length) return;
   db.exec("BEGIN");
   try {
-    for (const d of missing) rebuildSites(d);
+    for (const d of missing) {
+      deleteDayGroups.run(d);
+      buildGroups.run(d);
+      rebuildSites(d);
+    }
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -334,9 +350,19 @@ function ensureSites(days) {
   }
 }
 
+// One day every moment after an upgrade, so that no page waits for all of them at once.
+function backfillSummaries() {
+  const built = siteDaysBuilt();
+  const day = [...dayInfo().keys()].find((d) => !built.has(d));
+  if (!day) return;
+  ensureSummaries([day]);
+  setTimeout(backfillSummaries, 250).unref?.();
+}
+if (splitAdded) setTimeout(backfillSummaries, 5000).unref?.();
+
 function siteSummaryDays(days, mac) {
-  ensureSites(days);
-  const sql = `SELECT domain, app, category, mac, MAX(ip) AS ip, SUM(n) AS n, SUM(bytes) AS bytes, MIN(first) AS first, MAX(last) AS last
+  ensureSummaries(days);
+  const sql = `SELECT domain, app, category, mac, MAX(ip) AS ip, SUM(n) AS n, SUM(bytes) AS bytes, SUM(down) AS down, SUM(up) AS up, MIN(first) AS first, MAX(last) AS last
     FROM flow_sites WHERE day IN (${inList(days)})${mac ? " AND mac = ?" : ""} GROUP BY domain, app, category, mac`;
   return db.prepare(sql).all(...days, ...(mac ? [mac] : []));
 }
@@ -345,7 +371,7 @@ function siteSummaryDays(days, mac) {
 export function siteDevices(days, span) {
   if (!days.length) return [];
   if (!span) {
-    ensureSites(days);
+    ensureSummaries(days);
     return db.prepare(`SELECT mac, SUM(n) AS n FROM flow_sites WHERE day IN (${inList(days)}) GROUP BY mac ORDER BY n DESC`).all(...days);
   }
   const args = [...days];

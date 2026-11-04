@@ -60,6 +60,7 @@ function markersFor(start, end) {
 export function dayGrid({ bundle, start, end, now, today }) {
   const nameOf = insights.names();
   const hourly = new Map();
+  const hourlySplit = new Map();
   for (const b of bundle.buckets) {
     if (b[0] < start || b[0] >= end) continue;
     const h = Math.floor((b[0] - start) / HOUR);
@@ -67,13 +68,19 @@ export function dayGrid({ bundle, start, end, now, today }) {
     const arr = hourly.get(b[1]) || new Array(24).fill(0);
     arr[h] += b[4] + b[5];
     hourly.set(b[1], arr);
+    const split = hourlySplit.get(b[1]) || { down: new Array(24).fill(0), up: new Array(24).fill(0) };
+    split.down[h] += b[4];
+    split.up[h] += b[5];
+    hourlySplit.set(b[1], split);
   }
   const totals = new Map();
+  const splitTotals = new Map();
   // UniFi's usage record says wired or Wi-Fi for every day, even days NetLens took no
   // samples (before it was installed, or while it was off).
   const wiredFlag = new Map();
   for (const c of bundle.traffic) {
     totals.set(c.client.mac, c.usage.reduce((n, u) => n + (u.totalBytes || u.bytesRx + u.bytesTx), 0));
+    splitTotals.set(c.client.mac, { down: c.usage.reduce((n, u) => n + u.bytesRx, 0), up: c.usage.reduce((n, u) => n + u.bytesTx, 0) });
     if (typeof c.client.wired === "boolean") wiredFlag.set(c.client.mac, c.client.wired);
   }
   // Hours with 5-minute or hourly detail; the rest is "no data", never a quiet hour.
@@ -114,15 +121,25 @@ export function dayGrid({ bundle, start, end, now, today }) {
       hourly: hourly.get(mac) || new Array(24).fill(0),
       marks: marks.get(mac) || null,
       total: totals.get(mac) || (hourly.get(mac) || []).reduce((n, v) => n + v, 0),
+      down: splitTotals.get(mac)?.down ?? (hourlySplit.get(mac)?.down || []).reduce((n, v) => n + v, 0),
+      up: splitTotals.get(mac)?.up ?? (hourlySplit.get(mac)?.up || []).reduce((n, v) => n + v, 0),
+      hourlyDown: hourlySplit.get(mac)?.down || new Array(24).fill(0),
+      hourlyUp: hourlySplit.get(mac)?.up || new Array(24).fill(0),
     };
   });
   rows.sort((a, b) => b.total - a.total);
   const network = new Array(24).fill(0);
-  for (const r of rows) r.hourly.forEach((v, i) => (network[i] += v));
+  const networkDown = new Array(24).fill(0);
+  const networkUp = new Array(24).fill(0);
+  for (const r of rows) {
+    r.hourly.forEach((v, i) => (network[i] += v));
+    r.hourlyDown.forEach((v, i) => (networkDown[i] += v));
+    r.hourlyUp.forEach((v, i) => (networkUp[i] += v));
+  }
   return {
     hours: Array.from({ length: 24 }, (_, h) => start + h * HOUR),
     detail,
-    network: { hourly: network, total: rows.reduce((n, r) => n + r.total, 0) },
+    network: { hourly: network, hourlyDown: networkDown, hourlyUp: networkUp, total: rows.reduce((n, r) => n + r.total, 0), down: rows.reduce((n, r) => n + r.down, 0), up: rows.reduce((n, r) => n + r.up, 0) },
     rows,
   };
 }
@@ -133,9 +150,13 @@ export function networkMap({ bundle, now }) {
   const recent = latestSamples(now - 15 * 60 * 1000, now + 1);
   // Traffic in the last 15 minutes per device, as a rate.
   const rate = new Map();
+  const rateDown = new Map();
+  const rateUp = new Map();
   for (const b of bundle.buckets) {
     if (b[0] < now - 15 * 60 * 1000) continue;
     rate.set(b[1], (rate.get(b[1]) || 0) + b[4] + b[5]);
+    rateDown.set(b[1], (rateDown.get(b[1]) || 0) + b[4]);
+    rateUp.set(b[1], (rateUp.get(b[1]) || 0) + b[5]);
   }
   const devices = db.latestDeviceSamples();
   const gateway = devices.find((d) => /udm|ugw|uxg/.test(d.type || "")) || null;
@@ -172,6 +193,8 @@ export function networkMap({ bundle, now }) {
       essid: r.essid || null,
       uptime: r.uptime ?? null,
       bytes15m: rate.get(mac) || 0,
+      down15m: rateDown.get(mac) || 0,
+      up15m: rateUp.get(mac) || 0,
       health: healthOf(link, now, true),
     };
     const parent = nodes.get(r.ap_mac);
@@ -242,6 +265,14 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     !/^Calls\b/.test(app) && (/^(Network protocols|Unknown)$/.test(cat || "") || /^(HTTPS?|SSL\/TLS|DTLS|QUIC|DNS|Unidentified)$|\b(CDN|Akamai|CloudFront|Cloudflare|Fastly|Static Content|User Content|APIs?)\b/i.test(app));
   const nDays = days ? Number(days) : 1; // a range runs from midnight days-1 ago to now
   // Bars for a card: hours for one day, days for a range (UU-C-127).
+  // One direction of barsFor: a bucket's index 4 is down, 5 is up (UU-C-191).
+  const splitBars = (mac, i) => {
+    const n = days ? nDays : 24;
+    const step = days ? 24 * HOUR : HOUR;
+    const v = new Array(n).fill(0);
+    for (const b of bundle.buckets) if (b[1] === mac && b[0] >= start && b[0] < end) v[Math.max(0, Math.min(n - 1, Math.floor((b[0] - start) / step)))] += b[i];
+    return v;
+  };
   const barsFor = (mac) => {
     const n = days ? nDays : 24;
     const step = days ? 24 * HOUR : HOUR;
@@ -259,13 +290,17 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       const b = u.totalBytes || u.bytesRx + u.bytesTx;
       const app = appName(u.appId, u.catId);
       const cat = catName(u.catId);
-      const d = byDevice.get(mac) || { mac, bytes: 0, apps: new Map(), other: new Map() };
+      const d = byDevice.get(mac) || { mac, bytes: 0, down: 0, up: 0, apps: new Map(), other: new Map() };
       d.bytes += b;
+      d.down += u.bytesRx;
+      d.up += u.bytesTx;
       (plumbing(app, cat) ? d.other : d.apps).set(app, (d.apps.get(app) || d.other.get(app) || 0) + b);
       byDevice.set(mac, d);
       if (!plumbing(app, cat)) {
-        const a = byApp.get(app) || { app, cat, bytes: 0, devices: new Map() };
+        const a = byApp.get(app) || { app, cat, bytes: 0, down: 0, up: 0, devices: new Map() };
         a.bytes += b;
+        a.down += u.bytesRx;
+        a.up += u.bytesTx;
         a.devices.set(mac, (a.devices.get(mac) || 0) + b);
         byApp.set(app, a);
       }
@@ -311,7 +346,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       title: `Top devices ${when}: ${nameOf(topDevices[0].mac)} ${fmtGB(topDevices[0].bytes)}, ${nameOf(topDevices[1].mac)} ${fmtGB(topDevices[1].bytes)}${topDevices[2] ? ", …" : ""}`,
       text: null,
       // A device with no recognisable app is usually encrypted end to end (a VPN).
-      list: topDevices.map((d) => ({ label: nameOf(d.mac), sub: [mainApp(d) || topDestination(d) || whatItIs(d), `${pct(d.bytes)}% of all traffic`].join(" · "), value: fmtGB(d.bytes), mac: d.mac })),
+      list: topDevices.map((d) => ({ label: nameOf(d.mac), sub: [mainApp(d) || topDestination(d) || whatItIs(d), `${pct(d.bytes)}% of all traffic`].join(" · "), value: fmtGB(d.bytes), down: d.down, up: d.up, mac: d.mac })),
     });
   }
   const topApps = [...byApp.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 5);
@@ -325,7 +360,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       text: "Protocols and unclassified traffic left out.",
       list: topApps.map((a) => {
         const dev = [...a.devices.entries()].sort((x, y) => y[1] - x[1])[0];
-        return { label: a.app, sub: dev ? `mostly ${nameOf(dev[0])}` : a.cat, value: fmtGB(a.bytes), app: a.app };
+        return { label: a.app, sub: dev ? `mostly ${nameOf(dev[0])}` : a.cat, value: fmtGB(a.bytes), down: a.down, up: a.up, app: a.app };
       }),
     });
   }
@@ -360,6 +395,8 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
           text: `${fmtGB(d.bytes)}, against about ${fmtGB(usual)} on a normal ${days ? `${nDays} days` : "day"}${mainApp(d) ? `; mostly ${mainApp(d)}` : topDestination(d) ? `; ${topDestination(d)}` : ""}.`,
           mac: d.mac,
           hourly: barsFor(d.mac),
+          hourlyDown: splitBars(d.mac, 4),
+          hourlyUp: splitBars(d.mac, 5),
           barDays: days ? nDays : null,
         });
       }
@@ -394,6 +431,8 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
         (top.app === "Unidentified" ? " UniFi can't see what it is — encrypted traffic, for example a WireGuard VPN." : ""),
       mac: top.mac,
       hourly,
+      hourlyDown: splitBars(top.mac, 4),
+      hourlyUp: splitBars(top.mac, 5),
       barDays: days ? nDays : null,
       span: burst ? { from: Math.floor(top.start / HOUR) * HOUR, to: Math.floor(top.start / HOUR) * HOUR + HOUR } : null,
     });

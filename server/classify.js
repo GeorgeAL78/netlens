@@ -19,8 +19,10 @@ function hostsFromFlow(flow) {
 
 function bytesFromFlow(flow) {
   const td = flow.traffic_data || {};
-  const rx = Number(td.bytes_rx || 0);
-  const tx = Number(td.bytes_tx || 0);
+  // A connection record counts from the gateway: bytes_rx is what the device sent, bytes_tx what
+  // it was sent. A row's bytesRx is what the device received, as in UniFi's usage data (UU-C-191).
+  const rx = Number(td.bytes_tx || 0);
+  const tx = Number(td.bytes_rx || 0);
   return {
     bytes: Number(td.bytes_total ?? rx + tx),
     bytesRx: rx,

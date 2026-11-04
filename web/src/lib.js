@@ -4,6 +4,18 @@ import { useCallback, useEffect, useState } from "react";
 // hash router — the URL says which page, day, device and filters are open, so Back, reload
 // and bookmarks all work.
 
+// " · ↓ 6.9 GB ↑ 2.1 GB" for a tooltip (UU-C-191); nothing where there is no split.
+export const splitTip = (down, up) => (Number(down) || Number(up) ? ` · ↓ ${bytes(down || 0)} ↑ ${bytes(up || 0)}` : "");
+
+// What a session talked to (UU-C-192). UniFi does not link an app to its connections: "likely" is
+// a match by size and time, and a session nothing matched says so rather than guess.
+export function sessionDetail(s) {
+  const names = s.sites?.length ? s.sites.map((x) => (x.addresses > 1 ? `${x.name} (${x.addresses} addresses)` : x.name)).join(", ") : (s.domains || []).join(", ");
+  // A small session with no match is nothing to explain; a big one is (a VPN, usually).
+  if (s.domainsBasis === "none") return s.bytes >= 50e6 ? "no clear match in the connection records" : "";
+  return s.domainsBasis === "size" && names ? `likely ${names}` : names;
+}
+
 export async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,

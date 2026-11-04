@@ -299,3 +299,11 @@ table.t tr.click:hover td { background: #141b26; }
 /* A low-key action next to the real ones (UU-C-189). */
 .btn.quiet { background: transparent; border-color: transparent; color: var(--muted, inherit); }
 .btn.quiet:hover { border-color: var(--line, currentColor); }
+
+/* Down and up under a total (UU-C-191). */
+.updown { display: block; font-size: 11.5px; font-weight: 400; color: var(--dim); white-space: nowrap; text-align: inherit; margin-top: 2px; }
+.updown .size { font-weight: 400; }
+.updown .size.size-big .size-unit { font-weight: 400; }
+.updown-up { margin-left: 6px; }
+.stat .sub .updown { display: inline; margin: 0; font-size: inherit; color: inherit; }
+.tot .updown { font-size: 10.5px; }

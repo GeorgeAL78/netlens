@@ -396,7 +396,9 @@ export function listStoredClients() {
 
 // UniFi's names that say nothing to a person (UU-C-110). STUN is how FaceTime, WhatsApp, Meet
 // and other calls connect, and UniFi files most call traffic under it.
-const DISPLAY_NAMES = { STUN: "Calls (FaceTime, WhatsApp, Meet…)" };
+// UniFi's "Wi-Fi Calling" is IPsec-style traffic (UU-C-192): a phone's real calls look like this, and
+// so does a work laptop's VPN sending gigabytes, which is why it says both.
+const DISPLAY_NAMES = { STUN: "Calls (FaceTime, WhatsApp, Meet…)", "Wi-Fi Calling": "Wi-Fi Calling or VPN (IPsec)" };
 
 // UniFi files some apps under "TopSites-<subject>" buckets that can be wrong: ChatGPT and
 // DeepSeek sit in "TopSites-Adult" (UU-C-187). Such a category takes NetLens's own category when

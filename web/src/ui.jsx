@@ -249,6 +249,16 @@ export function Finder({ groups, placeholder, browse = false, className = "" }) 
 
 // A size with its unit made distinct (UU-C-178): GB and TB in bold with the unit in the accent
 // colour, MB and below plain with a quiet unit — "236 GB" cannot be read as MB next to "218 MB".
+// Down and up, under or beside a total (UU-C-191). Nothing where UniFi gave no split.
+export function Split({ down, up }) {
+  if (!Number(down) && !Number(up)) return null;
+  return (
+    <span className="updown">
+      ↓ <Bytes n={down || 0} /> <span className="updown-up">↑ <Bytes n={up || 0} /></span>
+    </span>
+  );
+}
+
 export function Bytes({ n, text: given }) {
   const text = given ?? bytes(n);
   const m = /^(.*?)\s([A-Z]+)$/.exec(text);

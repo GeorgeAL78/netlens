@@ -11,6 +11,13 @@
 // This exists because the owner should not have to find broken screens one screenshot
 // at a time: before UU-C-043, 384 of 461 device/app/day selections drew an empty chart
 // under a non-empty header, and each was only found when someone looked at it.
+import { annotateFlow } from "../server/classify.js";
+
+// A connection record counts from the gateway: bytes_tx reached the device (UU-C-191). A camera,
+// which uploads, read as downloading while this was the wrong way round.
+const dir = annotateFlow({ source: { mac: "aa" }, destination: {}, flow_start_time: 1, traffic_data: { bytes_total: 100, bytes_rx: 90, bytes_tx: 10 } });
+if (dir.bytesTx !== 90 || dir.bytesRx !== 10) throw new Error(`flow direction is swapped: down ${dir.bytesRx}, up ${dir.bytesTx}`);
+
 const base = (process.argv[2] || process.env.UNIFI_URL || "http://127.0.0.1:3780").replace(/\/$/, "");
 const TOL = (a, b) => Math.abs(a - b) <= Math.max(64 * 1024, 0.002 * Math.max(a, b));
 const sum = (list, f) => (list || []).reduce((n, x) => n + Number(f(x) || 0), 0);
@@ -49,6 +56,15 @@ function check(label, r, { appSelected }) {
     if (!TOL(listed, chart)) problems.push(`sessions ${MB(listed)} != chart ${MB(chart)}`);
   }
   if (r.timeline.some((b) => !(b.coverage > 0) && b.totalBytes > 0)) problems.push("bar drawn in an hour with no detail");
+  // Down + up is the total, wherever both are shown (UU-C-191).
+  if (!TOL(r.totals.rx + r.totals.tx, header)) problems.push(`down + up ${MB(r.totals.rx + r.totals.tx)} != header ${MB(header)}`);
+  const barSplit = sum(r.timeline, (b) => b.down) + sum(r.timeline, (b) => b.up);
+  if (!TOL(barSplit, chart)) problems.push(`bars' down + up ${MB(barSplit)} != chart ${MB(chart)}`);
+  // A session never names a destination bigger than itself (UU-C-192).
+  for (const s of r.sessions) {
+    if (s.source === "dpi" && (s.matchedBytes || 0) > 1.25 * s.bytes + 1024) problems.push(`${s.app} ${MB(s.bytes)} lists ${MB(s.matchedBytes)} of destinations`);
+    if (!TOL(Number(s.down || 0) + Number(s.up || 0), s.bytes)) problems.push(`${s.app} down + up != ${MB(s.bytes)}`);
+  }
   // "Not placed" is only allowed where time detail is actually missing. With full detail,
   // missing bytes mean the buckets lost them — the 5-minute seam loss (UU-F-049) hid
   // here as 14.7 GB of "unplaced" on a day with complete detail.

@@ -93,7 +93,7 @@ function Panel({ x, range, tab, all, onHide, hidden }) {
           ))}
         </div>
       )}
-      {d?.traffic && <div className="kv"><div><span>Traffic</span><span className="mono">{d.traffic.packetsTotal ?? "—"} packets · <Bytes n={d.traffic.bytesTx} /> ↑ <Bytes n={d.traffic.bytesRx} /> ↓{d.traffic.durationMs ? ` · ${(d.traffic.durationMs / 1000).toFixed(1)} s` : ""}</span></div></div>}
+      {d?.traffic && <div className="kv"><div><span>Traffic</span><span className="mono">{d.traffic.packetsTotal ?? "—"} packets · ↓ <Bytes n={d.traffic.down} /> ↑ <Bytes n={d.traffic.up} />{d.traffic.durationMs ? ` · ${(d.traffic.durationMs / 1000).toFixed(1)} s` : ""}</span></div></div>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {x.mac && <a className="btn primary" href={href("device", x.mac)}>{x.device}</a>}
         {outside && <a className="btn" href={href("security", null, { ip: outside, r: "90d" })}>Investigate {outside}{same > 1 ? ` (${same})` : ""}</a>}
