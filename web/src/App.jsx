@@ -18,16 +18,15 @@ import Sites from "./pages/Sites.jsx";
 // addresses (old links still work); a tab bar under the top bar switches between them.
 const TABS = [
   ["home", "Overview", ["home"]], // what happened
-  ["activity", "Activity", ["day", "usage", "sites", "alerts"]], // what devices were doing
+  ["activity", "Activity", ["day", "usage", "sites"]], // what devices were doing
   ["devices", "Devices", ["devices", "device"]], // what is on the network (UU-C-118)
   ["network", "Network", ["network"]], // is the equipment OK
   ["security", "Protection", ["security"]], // what got stopped
 ];
 const ACTIVITY = [
-  ["day", "By hour"],
+  ["day", "Timeline"], // every device across the day's hours
   ["usage", "Apps"], // apps, categories and the app picker (UU-C-106)
   ["sites", "Sites"], // every site each device connected to (UU-C-135)
-  ["alerts", "Limits"], // daily limits per app / device (UU-C-114)
 ];
 const LAST_ACTIVITY = "netlens.activity";
 const lastActivity = () => {
@@ -63,7 +62,7 @@ function Search() {
     { label: "Protocols and background", items: choices.filter(isPlumbing).map(app) },
   ];
   return (
-    <div ref={box} onFocus={load}>
+    <div ref={box} className="topsearch" onFocus={load}>
       <Finder groups={groups} placeholder="Find a device, app or category" />
     </div>
   );
@@ -178,13 +177,19 @@ export default function App() {
           {TABS.map(([id, label, pagesOf]) => (
             <a key={id} href={href(id === "activity" ? lastActivity() : id)} className={pagesOf.includes(route.page) ? "on" : ""}>
               {label}
-              {id === "activity" && fired > 0 && <span className="count" title="Limits reached today">{fired}</span>}
             </a>
           ))}
         </nav>
         <span className="spacer" />
         <Search />
         <Refresh onDone={() => setRefreshKey((k) => k + 1)} />
+        {/* Limits are rules you set, not activity (UU-C-200). */}
+        <a className={`iconbtn limits ${route.page === "alerts" ? "on" : ""}`} href={href("alerts")} aria-label={fired > 0 ? `Limits, ${fired} reached today` : "Limits"} title={fired > 0 ? `Limits · ${fired} reached today` : "Limits"}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9M10 20a2.2 2.2 0 0 0 4 0" />
+          </svg>
+          {fired > 0 && <span className="count">{fired}</span>}
+        </a>
         <a className={`iconbtn ${route.page === "settings" ? "on" : ""}`} href={href("settings")} aria-label="Settings" title="Settings">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
             <path d="M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4" />
@@ -194,9 +199,8 @@ export default function App() {
       {inActivity && (
         <nav className="subtabs" aria-label="Activity">
           {ACTIVITY.map(([id, label]) => (
-            <a key={id} href={href(id, null, id === "alerts" || !route.query.d ? null : { d: route.query.d })} className={route.page === id ? "on" : ""}>
+            <a key={id} href={href(id, null, !route.query.d ? null : { d: route.query.d })} className={route.page === id ? "on" : ""}>
               {label}
-              {id === "alerts" && fired > 0 && <span className="count" title="Limits reached today">{fired}</span>}
             </a>
           ))}
         </nav>

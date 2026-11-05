@@ -7,7 +7,7 @@ import { DayStep, Failed, Finder, Loading, Bytes, Split } from "../ui.jsx";
 // using secure DNS leaves only an address, which the watch list names where it can.
 
 const RANGES = [
-  ["day", "Day"],
+  ["day", "Today"],
   ["7d", "7 days"],
   ["30d", "30 days"],
 ];
@@ -115,7 +115,7 @@ export default function Sites({ route }) {
         </div>
         <div className="seg" role="group" aria-label="Range">
           {RANGES.map(([id, label]) => (
-            <button key={id} className={range === id ? "on" : ""} onClick={() => set({ r: id === "day" ? null : id })}>
+            <button key={id} className={range === id && (id !== "day" || date === todayKey()) ? "on" : ""} onClick={() => set({ r: id === "day" ? null : id, d: null })}>
               {label}
             </button>
           ))}

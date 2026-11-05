@@ -1,4 +1,9 @@
-### Added
-- Overview: a finding when two access points share or overlap a Wi-Fi channel for an hour or more.
-- Network: History on every switch, access point and gateway, over 24 hours, 7, 30 or 90 days: how busy each radio was, restarts, channel changes, port changes, new port errors and peak PoE.
-- Network: an access point's radios show their channel width.
+### Changed
+- Overview: Needs attention is now a separate switch that combines with the topic buttons, for example Wi-Fi problems only.
+- Periods read the same across pages: Today, 7 days, 30 days, and 90 days where the data goes back that far. Overview's 3 and 14 days are gone.
+- Activity's By hour is now called Timeline.
+- Limits moved out of Activity to a bell in the top bar, which shows how many were reached today.
+- The top bar stays tidy on narrow screens: search and its buttons share a second row.
+
+### Fixed
+- A sleeping PC that wakes for mail and updates no longer reads "dropped to 10 Mbps while in use" under Needs attention.

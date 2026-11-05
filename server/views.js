@@ -252,6 +252,7 @@ export function networkMap({ bundle, now }) {
 
 // ---- Home: findings, in plain language ----------------------------------------------------
 const GB = 1e9;
+const IN_USE_BYTES_PER_HOUR = 500e6;
 const fmtGB = (b) => (b >= GB ? `${(b / GB).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`);
 
 export function findings({ bundle, start, end, now, lostSpans, clock, appName, catName = () => "", dayKey, today, days }) {
@@ -504,14 +505,17 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       // next to nothing; a real cable or port problem shows up while the device is busy.
       const bytesIn = (a, b) => bundle.buckets.reduce((n, r) => (r[1] === c.mac && r[0] >= a && r[0] < b ? n + r[4] + r[5] : n), 0);
       const spans = c.lowSpans.map((sp) => ({ ...sp, perHour: bytesIn(sp.from, sp.to) / Math.max(1, (sp.to - sp.from) / HOUR) }));
-      const busy = spans.filter((sp) => sp.perHour > 5e6);
+      // A dozing PC wakes for mail and updates, up to about 200 MB an hour (UU-F-089). Somebody
+      // working over a bad link moves far more.
+      const busy = spans.filter((sp) => sp.perHour > IN_USE_BYTES_PER_HOUR);
       if (busy.length) {
         const b = busy[0];
         out.push({ id: `drop-${c.mac}`, kind: "wired", level: "warn", ts: b.from, title: `${c.name} dropped to ${b.speed} Mbps while in use`, text: `It normally runs at ${c.topSpeed} Mbps and was moving data at ${clock(b.from)} at the lower speed (${c.speedChanges} speed change${c.speedChanges === 1 ? "" : "s"}). Check the cable and port.`, mac: c.mac });
       } else {
         const last = spans[spans.length - 1];
         const when = spans.map((sp) => `${clock(sp.from)}${sp.recovered ? `–${clock(sp.to)}` : " on"}`).join(", ");
-        out.push({ id: `sleep-${c.mac}`, kind: "wired", level: "info", ts: last.from, title: `${c.name} slept ${when}`, text: `Its link drops to ${Math.min(...spans.map((sp) => sp.speed))} Mbps while it sleeps, which is normal for a PC that can be woken over the network; it runs at ${c.topSpeed} Mbps when awake.`, mac: c.mac });
+        // A PC that dozes all night would list a dozen times here.
+        out.push({ id: `sleep-${c.mac}`, kind: "wired", level: "info", ts: last.from, title: spans.length > 3 ? `${c.name} slept ${spans.length} times, ${clock(spans[0].from)} to ${clock(last.to)}` : `${c.name} slept ${when}`, text: `Its link drops to ${Math.min(...spans.map((sp) => sp.speed))} Mbps while it sleeps, which is normal for a PC that can be woken over the network; it runs at ${c.topSpeed} Mbps when awake.`, mac: c.mac });
       }
     } else if (c.speed != null && c.speed <= 100 && best > c.speed) {
       out.push({ id: `link-${c.mac}`, kind: "wired", level: "warn", ts: c.lastSeen, title: `${c.name} links at only ${c.speed} Mbps`, text: `It linked at ${best} Mbps in the last 30 days. ${c.switch || "Switch"}${c.port != null ? ` port ${c.port}` : ""}: a cable or port is the usual cause.`, mac: c.mac });

@@ -56,6 +56,18 @@ button { font: inherit; color: inherit; }
 .tabs a.on { background: var(--raised); color: var(--text); font-weight: 600; }
 .topbar .spacer { flex: 1; }
 .search { position: relative; min-width: 240px; }
+.topsearch { min-width: 0; }
+.iconbtn.limits { position: relative; }
+.iconbtn.limits .count { position: absolute; top: -6px; right: -6px; padding: 0 5px; border-radius: 99px; background: var(--warn); color: #2a1d05; font-size: 11px; font-weight: 600; line-height: 16px; }
+.finding-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.btn.look.on { border-color: var(--warn); color: var(--warn); background: var(--raised); }
+/* Too narrow for one row: search and the buttons share the second row, never split up (UU-C-200). */
+@media (max-width: 1100px) {
+  .topbar { row-gap: 8px; }
+  .topbar .spacer { flex: 0 0 100%; height: 0; }
+  .topsearch { flex: 1 1 150px; }
+  .topsearch .search { min-width: 0; }
+}
 .search input {
   width: 100%; height: 38px; padding: 0 12px 0 34px; border-radius: 10px; border: 1px solid var(--line-2);
   background: var(--panel); color: var(--text); font: inherit; outline: none;

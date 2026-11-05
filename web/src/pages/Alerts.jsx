@@ -108,7 +108,7 @@ export default function Alerts({ route }) {
     <div className="page">
       <div className="page-head">
         <div className="titles">
-          <span className="dim small">Activity · Limits</span>
+          <span className="dim small">Limits</span>
           <h1>Daily limits</h1>
           <span className="muted">NetLens checks with every update and flags a limit once a day when it is passed. It only watches — nothing is blocked.</span>
         </div>

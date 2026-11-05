@@ -16,13 +16,13 @@ which UniFi itself deletes after a day or a week.
 | | |
 | --- | --- |
 | ![Overview — findings and the internet line](assets/screenshots/home.png) | ![Day — every device by hour](assets/screenshots/day.png) |
-| **Overview** — findings in plain language, limits on top | **Activity › By hour** — every device by hour |
+| **Overview** — findings in plain language, limits on top | **Activity › Timeline** — every device by hour |
 | ![Usage — apps, categories and top apps](assets/screenshots/usage.png) | ![Device — traffic, signal and events](assets/screenshots/device.png) |
 | **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, apps, sessions and events |
 | ![Network — live map with access-point detail](assets/screenshots/network.png) | ![Protection — blocks and intrusions with filters](assets/screenshots/security.png) |
 | **Network** — live map: internet line, VMs and containers under their host, access point selected | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
 | ![Devices — new devices, maker and where they connect](assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) |
-| **Devices** — new devices, maker, switch port or access point, rename | **Activity › Limits** — daily limits per app and device |
+| **Devices** — new devices, maker, switch port or access point, rename | **Limits** — daily limits per app and device |
 | ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) | |
 | **Activity › Sites** — every site each device connected to, filtered by category | |
 
@@ -34,7 +34,7 @@ which UniFi itself deletes after a day or a week.
   Wi-Fi or slow wired links, failed Wi-Fi joins, blocked intrusions and firewall hits, new
   devices, equipment problems, a changed public IP — each linking to the details. Right now:
   provider, public IP, % up and how much of the line is in use.
-- **Activity › By hour** — every device as a row, the day's hours as columns: when each device was busy, when it
+- **Activity › Timeline** — every device as a row, the day's hours as columns: when each device was busy, when it
   roamed or reconnected, when something was blocked. Click any hour to see it in 5-minute steps.
 - **Network** — a live map: internet → gateway → switches and access points → devices. Wi-Fi
   devices show band and signal; virtual machines and containers fold under the server that runs
@@ -54,7 +54,7 @@ which UniFi itself deletes after a day or a week.
   each connection. Taken from UniFi's connection records, not a DNS log (UniFi has none). When a
   browser's secure DNS hides the name, NetLens names the address if it belongs to a watched
   site, from its own hourly lookups.
-- **Activity › Limits** — daily limits on time in use or data for an app or category on a device, e.g.
+- **Limits** (the bell in the top bar) — daily limits on time in use or data for an app or category on a device, e.g.
   YouTube on the kids' tablet over 2 hours. Flagged on Overview; watch only.
 - **Protection** — every block as one incident: intrusions (IPS signature, both ends, traffic)
   and devices stopped by your firewall rules or app blocks, with the rule's name, merged with

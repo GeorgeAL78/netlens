@@ -7,7 +7,6 @@ import { Bars, DayStep, Failed, Loading, levelColor, Bytes, Split } from "../ui.
 
 const FILTERS = [
   ["all", "All"],
-  ["look", "Needs attention"],
   ["usage", "Activity"],
   ["link", "Wi-Fi & wired"],
   ["security", "Protection"],
@@ -38,9 +37,7 @@ function actionsFor(f, date, days) {
 
 const RANGES = [
   ["today", "Today"],
-  ["3", "3 days"],
   ["7", "7 days"],
-  ["14", "14 days"],
   ["30", "30 days"],
 ];
 
@@ -50,12 +47,14 @@ export default function Home({ route }) {
   const picked = !days && route.query.d && route.query.d !== todayKey();
   const range = days || (picked ? "day" : "today");
   const [filter, setFilter] = useState("all");
+  // Seriousness and topic are separate questions, so they combine (UU-C-200).
+  const [onlyLook, setOnlyLook] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const path = days ? `/api/findings?days=${days}` : `/api/findings?date=${date}`;
   const { data, error, loading, reload } = useApi(path, range === "today" || days ? 5 * 60 * 1000 : 0);
   const list = (data?.findings || []).filter((f) => {
+    if (onlyLook && f.level === "info") return false;
     if (filter === "all") return true;
-    if (filter === "look") return f.level !== "info";
     if (filter === "link") return f.kind === "wifi" || f.kind === "wired" || f.kind === "device";
     return f.kind === filter;
   });
@@ -91,15 +90,17 @@ export default function Home({ route }) {
       {data && (
         <div className="split" style={{ gap: 28 }}>
           <div className="main" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 820 }}>
-            <div className="seg" role="group" aria-label="Show">
-              {FILTERS.map(([id, label]) => (
-                <button key={id} className={filter === id ? "on" : ""} onClick={() => setFilter(id)}>
-                  {label}
-                  {id === "look" && look ? ` · ${look}` : ""}
-                </button>
-              ))}
+            <div className="finding-filters">
+              <button className={`btn look ${onlyLook ? "on" : ""}`} aria-pressed={onlyLook} onClick={() => setOnlyLook((v) => !v)}>
+                Needs attention{look ? ` · ${look}` : ""}
+              </button>
+              <div className="seg" role="group" aria-label="Topic">
+                {FILTERS.map(([id, label]) => (
+                  <button key={id} className={filter === id ? "on" : ""} onClick={() => setFilter(id)}>{label}</button>
+                ))}
+              </div>
             </div>
-            {!list.length && <div className="card empty">Nothing to report{filter !== "all" ? " here" : ""} — a quiet {data.today ? "day so far" : "day"}.</div>}
+            {!list.length && <div className="card empty">{onlyLook ? `Nothing needs attention${filter !== "all" ? " here" : ""}.` : `Nothing to report${filter !== "all" ? " here" : ""} — a quiet ${data.today ? "day so far" : "day"}.`}</div>}
             {list.map((f) => (
               <article key={f.id} className={`finding lv-${f.level}`}>
                 <div className="meta">
@@ -206,7 +207,7 @@ export default function Home({ route }) {
             </div>
             <div className="card">
               <span className="dim small">Jump to</span>
-              <a href={href("day", null, { d: date })}>Activity by hour</a>
+              <a href={href("day", null, { d: date })}>Activity timeline</a>
               <a href={href("usage", null, { d: date })}>Apps and categories</a>
               <a href={href("network")}>Network map</a>
               <a href={href("security")}>Blocked traffic</a>

@@ -7,7 +7,7 @@ import { Bars, DayStep, Failed, Finder, Loading, Meter, Bytes, Split } from "../
 
 const HOUR = 3600000;
 const RANGES = [
-  ["day", "Day"],
+  ["day", "Today"],
   ["7d", "7 days"],
   ["30d", "30 days"],
   ["90d", "90 days"],
@@ -119,7 +119,7 @@ export default function Usage({ route }) {
         </div>
         <div className="seg" role="group" aria-label="Range">
           {RANGES.map(([id, label]) => (
-            <button key={id} className={range === id ? "on" : ""} onClick={() => go("usage", null, { ...q, r: id === "day" ? null : id, from: null, to: null })}>
+            <button key={id} className={range === id && (id !== "day" || isToday) ? "on" : ""} onClick={() => go("usage", null, { ...q, r: id === "day" ? null : id, d: null, from: null, to: null })}>
               {label}
             </button>
           ))}
