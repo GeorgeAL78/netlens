@@ -299,6 +299,11 @@ table.t tr.click:hover td { background: #141b26; }
 /* A low-key action next to the real ones (UU-C-189). */
 .btn.quiet { background: transparent; border-color: transparent; color: var(--muted, inherit); }
 .btn.quiet:hover { border-color: var(--line, currentColor); }
+.history-range { display: flex; flex-wrap: wrap; gap: 4px; }
+.history-range .btn.on { border-color: var(--accent-strong); color: var(--text); background: var(--raised); }
+.history-radio { display: flex; flex-direction: column; gap: 6px; }
+.history-radio .bars { gap: 1px; border-bottom: 1px solid var(--line-2); }
+.history-radio .bars .b > i { border-radius: 1px 1px 0 0; }
 
 /* Down and up under a total (UU-C-191). */
 .updown { display: block; font-size: 11.5px; font-weight: 400; color: var(--dim); white-space: nowrap; text-align: inherit; margin-top: 2px; }

@@ -110,7 +110,7 @@ app.use(express.json());
 // rebuild the page from scratch — and Node answers one request at a time, so a 5-second
 // 7-day report also held up every other page. GET answers of the read-only views are kept per
 // URL; any snapshot, background refresh or non-GET request starts a new version.
-const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/wifi-joins"]);
+const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/network/history", "/api/wifi-joins"]);
 const memo = new Map();
 let memoVersion = 0;
 let prewarmTimer = null;
@@ -1148,6 +1148,18 @@ app.get("/api/network", (_req, res) => {
     res.json({ tz, ts: now, ...views.networkMap({ bundle, now }) });
   } catch (err) {
     sendError(res, "GET /api/network", err);
+  }
+});
+
+// One switch, access point or gateway over time (UU-C-198): NetLens' samples, never UniFi.
+app.get("/api/network/history", (req, res) => {
+  try {
+    const mac = String(req.query.mac || "").toLowerCase();
+    if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) return res.status(400).json({ error: "mac required" });
+    const days = [1, 7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 1;
+    res.json({ tz, ...insights.deviceHistory(mac, days, Date.now()) });
+  } catch (err) {
+    sendError(res, "GET /api/network/history", err);
   }
 });
 

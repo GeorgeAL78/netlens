@@ -453,6 +453,26 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     });
   }
 
+  // Access points on one channel (UU-C-198). An hour or more, so a channel scan or a brief change
+  // stays quiet; only when a radio carries devices. Both busy is worth acting on.
+  for (const p of insights.channelOverlaps(start, end)) {
+    const minutes = Math.round(p.ms / 60000);
+    if (minutes < 60 || (!p.clientsA && !p.clientsB)) continue;
+    const same = p.a.channel === p.b.channel;
+    const now_ = today && p.current;
+    const verb = same ? (now_ ? "share" : "shared") : now_ ? "overlap on" : "overlapped on";
+    const span = minutes >= 2880 ? `${Math.round(minutes / 1440)} days` : minutes >= 120 ? `${Math.round(minutes / 60)} hours` : `${minutes} minutes`;
+    out.push({
+      id: `channel-${p.key}`,
+      kind: "wifi",
+      level: p.clientsA && p.clientsB ? "warn" : "info",
+      ts: p.ts,
+      title: `${p.a.name} and ${p.b.name} ${verb} ${p.band} GHz ${same ? `channel ${p.a.channel}` : `channels ${p.a.channel} and ${p.b.channel}`}`,
+      text: `For ${span} ${when}. Radios that can hear each other on one channel take turns to transmit, which slows both and can garble video. Give them separate channels in UniFi${p.band === "2.4" ? " (1, 6 and 11 do not overlap)" : ""}; a channel lock such as IoT Optimization can cause this.`,
+      device: p.a.mac,
+    });
+  }
+
   // Failed Wi-Fi joins (UU-C-146): only when it is worth a look — 20+ in the period, or more
   // failures than successful joins. One-offs stay on the device page.
   const JOIN_PHRASE = { login: "couldn't log in to Wi-Fi", refused: "was refused by an access point", noip: "joined Wi-Fi but got no IP address", dns: "joined Wi-Fi but its DNS lookups failed", other: "failed to join Wi-Fi" };

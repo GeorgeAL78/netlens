@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { ago, bytes, duration, go, href, shortDate, speed, useApi, wanNow, splitTip } from "../lib.js";
-import { Failed, Loading, healthClass, Bytes, Split } from "../ui.jsx";
+import { ago, bytes, clock, duration, go, href, shortDate, speed, useApi, wanNow, splitTip } from "../lib.js";
+import { Bars, Failed, Loading, healthClass, Bytes, Split } from "../ui.jsx";
 
 // Network — the map (UU-C-087): Internet → gateway → switches / access points → devices.
 // Chip size is traffic in the last 15 minutes; the dot is health. Click anything for its panel.
@@ -65,6 +65,76 @@ function NodeStat({ n }) {
     return <span className="mono small dim">{up}/{n.ports.length} ports up</span>;
   }
   return <span className="mono small dim">{n.clients.length} devices</span>;
+}
+
+// A switch, access point or gateway over time (UU-C-198), from NetLens' own samples.
+const HISTORY_DAYS = [[1, "24 hours"], [7, "7 days"], [30, "30 days"], [90, "90 days"]];
+const EVENT_CLASS = { bad: "bad", warn: "warn", ok: "ok" };
+
+function History({ mac }) {
+  const [days, setDays] = useState(1);
+  const { data, error, loading, reload } = useApi(`/api/network/history?mac=${encodeURIComponent(mac)}&days=${days}`);
+  const when = (t) => (days === 1 ? clock(t) : shortDate(t));
+  return (
+    <>
+      <h2>History</h2>
+      <div className="history-range" role="group" aria-label="History period">
+        {HISTORY_DAYS.map(([d, label]) => (
+          <button key={d} className={`btn quiet ${days === d ? "on" : ""}`} aria-pressed={days === d} onClick={() => setDays(d)}>{label}</button>
+        ))}
+      </div>
+      {error && <Failed error={error} reload={reload} />}
+      {!data && loading && <Loading />}
+      {data && !data.samples && <p className="dim small" style={{ margin: 0 }}>Nothing recorded in this period.</p>}
+      {data?.samples > 0 && (
+        <>
+          {data.radios.map((r) => (
+            <div key={r.radio} className="history-radio">
+              <div className="kv"><div><span>{r.band || r.radio} busy</span><span className="mono">{r.avgUtil ?? 0}% average · {r.peakUtil ?? 0}% peak</span></div></div>
+              <Bars
+                short
+                max={100}
+                items={r.series.map((s) => ({
+                  value: s.util || 0,
+                  nodata: s.util == null,
+                  tip: s.util == null ? `${when(s.t)}: nothing recorded` : `${when(s.t)}: ${s.util}% busy, ${s.peak}% peak, ${s.clients} clients, channel ${s.channel}`,
+                }))}
+              />
+            </div>
+          ))}
+          {data.ports.length > 0 && (
+            <table className="t">
+              <thead><tr><th>Port</th><th className="num">Changes</th><th className="num">New errors</th><th className="num">PoE peak</th></tr></thead>
+              <tbody>
+                {data.ports.map((p) => (
+                  <tr key={p.idx}>
+                    <td>{p.name || `Port ${p.idx}`}</td>
+                    <td className="num">{p.changes}</td>
+                    <td className={`num ${p.errors > 0 ? "warn" : "dim"}`}>{p.errors}</td>
+                    <td className="num dim">{p.poePeak ? `${p.poePeak.toFixed(1)} W` : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {data.events.length > 0 ? (
+            <div className="kv">
+              {data.events.map((e, i) => (
+                <div key={`${e.ts}-${i}`}>
+                  <span className="small dim">{when(e.ts)}</span>
+                  <span className={EVENT_CLASS[e.level] || ""} style={{ textAlign: "right" }}>{e.what}{e.detail ? <span className="dim small"> · {e.detail}</span> : null}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="dim small" style={{ margin: 0 }}>No restarts, channel changes or port changes in this period.</p>
+          )}
+          {data.moreEvents > 0 && <p className="dim small" style={{ margin: 0 }}>{data.moreEvents} earlier changes not listed.</p>}
+          <p className="dim small" style={{ margin: 0 }}>Recorded with every update, kept 90 days.</p>
+        </>
+      )}
+    </>
+  );
 }
 
 function Panel({ data, route }) {
@@ -150,7 +220,7 @@ function Panel({ data, route }) {
             <h2>Radios</h2>
             <div className="kv">
               {node.radios.map((r) => (
-                <div key={r.radio}><span>{BAND[r.radio] || r.radio} · ch {r.channel}</span><span className="mono">{r.clients ?? 0} clients · {r.util ?? 0}% busy</span></div>
+                <div key={r.radio}><span>{BAND[r.radio] || r.radio} · ch {r.channel}{r.width ? ` · ${r.width} MHz` : ""}</span><span className="mono" style={{ whiteSpace: "nowrap" }}>{r.clients ?? 0} clients · {r.util ?? 0}% busy</span></div>
               ))}
             </div>
             <h2>Clients by band</h2>
@@ -182,6 +252,7 @@ function Panel({ data, route }) {
             </table>
           </>
         )}
+        <History key={node.mac} mac={node.mac} />
       </aside>
     );
   }

@@ -133,6 +133,155 @@ export function equipment(start, end) {
   return { devices, step: stepFor(start, end), samples: rows.length };
 }
 
+// ---- access points on one channel (UU-C-198) --------------------------------------------
+
+const AIR_BAND = { ng: "2.4", na: "5", "6e": "6", "11be": "6" };
+
+// The stretch of channel numbers a radio occupies. UniFi reports the primary channel, so a wide
+// radio is found from the block it sits in. With no width recorded (samples from before UU-C-198)
+// only the channel itself counts, which can miss an overlap but never invents one.
+export function channelSpan(radio, channel, width) {
+  const band = AIR_BAND[radio];
+  if (!band || !channel) return null;
+  if (band === "2.4") {
+    const half = width >= 40 ? 6 : 2;
+    return [channel - half, channel + half];
+  }
+  if (!width) return [channel, channel];
+  const base = band === "6" ? 1 : channel >= 149 ? 149 : channel >= 100 ? 100 : 36;
+  const step = width / 5;
+  const lo = base + Math.floor((channel - base) / step) * step;
+  return [lo, lo + step - 1];
+}
+
+// A mesh access point has to use its parent's channel, so that is not something to fix. An old
+// sample has no flag: an uplink with no port is the wireless one.
+const onMesh = (d) => (d.data?.uplink ? (d.data.uplink.wireless ?? d.data.uplink.port == null) : false);
+
+// Pairs of access points whose radios overlapped, and for how long, in [start, end).
+export function channelOverlaps(start, end) {
+  const byTs = new Map();
+  for (const r of db.queryDeviceSamples(start, end)) {
+    if (r.type !== "uap" || r.state !== 1 || onMesh(r)) continue;
+    const list = byTs.get(r.ts);
+    if (list) list.push(r);
+    else byTs.set(r.ts, [r]);
+  }
+  const times = [...byTs.keys()].sort((a, b) => a - b);
+  const pairs = new Map();
+  times.forEach((ts, i) => {
+    // Time until the next sample; a long gap (NetLens was off) is not time on the channel.
+    const ms = Math.min((times[i + 1] ?? ts + SAMPLE_MIN * 60e3) - ts, 15 * 60e3);
+    const aps = byTs.get(ts).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    for (let x = 0; x < aps.length; x += 1) {
+      for (let y = x + 1; y < aps.length; y += 1) {
+        for (const ra of aps[x].data.radios || []) {
+          const rb = (aps[y].data.radios || []).find((o) => AIR_BAND[o.radio] && AIR_BAND[o.radio] === AIR_BAND[ra.radio]);
+          const sa = rb && channelSpan(ra.radio, ra.channel, ra.width);
+          const sb = rb && channelSpan(rb.radio, rb.channel, rb.width);
+          if (!sa || !sb || sa[1] < sb[0] || sb[1] < sa[0]) continue;
+          const key = `${aps[x].mac}-${aps[y].mac}-${AIR_BAND[ra.radio]}`;
+          const p = pairs.get(key) || { key, band: AIR_BAND[ra.radio], ms: 0, clientsA: 0, clientsB: 0, n: 0 };
+          p.ms += ms;
+          p.n += 1;
+          p.clientsA += ra.clients || 0;
+          p.clientsB += rb.clients || 0;
+          Object.assign(p, { ts, a: { mac: aps[x].mac, name: aps[x].name, channel: ra.channel }, b: { mac: aps[y].mac, name: aps[y].name, channel: rb.channel } });
+          pairs.set(key, p);
+        }
+      }
+    }
+  });
+  const last = times[times.length - 1];
+  return [...pairs.values()].map((p) => ({ ...p, current: p.ts === last }));
+}
+
+// ---- one device's history (UU-C-198) ------------------------------------------------------
+// NetLens' own record of what UniFi's Time Machine shows, which has no public API: a radio's
+// load and channel, a port's link and errors. SQLite only, like everything in this file.
+
+const linkText = (mbps) => (mbps >= 1000 ? `${+(mbps / 1000).toFixed(1)} Gbps` : `${mbps} Mbps`);
+const HISTORY_EVENTS = 60;
+
+export function deviceHistory(mac, days, now) {
+  const start = now - days * 24 * 3600e3;
+  const rows = db.queryDeviceSamplesOf(mac, start, now + 1);
+  const step = days <= 1 ? 1800e3 : days <= 7 ? 4 * 3600e3 : days <= 30 ? 12 * 3600e3 : 24 * 3600e3;
+  const count = Math.ceil((now - start) / step);
+  const events = [];
+  const radios = new Map();
+  const ports = new Map();
+  let prev = null;
+  for (const r of rows) {
+    if (prev && prev.state === 1 && r.state !== 1) events.push({ ts: r.ts, level: "bad", what: "Went offline" });
+    else if (prev && prev.state !== 1 && r.state === 1) events.push({ ts: r.ts, level: "ok", what: "Back online" });
+    // Timed from its uptime: the first sample after a restart can be hours later if NetLens was off.
+    else if (prev && r.uptime != null && prev.uptime != null && r.uptime < prev.uptime) events.push({ ts: Math.max(prev.ts, r.ts - r.uptime * 1000), level: "warn", what: "Restarted" });
+    const slot = Math.min(count - 1, Math.floor((r.ts - start) / step));
+    for (const x of r.data.radios || []) {
+      const h = radios.get(x.radio) || { radio: x.radio, band: bandName(x.radio), slots: Array.from({ length: count }, () => []), last: null };
+      h.slots[slot].push(x);
+      if (h.last?.channel != null && x.channel != null && h.last.channel !== x.channel) events.push({ ts: r.ts, level: "info", what: `${h.band} moved to channel ${x.channel}`, detail: `from channel ${h.last.channel}` });
+      else if (h.last?.width && x.width && h.last.width !== x.width) events.push({ ts: r.ts, level: "info", what: `${h.band} width changed to ${x.width} MHz`, detail: `from ${h.last.width} MHz` });
+      h.last = x;
+      radios.set(x.radio, h);
+    }
+    for (const x of r.data.ports || []) {
+      const p = ports.get(x.idx) || { idx: x.idx, name: x.name || null, errors: 0, poePeak: null, changes: 0, last: null };
+      const was = p.last;
+      // "Port 5" adds nothing after "Port 5 went down"; a name someone gave it does.
+      const own = x.name && x.name !== `Port ${x.idx}` ? x.name : null;
+      if (was && Boolean(was.up) !== Boolean(x.up)) {
+        p.changes += 1;
+        events.push(x.up ? { ts: r.ts, level: "info", what: `Port ${x.idx} came up`, detail: [own, x.speed ? linkText(x.speed) : null].filter(Boolean).join(" · ") } : { ts: r.ts, level: "warn", what: `Port ${x.idx} went down`, detail: own || "" });
+      } else if (was && x.up && was.speed && x.speed && was.speed !== x.speed) {
+        p.changes += 1;
+        events.push({ ts: r.ts, level: x.speed < was.speed ? "warn" : "info", what: `Port ${x.idx} changed to ${linkText(x.speed)}`, detail: [own, `from ${linkText(was.speed)}`].filter(Boolean).join(" · ") });
+      }
+      // The counters are running totals that restart with the device: only rises count.
+      if (was) p.errors += Math.max(0, (x.rxErrors || 0) + (x.txErrors || 0) - (was.rxErrors || 0) - (was.txErrors || 0));
+      if (x.poe != null) p.poePeak = Math.max(p.poePeak ?? 0, x.poe);
+      p.name = x.name || p.name;
+      p.last = x;
+      ports.set(x.idx, p);
+    }
+    prev = r;
+  }
+  const bandOrder = { ng: 0, na: 1 };
+  events.sort((a, b) => b.ts - a.ts);
+  return {
+    mac,
+    days,
+    start,
+    end: now,
+    step,
+    samples: rows.length,
+    radios: [...radios.values()]
+      .sort((a, b) => (bandOrder[a.radio] ?? 2) - (bandOrder[b.radio] ?? 2))
+      .map((h) => {
+        const all = h.slots.flat();
+        return {
+          radio: h.radio,
+          band: h.band,
+          channel: h.last?.channel ?? null,
+          width: h.last?.width ?? null,
+          avgUtil: avg(all.map((x) => x.util)),
+          peakUtil: all.length ? Math.max(...all.map((x) => x.util ?? 0)) : null,
+          series: h.slots.map((g, i) => ({
+            t: start + i * step,
+            util: g.length ? avg(g.map((x) => x.util)) : null,
+            peak: g.length ? Math.max(...g.map((x) => x.util ?? 0)) : null,
+            clients: g.length ? avg(g.map((x) => x.clients)) : null,
+            channel: g.length ? g[g.length - 1].channel : null,
+          })),
+        };
+      }),
+    ports: [...ports.values()].filter((p) => p.errors > 0 || p.changes > 0 || p.poePeak > 0).map(({ last, ...p }) => p).sort((a, b) => a.idx - b.idx),
+    events: events.slice(0, HISTORY_EVENTS),
+    moreEvents: Math.max(0, events.length - HISTORY_EVENTS),
+  };
+}
+
 // ---- Wi-Fi quality --------------------------------------------------------------------
 
 function roamsFor(start, end, mac) {

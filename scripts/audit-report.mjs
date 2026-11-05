@@ -175,6 +175,27 @@ for (const { hq, label, dayBar } of hourChecks) {
   if (Math.abs(r.totals.bytes - dayBar) > Math.max(1024, dayBar * 1e-6)) failures.push(`${label}: hour header ${r.totals.bytes} != day-view bar ${dayBar}`);
 }
 
+// A device's history (UU-C-198): every period, every switch, access point and gateway.
+{
+  const map = await get("/api/network");
+  for (const n of [map.gateway, ...map.nodes].filter(Boolean)) {
+    for (const days of [1, 7, 30, 90]) {
+      const h = await get(`/api/network/history?mac=${encodeURIComponent(n.mac)}&days=${days}`);
+      const label = `${n.name} history ${days}d`;
+      stats.screens += 1;
+      if (h.days !== days) failures.push(`${label}: answered for ${h.days} days`);
+      for (const r of h.radios) {
+        if (r.series.length !== Math.ceil((h.end - h.start) / h.step)) failures.push(`${label}: ${r.band} has ${r.series.length} bars`);
+        if (r.series.some((s) => s.util != null && (s.util < 0 || s.util > s.peak || s.peak > 100))) failures.push(`${label}: ${r.band} busy outside 0-100 or above its peak`);
+        const now = n.radios.find((x) => x.radio === r.radio);
+        if (now && now.channel !== r.channel) failures.push(`${label}: ${r.band} ends on channel ${r.channel}, map says ${now.channel}`);
+      }
+      if (h.ports.some((p) => p.errors < 0)) failures.push(`${label}: negative errors`);
+      if (h.events.some((e, i) => i && e.ts > h.events[i - 1].ts)) failures.push(`${label}: changes not newest first`);
+    }
+  }
+}
+
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);
 console.log(`chart places the whole header: ${stats.fullyPlaced}; part of it unplaced (no 5-minute detail): ${stats.partlyPlaced}`);
 console.log(`bytes without time detail: ${MB(stats.unplacedBytes)} of ${MB(stats.headerBytes)} summed over screens`);

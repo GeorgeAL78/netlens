@@ -711,6 +711,10 @@ export function queryDeviceSamples(start, end) {
   return db.prepare(`SELECT * FROM device_samples WHERE ts >= ? AND ts < ? ORDER BY ts`).all(start, end).map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
 }
 
+export function queryDeviceSamplesOf(mac, start, end) {
+  return db.prepare(`SELECT * FROM device_samples WHERE mac = ? AND ts >= ? AND ts < ? ORDER BY ts`).all(mac, start, end).map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
+}
+
 export function queryWanSamples(start, end) {
   return db.prepare(`SELECT * FROM wan_samples WHERE ts >= ? AND ts < ? ORDER BY ts`).all(start, end).map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
 }

@@ -60,6 +60,8 @@ function deviceRow(d, ts) {
       radios: (d.radio_table_stats || []).map((r) => ({
         radio: r.radio,
         channel: num(r.channel),
+        // The width is in the radio's settings, not its statistics (UU-C-198).
+        width: num((d.radio_table || []).find((x) => x.radio === r.radio)?.ht),
         util: num(r.cu_total),
         clients: num(r.num_sta),
       })),
@@ -73,7 +75,7 @@ function deviceRow(d, ts) {
         txErrors: num(p.tx_errors),
       })),
       uplink: d.uplink
-        ? { speed: num(d.uplink.speed), device: d.uplink.uplink_device_name || null, port: num(d.uplink.uplink_remote_port) }
+        ? { speed: num(d.uplink.speed), device: d.uplink.uplink_device_name || null, port: num(d.uplink.uplink_remote_port), wireless: d.uplink.type === "wireless" }
         : null,
       firmware: d.version || null,
       upgradable: Boolean(d.upgradable),
