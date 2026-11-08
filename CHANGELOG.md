@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.21.2 — 2026-11-08
+
+### Added
+- Equipment that UniFi reports as overheating is flagged: a red badge on its Network card, a line in its panel, and an Overview finding. Works for switches and access points without a temperature sensor, which still report this.
+
 ## 2.21.1 — 2026-11-08
 
 ### Changed

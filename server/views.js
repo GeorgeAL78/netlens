@@ -176,6 +176,7 @@ export function networkMap({ bundle, now, at = null }) {
     radios: d.data?.radios || [],
     ports: d.data?.ports || [],
     uplink: d.data?.uplink || null,
+    overheating: d.data?.overheating === true,
     clients: [],
   });
   const nodes = new Map();
@@ -632,6 +633,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
   // Equipment: offline, hot or with an update waiting.
   for (const d of db.latestDeviceSamples()) {
     if (d.state !== 1) out.push({ id: `dev-off-${d.mac}`, kind: "equipment", level: "bad", ts: d.ts, title: `${d.name || d.model} is offline`, text: "UniFi reports it disconnected.", device: d.mac });
+    else if (d.data?.overheating) out.push({ id: `dev-hot-${d.mac}`, kind: "equipment", level: "bad", ts: d.ts, title: `${d.name || d.model} is overheating`, text: `UniFi reports it overheating${d.temp != null ? ` at ${Math.round(d.temp)} °C` : ""}. Check its airflow and what is stacked on or around it.`, device: d.mac });
     else if (d.temp != null && d.temp >= 80) out.push({ id: `dev-hot-${d.mac}`, kind: "equipment", level: "warn", ts: d.ts, title: `${d.name || d.model} runs hot: ${Math.round(d.temp)} °C`, text: "Check its airflow.", device: d.mac });
     if (d.data?.upgradable) out.push({ id: `dev-fw-${d.mac}`, kind: "equipment", level: "info", ts: d.ts, title: `Firmware update available for ${d.name || d.model}`, text: d.data?.firmware ? `Running ${d.data.firmware}.` : "", device: d.mac });
   }

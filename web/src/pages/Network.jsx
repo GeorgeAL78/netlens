@@ -164,6 +164,7 @@ function Panel({ data, route }) {
         <h2 style={{ fontSize: 22 }}>{node.name}</h2>
         <div className="kv">
           <div><span>Status</span><span className={node.online ? "ok" : "bad"}>{node.online ? "online" : "offline"}</span></div>
+          {node.overheating && <div><span>Heat</span><span className="bad">UniFi reports it overheating</span></div>}
           {node.cpu != null && <div><span>CPU · memory</span><span className="mono">{Math.round(node.cpu)}% · {Math.round(node.mem ?? 0)}%</span></div>}
           {node.temp != null && <div><span>Temperature</span><span className={`mono ${node.temp >= 80 ? "warn" : ""}`}>{Math.round(node.temp)} °C</span></div>}
           <div><span>Up</span><span className="mono">{duration(node.uptime)}</span></div>
@@ -320,7 +321,8 @@ function NodeCard({ node, parent, kids, sel, selC }) {
         <strong className="eq-name">{node.name}</strong>
         {stat && <span className="mono small dim">{stat}</span>}
         {health && <span className={`mono small dim ${node.temp >= 80 || node.cpu >= 90 ? "warn" : ""}`}>{health}</span>}
-        {(weak > 0 || slow > 0) && <span className="eq-issues small">{[weak ? `${weak} weak signal` : null, slow ? `${slow} slow link` : null].filter(Boolean).join(" · ")}</span>}
+        {node.overheating && <span className="eq-issues hot small">overheating</span>}
+        {!node.overheating && (weak > 0 || slow > 0) && <span className="eq-issues small">{[weak ? `${weak} weak signal` : null, slow ? `${slow} slow link` : null].filter(Boolean).join(" · ")}</span>}
       </a>
       {parent && (
         <span className="eq-via small dim">

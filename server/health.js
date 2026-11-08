@@ -57,6 +57,8 @@ function deviceRow(d, ts) {
     clients: num(d.num_sta ?? d["user-num_sta"]),
     data: {
       temps: (d.temperatures || []).map((t) => ({ name: t.name, value: num(t.value) })),
+      // UniFi's own flag (UU-C-223): switches without a temperature sensor still report it.
+      overheating: d.overheating === true,
       radios: (d.radio_table_stats || []).map((r) => ({
         radio: r.radio,
         channel: num(r.channel),
