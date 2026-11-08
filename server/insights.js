@@ -476,9 +476,10 @@ export function logHistory(start, end, mac = null, now = Date.now()) {
   return out;
 }
 
-export function wifiList(start, end) {
+// `samples`: the period's client samples when the caller already has them (UU-C-217).
+export function wifiList(start, end, samples = null) {
   const nameOf = names();
-  const rows = db.queryClientSamples(start, end, null).filter((r) => !r.wired);
+  const rows = (samples || db.queryClientSamples(start, end, null)).filter((r) => !r.wired);
   const roams = roamsFor(start, end, null);
   const roamCount = new Map();
   for (const r of roams) roamCount.set(r.mac, (roamCount.get(r.mac) || 0) + 1);
@@ -514,10 +515,10 @@ export function wifiList(start, end) {
 // Wired devices (UU-C-078): the same 5-minute samples, wired = 1. Which switch and port,
 // link speed now and the slowest seen (a cable or port renegotiating down shows up here),
 // how often the speed changed, and how long the device was connected.
-export function wiredList(start, end) {
+export function wiredList(start, end, samples = null) {
   const nameOf = names();
   const byMac = new Map();
-  for (const r of db.queryClientSamples(start, end, null)) {
+  for (const r of samples || db.queryClientSamples(start, end, null)) {
     if (!r.wired) continue;
     const list = byMac.get(r.mac);
     if (list) list.push(r);

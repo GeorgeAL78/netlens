@@ -601,7 +601,13 @@ export function importRows(name, rows) {
 export function firstSeenSince(since) {
   const first = db.prepare(`SELECT MIN(ts) t FROM client_samples`).get()?.t;
   if (!first || first > since - 24 * 3600e3) return [];
-  return db.prepare(`SELECT mac, MIN(ts) ts, MAX(wired) wired FROM client_samples GROUP BY mac HAVING MIN(ts) >= ?`).all(since);
+  // The new devices from the (mac, ts) index alone, then the wired flag for just those: asking for
+  // MAX(wired) in one query read every sample of 90 days (2 s on the owner's server, UU-C-217).
+  const wiredOf = db.prepare(`SELECT MAX(wired) wired FROM client_samples WHERE mac = ?`);
+  return db
+    .prepare(`SELECT mac, MIN(ts) ts FROM client_samples GROUP BY mac HAVING MIN(ts) >= ?`)
+    .all(since)
+    .map((r) => ({ mac: r.mac, ts: r.ts, wired: wiredOf.get(r.mac).wired }));
 }
 
 export function saveLocalNames(source, pairs, ts = Date.now()) {

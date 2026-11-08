@@ -946,7 +946,7 @@ app.get("/api/wifi", (req, res) => {
   try {
     const { start, end } = rangeFor(req.query);
     const mac = String(req.query.mac || "").toLowerCase();
-    res.json({ start, end, tz, ...(mac ? insights.wifiClient(start, end, mac, tz) : { ...insights.wifiList(start, end), wired: insights.wiredList(start, end).clients }) });
+    res.json({ start, end, tz, ...(mac ? insights.wifiClient(start, end, mac, tz) : ((samples) => ({ ...insights.wifiList(start, end, samples), wired: insights.wiredList(start, end, samples).clients }))(db.queryClientSamples(start, end, null))) });
   } catch (err) {
     sendError(res, "GET /api/wifi", err);
   }

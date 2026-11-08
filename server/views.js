@@ -465,7 +465,9 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
 
   lap("burst");
   // Weak Wi-Fi: over an hour below −80 dBm.
-  for (const c of insights.wifiList(start, end).clients) {
+  // One read of the period's client samples for Wi-Fi and wired both (UU-C-217).
+  const clientSamples = db.queryClientSamples(start, end, null);
+  for (const c of insights.wifiList(start, end, clientSamples).clients) {
     const poorMin = Math.round(((c.badShare || 0) / 100) * c.minutes);
     if (poorMin < 60) continue;
     out.push({
@@ -521,8 +523,21 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
 
   lap("joins");
   // Slow or renegotiated wired links.
-  const wired = insights.wiredList(start, end).clients;
+  const wired = insights.wiredList(start, end, clientSamples).clients;
   const fastest = db.fastestWiredLinks(wired.map((c) => c.mac), end - 30 * 86400e3);
+  // Each slow stretch used to scan every 5-minute row of the period for its device: 5 s of a
+  // 30-day Overview on the owner's network (UU-C-217). The rows of the devices that have such
+  // stretches, grouped once, in their original order, so every sum comes out the same.
+  const slowMacs = new Set(wired.filter((c) => c.lowSpans?.length).map((c) => c.mac));
+  const rowsOf = new Map();
+  if (slowMacs.size) {
+    for (const r of bundle.buckets) {
+      if (!slowMacs.has(r[1])) continue;
+      const list = rowsOf.get(r[1]);
+      if (list) list.push(r);
+      else rowsOf.set(r[1], [r]);
+    }
+  }
   for (const c of wired) {
     // A device that never linked faster in 30 days (a TV, a smart plug) is at its usual speed:
     // nothing to fix (UU-C-189). A slow link matters when the device used to be faster.
@@ -531,7 +546,8 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     if (c.lowSpans?.length && c.topSpeed != null) {
       // Asleep or a bad link? A sleeping PC keeps its link at 10 Mbps (Wake-on-LAN) and moves
       // next to nothing; a real cable or port problem shows up while the device is busy.
-      const bytesIn = (a, b) => bundle.buckets.reduce((n, r) => (r[1] === c.mac && r[0] >= a && r[0] < b ? n + r[4] + r[5] : n), 0);
+      const mine = rowsOf.get(c.mac) || [];
+      const bytesIn = (a, b) => mine.reduce((n, r) => (r[0] >= a && r[0] < b ? n + r[4] + r[5] : n), 0);
       const spans = c.lowSpans.map((sp) => ({ ...sp, perHour: bytesIn(sp.from, sp.to) / Math.max(1, (sp.to - sp.from) / HOUR) }));
       // A dozing PC wakes for mail and updates, up to about 200 MB an hour (UU-F-089). Somebody
       // working over a bad link moves far more.
