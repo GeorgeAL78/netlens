@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { databaseDir } from "./paths.js";
+import { destinationsParallel } from "./destpool.js";
 
 // Connection records (flows) live here, not in the day JSON files (UU-C-062). They were
 // ~90% of each 35-40 MB day file and all of them sat in memory; a report now reads only
@@ -10,7 +11,8 @@ import { databaseDir } from "./paths.js";
 // A day is always written whole (replace), in the order the cache built it: `seq` is the
 // row's index in that day. Reads return rows in (day, seq) order, so every tie-break the
 // report had over the in-memory arrays is kept exactly.
-const db = new DatabaseSync(path.join(databaseDir, "flows.db"));
+const FLOWS_FILE = path.join(databaseDir, "flows.db");
+const db = new DatabaseSync(FLOWS_FILE);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA synchronous = NORMAL");
 db.exec(`
@@ -284,30 +286,25 @@ export function latest(days, mac, filter, limit, span) {
     if (!conds.length) return [];
     where += ` AND (${conds.join(" OR ")})`;
   }
-  const sql = `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id, policy
-    FROM flows WHERE ${where} ORDER BY t DESC, day, seq LIMIT ?`;
-  return db.prepare(sql).all(...args, limit).map(toRow);
+  // Ordering every row of 30 days to keep 80 cost half a second (UU-C-208). Find the time of
+  // the `limit`-th newest row by walking the time index, then take everything from that time
+  // on and order it here: the same rows, ties included, in the same order.
+  // One device or app: SQLite's own pick (its device or app index) is the narrow one.
+  const via = mac || filter ? "" : " INDEXED BY flows_t";
+  const cut = db.prepare(`SELECT t FROM flows${via} WHERE ${where} ORDER BY t DESC LIMIT 1 OFFSET ?`).get(...args, limit - 1);
+  const sql = `SELECT t, t_end, mac, app, category, domain, bytes, rx, tx, service, action, kind, confidence, source, ip, id, policy, day, seq
+    FROM flows${via} WHERE t >= ? AND ${where}`;
+  const rows = db.prepare(sql).all(cut ? cut.t : 0, ...args);
+  rows.sort((a, b) => b.t - a.t || (a.day < b.day ? -1 : a.day > b.day ? 1 : a.seq - b.seq));
+  return rows.slice(0, limit).map(toRow);
 }
 
-// What one device talked to in [from, to]: the top `limit` destinations by bytes, and
-// whether there was any. Equal byte counts rank by first appearance in time order (then
-// the cache's order) — the order the report's in-memory version produced.
-const destStmt = new Map();
-export function destinations(days, mac, from, to, limit = 3) {
-  if (!days.length) return { domains: [], rows: [], any: false };
-  const key = days.length;
-  let stmt = destStmt.get(key);
-  if (!stmt) {
-    stmt = db.prepare(
-      `SELECT domain, SUM(bytes) AS b, MIN(printf('%015d|%s|%09d', t, day, seq)) AS first
-       FROM flows INDEXED BY flows_dest
-       WHERE mac = ? AND t >= ? AND t <= ? AND t > 0 AND day IN (${inList(days)})
-       GROUP BY domain ORDER BY b DESC, first LIMIT ?`
-    );
-    destStmt.set(key, stmt);
-  }
-  const rows = stmt.all(mac, from, to, ...days, limit);
-  return { domains: rows.map((r) => (r.domain == null ? undefined : r.domain)), rows: rows.map((r) => ({ domain: r.domain, bytes: r.b || 0 })), any: rows.length > 0 };
+// What each device talked to in many time windows (UU-C-208): items [{ mac, from, to }] → one
+// list of { domain, bytes } per item, in order. The work is in destcore.js; destpool.js spreads
+// it over the CPU cores when the list is long. It replaced one query per session (up to 2000 for
+// a 30-day report, over half its time).
+export function destinationsMany(days, items, limit = 3) {
+  return destinationsParallel(db, FLOWS_FILE, days, items, limit);
 }
 
 // Every destination of these days, one row per (domain, app, category, device) with its

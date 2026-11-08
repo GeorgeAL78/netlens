@@ -178,9 +178,25 @@ const UNIDENTIFIED_CAT = 255;
 // `new Date("YYYY-MM-DDT00:00:00")` parses in the OS zone, not `tz`. With the two in
 // agreement that happens to be right; under TZ=UTC, midnight for "2026-09-18" resolved to
 // 2026-09-17T00:00Z — the wrong calendar day. Resolve the real offset instead.
+// One formatter per timezone and shape (UU-C-208). Building an Intl.DateTimeFormat costs far
+// more than formatting with it, and a 30-day report formats hundreds of thousands of times:
+// 1.9 s of an 8 s report went to building formatters. `tz` can change in Settings, so it is
+// part of the key.
+const formatters = new Map();
+function fmtOf(locale, options) {
+  const key = `${locale}|${JSON.stringify(options)}`;
+  let f = formatters.get(key);
+  if (!f) {
+    if (formatters.size > 64) formatters.clear();
+    f = new Intl.DateTimeFormat(locale, options);
+    formatters.set(key, f);
+  }
+  return f;
+}
+
 function tzOffsetMs(at) {
   const p = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", {
+    fmtOf("en-US", {
       timeZone: tz,
       hourCycle: "h23",
       year: "numeric",
@@ -215,7 +231,7 @@ function addDays(dateStr, n) {
 }
 
 function zonedDateKey(ms) {
-  return new Intl.DateTimeFormat("en-CA", {
+  return fmtOf("en-CA", {
     timeZone: tz,
     year: "numeric",
     month: "2-digit",
@@ -225,7 +241,7 @@ function zonedDateKey(ms) {
 
 function zonedHour(ms) {
   return Number(
-    new Intl.DateTimeFormat("en-US", {
+    fmtOf("en-US", {
       timeZone: tz,
       hour: "numeric",
       hourCycle: "h23",
@@ -466,7 +482,7 @@ function bucketTrafficRows(buckets, start, end, macFilter, maps, traffic) {
 }
 
 function zonedClock(ms) {
-  return new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms));
+  return fmtOf("en-US", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(ms));
 }
 
 function filterCategory(rows, category) {
@@ -503,7 +519,7 @@ function flowMatchesSelectedApp(classified, appId, maps, svcName) {
 }
 
 function formatClock(ms, timeZone) {
-  return new Intl.DateTimeFormat("en-US", {
+  return fmtOf("en-US", {
     timeZone,
     month: "short",
     day: "numeric",
@@ -1828,9 +1844,12 @@ function buildReport(query) {
     const listed = rawSessions.filter((s) => s.bytes >= SESSION_LIST_MIN);
     const small = rawSessions.filter((s) => s.bytes < SESSION_LIST_MIN);
     const sessionCount = listed.length;
-    // Destinations only for the sessions actually listed: one indexed query each.
+    // Destinations only for the sessions actually listed, read per device in one pass (UU-C-208).
     const kept = capSessions(listed);
-    matchDestinations(kept.filter((s) => s.source === "dpi"), (s) => flowstore.destinations(flowDays, s.mac, s.start - BUCKET_MS, s.end, 15).rows);
+    const dpiKept = kept.filter((s) => s.source === "dpi");
+    const dests = flowstore.destinationsMany(flowDays, dpiKept.map((s) => ({ mac: s.mac, from: s.start - BUCKET_MS, to: s.end })), 15);
+    const destOf = new Map(dpiKept.map((s, i) => [s, dests[i]]));
+    matchDestinations(dpiKept, (s) => destOf.get(s));
     const sessions = kept.map((s) => ({
       app: s.app,
       category: s.category,
