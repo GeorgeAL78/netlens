@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.17.2 — 2026-11-08
+
+### Fixed
+- Choosing another period, day or filter now shows that it is loading: a moving bar and "Updating…" under the top bar, and the old numbers dimmed until the new ones arrive.
+
 ## 2.17.1 — 2026-11-05
 
 ### Changed

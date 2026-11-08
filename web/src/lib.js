@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 // Shared plumbing for the redesigned interface (UU-C-087): API calls, formatting and a small
 // hash router — the URL says which page, day, device and filters are open, so Back, reload
@@ -30,19 +30,45 @@ export async function api(path, options = {}) {
   return json;
 }
 
+// How many pages are loading a new view while still showing the old one (UU-C-202): a new
+// period, day or filter. The shell shows a bar and dims the page, so old numbers never pass for
+// new ones. Background refreshes of the same view do not count — they would flash every 5 minutes.
+let pending = 0;
+const watchers = new Set();
+const setPending = (d) => {
+  pending = Math.max(0, pending + d);
+  watchers.forEach((w) => w());
+};
+export const usePending = () =>
+  useSyncExternalStore(
+    (w) => (watchers.add(w), () => watchers.delete(w)),
+    () => pending > 0,
+  );
+
 // Load JSON for `path`; reloads when `path` changes, and every `refreshMs` when given.
+// `stale` is true while the data shown belongs to an earlier `path`.
 export function useApi(path, refreshMs = 0) {
-  const [state, setState] = useState({ data: null, error: null, loading: true });
+  const [state, setState] = useState({ data: null, error: null, loading: true, of: null });
   const [tick, setTick] = useState(0);
+  const shown = useRef({ data: null, of: null });
+  shown.current = state;
   useEffect(() => {
     if (!path) return undefined;
     let live = true;
+    let counted = shown.current.data != null && shown.current.of !== path;
+    if (counted) setPending(1);
     setState((s) => ({ ...s, loading: true, error: null }));
+    const done = () => {
+      if (counted) setPending(-1);
+      counted = false;
+    };
     api(path)
-      .then((data) => live && setState({ data, error: null, loading: false }))
-      .catch((err) => live && setState((s) => ({ ...s, error: err.message, loading: false })));
+      .then((data) => live && setState({ data, error: null, loading: false, of: path }))
+      .catch((err) => live && setState((s) => ({ ...s, error: err.message, loading: false })))
+      .finally(done);
     return () => {
       live = false;
+      done();
     };
   }, [path, tick]);
   useEffect(() => {
@@ -50,7 +76,8 @@ export function useApi(path, refreshMs = 0) {
     const id = setInterval(() => setTick((t) => t + 1), refreshMs);
     return () => clearInterval(id);
   }, [refreshMs]);
-  return { ...state, reload: useCallback(() => setTick((t) => t + 1), []) };
+  const { of, ...rest } = state;
+  return { ...rest, stale: rest.loading && rest.data != null && of !== path, reload: useCallback(() => setTick((t) => t + 1), []) };
 }
 
 // ---- router ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ago, api, deviceGroups, href, go, isPlumbing, useRoute } from "./lib.js";
+import { ago, api, deviceGroups, href, go, isPlumbing, usePending, useRoute } from "./lib.js";
 import { Finder } from "./ui.jsx";
 import Home from "./pages/Home.jsx";
 import Day from "./pages/Day.jsx";
@@ -154,6 +154,7 @@ export default function App() {
   };
   const Page = pages[route.page] || Home;
   const fired = useFiredToday(route.page);
+  const updating = usePending();
   const inActivity = ACTIVITY.some(([id]) => id === route.page);
   useEffect(() => {
     if (!inActivity) return;
@@ -195,6 +196,13 @@ export default function App() {
             <path d="M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4" />
           </svg>
         </a>
+        {/* A new period or filter is loading; the numbers below are the old ones (UU-C-202). */}
+        {updating && (
+          <div className="updating" role="status">
+            <span className="updating-bar" aria-hidden="true" />
+            <span className="updating-note">Updating…</span>
+          </div>
+        )}
       </header>
       {inActivity && (
         <nav className="subtabs" aria-label="Activity">
@@ -205,7 +213,9 @@ export default function App() {
           ))}
         </nav>
       )}
-      <Page key={refreshKey} route={route} version={version} />
+      <div className={updating ? "page-wrap stale" : "page-wrap"} aria-busy={updating}>
+        <Page key={refreshKey} route={route} version={version} />
+      </div>
     </>
   );
 }
