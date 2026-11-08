@@ -145,20 +145,22 @@ export function dayGrid({ bundle, start, end, now, today }) {
 }
 
 // ---- Network: gateway → switches / access points → devices ------------------------------
-export function networkMap({ bundle, now }) {
+// `at` (UU-C-213): the map as it was then, from the samples around it; omitted = right now.
+export function networkMap({ bundle, now, at = null }) {
+  const t = at ?? now;
   const nameOf = insights.names();
-  const recent = latestSamples(now - 15 * 60 * 1000, now + 1);
+  const recent = latestSamples(t - 15 * 60 * 1000, t + 1);
   // Traffic in the last 15 minutes per device, as a rate.
   const rate = new Map();
   const rateDown = new Map();
   const rateUp = new Map();
   for (const b of bundle.buckets) {
-    if (b[0] < now - 15 * 60 * 1000) continue;
+    if (b[0] < t - 15 * 60 * 1000 || (at != null && b[0] >= at)) continue;
     rate.set(b[1], (rate.get(b[1]) || 0) + b[4] + b[5]);
     rateDown.set(b[1], (rateDown.get(b[1]) || 0) + b[4]);
     rateUp.set(b[1], (rateUp.get(b[1]) || 0) + b[5]);
   }
-  const devices = db.latestDeviceSamples();
+  const devices = at != null ? db.deviceSamplesAt(at) : db.latestDeviceSamples();
   const gateway = devices.find((d) => /udm|ugw|uxg/.test(d.type || "")) || null;
   const infra = devices.filter((d) => d !== gateway);
   const node = (d) => ({
@@ -195,7 +197,7 @@ export function networkMap({ bundle, now }) {
       bytes15m: rate.get(mac) || 0,
       down15m: rateDown.get(mac) || 0,
       up15m: rateUp.get(mac) || 0,
-      health: healthOf(link, now, true),
+      health: healthOf(link, t, true),
     };
     const parent = nodes.get(r.ap_mac);
     if (parent) parent.clients.push(c);
@@ -215,7 +217,7 @@ export function networkMap({ bundle, now }) {
   for (const n of nodes.values()) for (const c of n.clients) if (c.wired && uplinkKeys.has(`${n.mac}|${c.port}`)) misplaced.push([c, n]);
   for (const c of loose) if (c.wired) misplaced.push([c, null]);
   if (misplaced.length) {
-    const hits = db.lastExactPlaces(misplaced.map(([c]) => c.mac), now - 30 * 86400e3, uplinkKeys);
+    const hits = db.lastExactPlaces(misplaced.map(([c]) => c.mac), t - 30 * 86400e3, uplinkKeys, t);
     for (const [c, from] of misplaced) {
       const hit = hits.get(c.mac);
       const to = hit && nodes.get(hit.apMac);
@@ -230,7 +232,7 @@ export function networkMap({ bundle, now }) {
   }
   // Containers and VMs under the device that runs them (UU-C-165).
   const vendors = new Map(db.listStoredClients().map((c) => [String(c.mac).toLowerCase(), c.vendor || null]));
-  groupGuests([...nodes.values()], loose, vendors, now);
+  groupGuests([...nodes.values()], loose, vendors, t);
   // Wi-Fi: weak signal first, then by traffic; wired by traffic (UU-C-165).
   for (const n of nodes.values())
     n.clients.sort(
@@ -239,10 +241,12 @@ export function networkMap({ bundle, now }) {
         b.bytes15m - a.bytes15m ||
         String(a.name).localeCompare(String(b.name))
     );
-  const wan = db.latestWanSample();
+  const wan = at != null ? db.wanSampleAt(at) : db.latestWanSample();
+  const ipRuns = db.publicIpRuns(t - 90 * 86400e3).filter((r) => r.from <= t).map((r) => (r.to > t ? { ...r, to: t } : r));
   return {
+    at,
     wan: wan
-      ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, rxRate: wan.rx_rate, txRate: wan.tx_rate, ip: wan.data?.ip || null, ts: wan.ts, ipHistory: db.publicIpRuns(now - 90 * 86400e3).slice(-12).reverse() }
+      ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, rxRate: wan.rx_rate, txRate: wan.tx_rate, ip: wan.data?.ip || null, ts: wan.ts, ipHistory: ipRuns.slice(-12).reverse() }
       : null,
     gateway: gateway ? nodes.get(gateway.mac) : null,
     nodes: [...nodes.values()].filter((n) => !gateway || n.mac !== gateway.mac),

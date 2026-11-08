@@ -150,7 +150,7 @@ app.use(express.json());
 // rebuild the page from scratch — and Node answers one request at a time, so a 5-second
 // 7-day report also held up every other page. GET answers of the read-only views are kept per
 // URL; any snapshot, background refresh or non-GET request starts a new version.
-const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/network/history", "/api/wifi-joins"]);
+const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/network/history", "/api/network/timeline", "/api/wifi-joins"]);
 const memo = new Map();
 let memoVersion = 0;
 let prewarmTimer = null;
@@ -1241,13 +1241,26 @@ app.get("/api/findings", (req, res) => {
   }
 });
 
-app.get("/api/network", (_req, res) => {
+app.get("/api/network", (req, res) => {
   try {
     const now = Date.now();
-    const bundle = cache.readDays([zonedDateKey(now)]);
-    res.json({ tz, ts: now, ...views.networkMap({ bundle, now }) });
+    // ?at=<ms>: the map as it was then (UU-C-213), within the 90 days of samples.
+    const atRaw = Number(req.query.at);
+    const at = Number.isFinite(atRaw) && atRaw > 0 ? Math.min(now, Math.max(now - 90 * 86400e3, atRaw)) : null;
+    const bundle = cache.readDays([zonedDateKey(at ?? now)]);
+    res.json({ tz, ts: now, ...views.networkMap({ bundle, now, at }) });
   } catch (err) {
     sendError(res, "GET /api/network", err);
+  }
+});
+
+// The whole network over 1, 7, 30 or 90 days (UU-C-213): NetLens' samples, never UniFi.
+app.get("/api/network/timeline", (req, res) => {
+  try {
+    const days = [1, 7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 1;
+    res.json({ tz, ...insights.networkTimeline(days, Date.now()) });
+  } catch (err) {
+    sendError(res, "GET /api/network/timeline", err);
   }
 });
 

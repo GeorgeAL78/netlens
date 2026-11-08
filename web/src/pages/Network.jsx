@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { ago, bytes, clock, duration, go, href, shortDate, speed, useApi, wanNow, splitTip } from "../lib.js";
 import { Bars, Failed, Loading, healthClass, Bytes, Split } from "../ui.jsx";
 
@@ -14,6 +14,11 @@ const guestCount = (gs) => {
   const ct = gs.length - vm;
   return [vm ? `${vm} VM${vm === 1 ? "" : "s"}` : null, ct ? `${ct} container${ct === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ");
 };
+// The map's time (UU-C-213): null = live. Links on the map keep it, so a device picked on a past
+// map opens as it was then.
+const AtCtx = createContext(null);
+const mapHref = (at, q) => href("network", null, at ? { ...q, at } : q);
+
 const kindOf = (t) => (/uap/.test(t || "") ? "Access point" : /usw/.test(t || "") ? "Switch" : /udm|ugw|uxg/.test(t || "") ? "Gateway" : "Device");
 
 function size(b) {
@@ -24,12 +29,13 @@ function size(b) {
 // folded into a second chip that opens them.
 function Client({ c, sel, selC, guest = false }) {
   const [open, setOpen] = useState(false);
+  const at = useContext(AtCtx);
   const gs = c.guests || [];
   const wifi = !c.wired && c.radio;
   const chip = (
     <a
       className={`pill ${size(c.bytes15m)} ${sel ? "sel" : ""} ${guest ? "guest" : ""}`}
-      href={href("network", null, { c: c.mac })}
+      href={mapHref(at, { c: c.mac })}
       title={`${c.name} · ${bytes(c.bytes15m)} in 15 min${splitTip(c.down15m, c.up15m)}${c.note ? ` · probably here: ${c.note}` : ""}${c.placed ? ` · last seen here ${ago(c.placed.ts)} — UniFi now only knows it is ${c.placed.nowAt}` : ""}`}
     >
       <span className={`status-dot ${healthClass(c.health)}`} />
@@ -267,6 +273,7 @@ function portSpeed(node, idx) {
 }
 
 function Branch({ node, all, byName, gateway, sel, selC, root = false }) {
+  const mapAt = useContext(AtCtx);
   const parentOf = (n) => (n.uplink?.device && byName[n.uplink.device]) || gateway;
   const kids = all.filter((n) => n !== gateway && n !== node && parentOf(n) === node);
   const wired = node.clients.filter((c) => c.wired);
@@ -283,7 +290,7 @@ function Branch({ node, all, byName, gateway, sel, selC, root = false }) {
   const isAp = /uap/.test(node.type || "");
   return (
     <div className={`branch-tree ${root ? "root" : ""}`}>
-      <a className={`node ${root ? "gw" : ""} ${sel === node.mac ? "sel" : ""}`} href={href("network", null, { n: node.mac })}>
+      <a className={`node ${root ? "gw" : ""} ${sel === node.mac ? "sel" : ""}`} href={mapHref(mapAt, { n: node.mac })}>
         <span className="small" style={{ color: root ? "var(--accent)" : "var(--dim)" }}>
           {kindOf(node.type)}{node.online === false ? " · offline" : ""}
         </span>
@@ -336,13 +343,14 @@ function Branch({ node, all, byName, gateway, sel, selC, root = false }) {
 }
 
 function Tree({ data, sel, selC }) {
+  const at = useContext(AtCtx);
   const gateway = data.gateway;
   if (!gateway) return <div className="card empty">No gateway data yet.</div>;
   const all = [gateway, ...data.nodes];
   const byName = Object.fromEntries(all.map((n) => [n.name, n]));
   return (
     <div className="map">
-      <a className={`node internet ${sel === "internet" ? "sel" : ""}`} href={href("network", null, { n: "internet" })}>
+      <a className={`node internet ${sel === "internet" ? "sel" : ""}`} href={mapHref(at, { n: "internet" })}>
         <span className="dim small">Internet</span>
         <strong>{data.wan?.isp || "WAN"}</strong>
         <span className={`mono small ${data.wan?.status === "ok" ? "ok" : "warn"}`}>
@@ -368,8 +376,113 @@ function Tree({ data, sel, selC }) {
   );
 }
 
+// Pick the moment the map shows (UU-C-213): Live, or a day and time within the 90 days of
+// samples, stepped by 5 minutes or an hour. Times are this browser's clock.
+const pad = (n) => String(n).padStart(2, "0");
+const dateOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+function TimeBar({ at, route }) {
+  const now = Date.now();
+  const set = (t) => go("network", null, { ...route.query, at: t == null || t >= now - 60e3 ? null : Math.round(t) });
+  const cur = new Date(at ?? now);
+  const dateVal = dateOf(cur);
+  const timeVal = `${pad(cur.getHours())}:${pad(cur.getMinutes())}`;
+  const pick = (dv, tv) => {
+    const t = new Date(`${dv}T${tv || "00:00"}`).getTime();
+    if (Number.isFinite(t)) set(Math.max(now - 90 * 86400e3, Math.min(t, now)));
+  };
+  const step = (ms) => set((at ?? now) + ms);
+  return (
+    <div className="timebar" role="group" aria-label="Time the map shows">
+      <button className={`btn quiet ${at == null ? "on" : ""}`} aria-pressed={at == null} onClick={() => set(null)}>Live</button>
+      <button className="btn quiet" onClick={() => step(-3600e3)} title="One hour earlier">‹ 1 h</button>
+      <button className="btn quiet" onClick={() => step(-300e3)} title="Five minutes earlier">‹ 5 min</button>
+      <input type="date" value={dateVal} min={dateOf(new Date(now - 90 * 86400e3))} max={dateOf(new Date(now))} onChange={(e) => e.target.value && pick(e.target.value, timeVal)} aria-label="Day" />
+      <input type="time" step="300" value={timeVal} onChange={(e) => e.target.value && pick(dateVal, e.target.value)} aria-label="Time" />
+      <button className="btn quiet" disabled={at == null} onClick={() => step(300e3)} title="Five minutes later">5 min ›</button>
+      <button className="btn quiet" disabled={at == null} onClick={() => step(3600e3)} title="One hour later">1 h ›</button>
+    </div>
+  );
+}
+
+// The whole network over time (UU-C-213): the internet line, devices online and every change
+// on the equipment. A bar or a time opens the map as it was then.
+function NetworkTimeline({ route }) {
+  const [days, setDays] = useState(1);
+  const { data, error, loading, reload } = useApi(`/api/network/timeline?days=${days}`);
+  const when = (t) => (days === 1 ? clock(t) : shortDate(t));
+  const jump = (t) => go("network", null, { ...route.query, c: null, at: Math.min(Date.now() - 61e3, Math.round(t)) });
+  const sum = data?.summary;
+  const row = (label, note, items) => (
+    <div className="history-radio">
+      <div className="kv"><div><span>{label}</span><span className="mono small dim">{note}</span></div></div>
+      <Bars short items={items} />
+    </div>
+  );
+  return (
+    <section className="card net-timeline">
+      <div className="card-head">
+        <h2>Network history</h2>
+        <div className="history-range end" role="group" aria-label="History period">
+          {HISTORY_DAYS.map(([d, label]) => (
+            <button key={d} className={`btn quiet ${days === d ? "on" : ""}`} aria-pressed={days === d} onClick={() => setDays(d)}>{label}</button>
+          ))}
+        </div>
+      </div>
+      {error && <Failed error={error} reload={reload} />}
+      {!data && loading && <Loading />}
+      {data && !data.samples && <p className="dim small" style={{ margin: 0 }}>Nothing recorded in this period.</p>}
+      {data?.samples > 0 && (
+        <>
+          <div className="kv">
+            <div><span>Internet latency</span><span className="mono">{sum.latency != null ? `${sum.latency} ms average` : "—"}</span></div>
+            <div><span>Busiest internet moment</span><span className="mono">{sum.downPeak != null ? `↓ ${sum.downPeak} Mbps · ↑ ${sum.upPeak} Mbps` : "—"}</span></div>
+            <div><span>Most devices on</span><span className="mono">{sum.devicesPeak ?? "—"}</span></div>
+            <div><span>Internet outages</span><span className={`mono ${sum.outages ? "bad" : ""}`}>{sum.outages}</span></div>
+          </div>
+          {row("Internet down", "average Mbps per bar", data.series.map((p) => ({
+            value: p.down || 0,
+            nodata: p.down == null,
+            tip: p.down == null ? `${when(p.t)}: nothing recorded` : `${when(p.t)}: ↓ ${p.down} Mbps average, ${p.downPeak} peak · ↑ ${p.up} Mbps${p.outage ? " · internet trouble" : ""}`,
+            onClick: () => jump(p.t + data.step),
+          })))}
+          {row("Latency", "ms", data.series.map((p) => ({
+            value: p.latency || 0,
+            nodata: p.latency == null,
+            tip: p.latency == null ? `${when(p.t)}: nothing recorded` : `${when(p.t)}: ${p.latency} ms`,
+            onClick: () => jump(p.t + data.step),
+          })))}
+          {row("Devices on", "Wi-Fi + wired", data.series.map((p) => ({
+            value: p.devices || 0,
+            nodata: p.devices == null,
+            tip: p.devices == null ? `${when(p.t)}: nothing recorded` : `${when(p.t)}: ${p.devices} devices (${p.wifi} Wi-Fi, ${p.wired} wired)`,
+            onClick: () => jump(p.t + data.step),
+          })))}
+          {data.events.length > 0 ? (
+            <div className="kv net-events">
+              {data.events.map((e, i) => (
+                <div key={`${e.ts}-${i}`}>
+                  <button className="linkish small dim" onClick={() => jump(e.ts)} title="Show the map at this time">{when(e.ts)}</button>
+                  <span className={EVENT_CLASS[e.level] || ""} style={{ textAlign: "right" }}>
+                    <span className="dim">{e.who} · </span>{e.what}{e.detail ? <span className="dim small"> · {e.detail}</span> : null}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="dim small" style={{ margin: 0 }}>No restarts, outages, channel or port changes and no new devices in this period.</p>
+          )}
+          {data.moreEvents > 0 && <p className="dim small" style={{ margin: 0 }}>{data.moreEvents} earlier changes not listed.</p>}
+          <p className="dim small" style={{ margin: 0 }}>Click a bar or a time to see the map as it was then. Recorded with every update, kept 90 days.</p>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function Network({ route }) {
-  const { data, error, loading, reload } = useApi("/api/network", 60 * 1000);
+  const at = Number(route.query.at) > 0 ? Number(route.query.at) : null;
+  const { data, error, loading, reload } = useApi(at ? `/api/network?at=${at}` : "/api/network", at ? 0 : 60 * 1000);
+  const empty = at && data && !data.gateway && !data.nodes?.length && !data.loose?.length;
   const sel = route.query.n || null;
   const selC = route.query.c || null;
   return (
@@ -378,7 +491,7 @@ export default function Network({ route }) {
         <div className="page wide">
           <div className="page-head">
             <div className="titles">
-              <span className="dim small">Network · live, refreshes every minute</span>
+              <span className={`small ${at ? "warn" : "dim"}`}>{at ? `Network · as it was ${shortDate(at)}` : "Network · live, refreshes every minute"}</span>
               <h1>Your network</h1>
             </div>
             <div className="legend">
@@ -388,12 +501,17 @@ export default function Network({ route }) {
               <span className="dim">· bigger chip = more data in 15 min · Wi-Fi: band (GHz) · signal (dBm) · ↺ last seen there · click anything for details</span>
             </div>
           </div>
+          <TimeBar at={at} route={route} />
           {error && <Failed error={error} reload={reload} />}
           {!data && loading && <Loading />}
-          {data && <Tree data={data} sel={sel} selC={selC} />}
+          {empty && <div className="card empty">Nothing was recorded at that time: NetLens was not running, or it is before the 90 days it keeps.</div>}
+          <AtCtx.Provider value={at}>
+            {data && !empty && <Tree data={data} sel={sel} selC={selC} />}
+          </AtCtx.Provider>
+          <NetworkTimeline route={route} />
         </div>
       </div>
-      {data && <Panel data={data} route={route} />}
+      <AtCtx.Provider value={at}>{data && <Panel data={data} route={route} />}</AtCtx.Provider>
     </div>
   );
 }

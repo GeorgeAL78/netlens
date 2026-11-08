@@ -320,6 +320,14 @@ table.t tr.click:hover td { background: #141b26; }
 /* A low-key action next to the real ones (UU-C-189). */
 .btn.quiet { background: transparent; border-color: transparent; color: var(--muted, inherit); }
 .btn.quiet:hover { border-color: var(--line, currentColor); }
+/* Network history (UU-C-213): the map's time and the whole-network timeline. */
+.timebar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 14px; }
+.timebar input { background: var(--panel); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 13px; color-scheme: dark; }
+.net-timeline { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+.net-timeline .card-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.net-events > div { align-items: baseline; }
+.linkish { background: none; border: 0; padding: 0; font: inherit; cursor: pointer; text-align: left; }
+.linkish:hover { color: var(--accent); text-decoration: underline; }
 .history-range { display: flex; flex-wrap: wrap; gap: 4px; }
 .history-range .btn.on { border-color: var(--accent-strong); color: var(--text); background: var(--raised); }
 .history-radio { display: flex; flex-direction: column; gap: 6px; }

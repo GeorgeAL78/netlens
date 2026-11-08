@@ -194,6 +194,31 @@ for (const { hq, label, dayBar } of hourChecks) {
       if (h.events.some((e, i) => i && e.ts > h.events[i - 1].ts)) failures.push(`${label}: changes not newest first`);
     }
   }
+
+  // The whole network over time (UU-C-213): bars per period, sane values, and every change on a
+  // device's own history appears in the network's (when it is within the shown list).
+  for (const days of [1, 7, 30, 90]) {
+    const t = await get(`/api/network/timeline?days=${days}`);
+    const label = `network history ${days}d`;
+    stats.screens += 1;
+    if (t.series.length !== Math.ceil((t.end - t.start) / t.step)) failures.push(`${label}: ${t.series.length} bars`);
+    if (t.series.some((s) => (s.devices != null && (s.devices < 0 || s.wifi < 0 || s.wired < 0 || s.wifi + s.wired !== s.devices)) || (s.down != null && (s.down < 0 || s.down > s.downPeak)))) failures.push(`${label}: devices or speed out of range`);
+    if (t.events.some((e, i) => i && e.ts > t.events[i - 1].ts)) failures.push(`${label}: changes not newest first`);
+    if (!t.moreEvents) {
+      for (const n of [map.gateway, ...map.nodes].filter(Boolean)) {
+        const h = await get(`/api/network/history?mac=${encodeURIComponent(n.mac)}&days=${days}`);
+        const missing = h.events.filter((e) => !t.events.some((x) => x.ts === e.ts && x.what === e.what));
+        if (missing.length) failures.push(`${label}: ${missing.length} change(s) of ${n.name} missing, e.g. "${missing[0].what}"`);
+      }
+    }
+  }
+
+  // The map at a time (UU-C-213): asked for the newest sample's time, it is the live map.
+  const atNow = await get(`/api/network?at=${map.ts}`);
+  const chips = (m) => [m.gateway, ...m.nodes].filter(Boolean).flatMap((n) => n.clients.map((c) => `${n.mac}|${c.mac}|${c.port ?? ""}`)).concat((m.loose || []).map((c) => `-|${c.mac}`)).sort().join(",");
+  stats.screens += 1;
+  if (chips(atNow) !== chips(map)) failures.push("network map at now differs from the live map");
+  if (atNow.wan?.ip !== map.wan?.ip) failures.push("network map at now shows another public IP");
 }
 
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);

@@ -282,6 +282,87 @@ export function deviceHistory(mac, days, now) {
   };
 }
 
+// The whole network over time (UU-C-213): the internet line (speed, latency, outages, public
+// IP), how many devices were on, and one list of what changed on the switches, access points
+// and gateway (each one's deviceHistory), plus devices UniFi first saw in the period.
+export function networkTimeline(days, now) {
+  const start = now - days * 24 * 3600e3;
+  const step = days <= 1 ? 1800e3 : days <= 7 ? 4 * 3600e3 : days <= 30 ? 12 * 3600e3 : 24 * 3600e3;
+  const count = Math.ceil((now - start) / step);
+  const slot = (ts) => Math.min(count - 1, Math.max(0, Math.floor((ts - start) / step)));
+  const slots = Array.from({ length: count }, () => ({ down: [], up: [], latency: [], devices: [], wired: [], bad: 0 }));
+  const events = [];
+  const wan = db.wanSamplesIn(start, now + 1);
+  let prev = null;
+  for (const w of wan) {
+    const g = slots[slot(w.ts)];
+    if (w.rxRate != null) g.down.push(w.rxRate);
+    if (w.txRate != null) g.up.push(w.txRate);
+    if (w.latency != null) g.latency.push(w.latency);
+    const ok = !w.status || w.status === "ok";
+    if (!ok) g.bad += 1;
+    if (prev) {
+      const wasOk = !prev.status || prev.status === "ok";
+      if (wasOk && !ok) events.push({ ts: w.ts, level: "bad", who: "Internet", what: `Internet ${w.status}` });
+      else if (!wasOk && ok) events.push({ ts: w.ts, level: "ok", who: "Internet", what: "Internet back" });
+      if (w.ip && prev.ip && w.ip !== prev.ip) events.push({ ts: w.ts, level: "info", who: "Internet", what: `Public IP changed to ${w.ip}`, detail: `from ${prev.ip}` });
+    }
+    prev = w;
+  }
+  for (const c of db.clientCountsIn(start, now + 1)) {
+    const g = slots[slot(c.ts)];
+    g.devices.push(c.n);
+    g.wired.push(c.wired || 0);
+  }
+  const nameOf = names();
+  let more = 0;
+  for (const mac of db.deviceMacsIn(start, now + 1)) {
+    const h = deviceHistory(mac, days, now);
+    const who = nameOf(mac);
+    for (const e of h.events) events.push({ ...e, who });
+    more += h.moreEvents || 0;
+  }
+  for (const c of db.listStoredClients()) {
+    if (c.firstSeen && c.firstSeen >= start && c.firstSeen <= now) events.push({ ts: c.firstSeen, level: "info", who: nameOf(c.mac), mac: c.mac, what: "New device", detail: c.vendor || "" });
+  }
+  events.sort((a, b) => b.ts - a.ts);
+  const LIMIT = 120;
+  const mbps = (bytesPerSec) => (bytesPerSec == null ? null : Math.round((bytesPerSec * 8) / 1e5) / 10);
+  const series = slots.map((g, i) => {
+    const devices = avg(g.devices);
+    const wired = avg(g.wired);
+    return {
+      t: start + i * step,
+      down: g.down.length ? mbps(avg(g.down)) : null,
+      downPeak: g.down.length ? mbps(Math.max(...g.down)) : null,
+      up: g.up.length ? mbps(avg(g.up)) : null,
+      latency: g.latency.length ? avg(g.latency) : null,
+      devices: devices == null ? null : Math.round(devices),
+      wired: wired == null ? null : Math.round(wired),
+      wifi: devices == null ? null : Math.round(devices - (wired || 0)),
+      outage: g.bad > 0,
+    };
+  });
+  const seen = series.filter((s) => s.devices != null);
+  return {
+    days,
+    start,
+    end: now,
+    step,
+    samples: wan.length + seen.length,
+    series,
+    summary: {
+      latency: avg(wan.map((w) => w.latency).filter((x) => x != null)),
+      downPeak: wan.length ? mbps(wan.reduce((m, w) => Math.max(m, w.rxRate || 0), 0)) : null,
+      upPeak: wan.length ? mbps(wan.reduce((m, w) => Math.max(m, w.txRate || 0), 0)) : null,
+      devicesPeak: seen.length ? Math.max(...seen.map((s) => s.devices)) : null,
+      outages: events.filter((e) => e.who === "Internet" && e.level === "bad").length,
+    },
+    events: events.slice(0, LIMIT),
+    moreEvents: Math.max(0, events.length - LIMIT) + more,
+  };
+}
+
 // ---- Wi-Fi quality --------------------------------------------------------------------
 
 function roamsFor(start, end, mac) {

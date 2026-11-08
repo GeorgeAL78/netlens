@@ -691,16 +691,17 @@ export function fastestWiredLinks(macs, since) {
 
 // The last exact place of each wired device (UU-C-168): its newest sample since `since` on a
 // real port — not on a link to another UniFi device (`uplinkKeys`: "<parentMac>|<port>").
-export function lastExactPlaces(macs, since, uplinkKeys) {
+// `until`: only places recorded by then (a map of the past must not use later ones, UU-C-213).
+export function lastExactPlaces(macs, since, uplinkKeys, until = Number.MAX_SAFE_INTEGER) {
   const out = new Map();
   if (!macs.length) return out;
   const rows = db
     .prepare(
       `SELECT mac, ap_mac AS apMac, port, ts FROM client_samples
-       WHERE mac IN (${macs.map(() => "?").join(",")}) AND wired = 1 AND port IS NOT NULL AND ap_mac IS NOT NULL AND ts >= ?
+       WHERE mac IN (${macs.map(() => "?").join(",")}) AND wired = 1 AND port IS NOT NULL AND ap_mac IS NOT NULL AND ts >= ? AND ts <= ?
        ORDER BY ts DESC`
     )
-    .all(...macs, since);
+    .all(...macs, since, until);
   for (const r of rows) {
     if (out.has(r.mac) || uplinkKeys.has(`${r.apMac}|${r.port}`)) continue;
     out.set(r.mac, { apMac: r.apMac, port: r.port, ts: r.ts });
@@ -739,6 +740,31 @@ export function publicIpRuns(since) {
 export function latestWanSample() {
   const r = db.prepare(`SELECT * FROM wan_samples ORDER BY ts DESC LIMIT 1`).get();
   return r ? { ...r, data: JSON.parse(r.data || "{}") } : null;
+}
+
+// The network as it was at `at` (UU-C-213): each switch, access point and gateway's newest
+// sample at or before it, and the internet line's, within `window` (two missed updates).
+export function deviceSamplesAt(at, window = 30 * 60e3) {
+  return db
+    .prepare(`SELECT d.* FROM device_samples d JOIN (SELECT mac, MAX(ts) ts FROM device_samples WHERE ts <= ? AND ts > ? GROUP BY mac) m ON d.mac = m.mac AND d.ts = m.ts`)
+    .all(at, at - window)
+    .map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
+}
+export function wanSampleAt(at, window = 30 * 60e3) {
+  const r = db.prepare(`SELECT * FROM wan_samples WHERE ts <= ? AND ts > ? ORDER BY ts DESC LIMIT 1`).get(at, at - window);
+  return r ? { ...r, data: JSON.parse(r.data || "{}") } : null;
+}
+// The internet line over a period (UU-C-213), oldest first.
+export function wanSamplesIn(start, end) {
+  return db.prepare(`SELECT ts, status, latency, availability, rx_rate AS rxRate, tx_rate AS txRate, json_extract(data, '$.ip') AS ip FROM wan_samples WHERE ts >= ? AND ts < ? ORDER BY ts`).all(start, end);
+}
+// Devices seen at each update in a period, Wi-Fi and wired (UU-C-213).
+export function clientCountsIn(start, end) {
+  return db.prepare(`SELECT ts, COUNT(*) AS n, SUM(wired) AS wired FROM client_samples WHERE ts >= ? AND ts < ? GROUP BY ts ORDER BY ts`).all(start, end);
+}
+// Switches, access points and the gateway with any sample in a period (UU-C-213).
+export function deviceMacsIn(start, end) {
+  return db.prepare(`SELECT mac, MAX(ts) AS ts FROM device_samples WHERE ts >= ? AND ts < ? GROUP BY mac`).all(start, end).map((r) => r.mac);
 }
 
 export function firstClientSampleTs() {
