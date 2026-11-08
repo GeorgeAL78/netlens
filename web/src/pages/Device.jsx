@@ -200,7 +200,13 @@ export default function Device({ route }) {
             <div className="card tight stat">
               <span className="label">{isToday ? "Today" : "That day"}</span>
               <span className="value"><Bytes n={r.totals.bytes} /></span>
-              <span className="sub">↓ <Bytes n={r.totals.rx} /> · ↑ <Bytes n={r.totals.tx} /></span>
+              <span className="sub">
+                {r.uncounted ? (
+                  <>UniFi counted nothing · connection records: <Bytes n={r.uncounted.bytes} /></>
+                ) : (
+                  <>↓ <Bytes n={r.totals.rx} /> · ↑ <Bytes n={r.totals.tx} /></>
+                )}
+              </span>
             </div>
             {wired ? (
               <>
@@ -369,7 +375,13 @@ export default function Device({ route }) {
                 <h2>Apps</h2>
                 <a className="end small" href={href("usage", null, { d: date, mac })}>Details</a>
               </div>
-              {!r.apps.length && <span className="dim">No traffic counted.</span>}
+              {!r.apps.length && !r.uncounted && <span className="dim">No traffic counted.</span>}
+              {r.uncounted && (
+                <p className="dim small" style={{ margin: 0 }}>
+                  UniFi counted no internet traffic for this device, but its connection records show <Bytes n={r.uncounted.bytes} /> (↓ <Bytes n={r.uncounted.down} /> ↑ <Bytes n={r.uncounted.up} />) with {r.uncounted.apps.join(", ")}
+                  {r.uncounted.more ? ` and ${r.uncounted.more} more` : ""}. Connection records miss most of a long connection such as a VPN tunnel, so the real amount can be higher.
+                </p>
+              )}
               {r.apps.slice(0, 8).map((a) => (
                 <a key={a.appId} href={href("usage", null, { d: date, mac, app: a.appId })} style={{ color: "var(--text)", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 4 }}>
                   <span style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>

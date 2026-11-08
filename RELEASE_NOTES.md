@@ -1,2 +1,2 @@
-### Added
-- Settings › Access key: a read-only key so a script or an assistant can read NetLens's data as JSON without the password. It can only read: it cannot block devices, change settings or export history. Shown once; replace it or turn it off at any time.
+### Fixed
+- A device UniFi counted nothing for no longer reads as silent when its connection records show internet traffic: its page says how much, and with what, kept apart from UniFi's numbers. Typical for a container that talks only through a VPN tunnel.

@@ -1907,6 +1907,29 @@ function buildReport(query) {
       cur.byMac.set(row.mac, (cur.byMac.get(row.mac) || 0) + row.bytes);
       localByApp.set(row.app, cur);
     }
+    // Internet traffic UniFi's counters missed (UU-C-206). A container with its own address that
+    // only talks through a VPN tunnel read 0 B all day while its connection records showed PIA's
+    // API, the tunnel and DNS. Only for one device with nothing counted at all, and reported
+    // apart like local traffic: totals stay UniFi's. Connection records undercount long
+    // connections (a tunnel is one record), so this is a floor, not a measurement.
+    let uncounted = null;
+    if (mac && basis === "dpi" && !appSelected && (!category || category === "all") && totals.bytes === 0) {
+      const byApp = new Map();
+      let bytes = 0;
+      let down = 0;
+      let up = 0;
+      for (const row of flowGroups) {
+        if (row.category === "Local network") continue;
+        bytes += row.bytes || 0;
+        down += row.down || 0;
+        up += row.up || 0;
+        byApp.set(row.app, (byApp.get(row.app) || 0) + (row.bytes || 0));
+      }
+      if (bytes > 0) {
+        const apps = [...byApp.entries()].sort((a, b) => b[1] - a[1]).map(([app]) => app);
+        uncounted = { bytes, down, up, apps: apps.slice(0, 4), more: Math.max(0, apps.length - 4) };
+      }
+    }
     const localServices = [...localByApp.values()]
       .sort((a, b) => b.bytes - a.bytes)
       .slice(0, 12)
@@ -2029,6 +2052,7 @@ function buildReport(query) {
       localDown: basis === "flows" ? 0 : localDown,
       localUp: basis === "flows" ? 0 : localUp,
       localServices: basis === "flows" ? [] : localServices,
+      uncounted,
       unplacedBytes,
       lostSpans,
       dailyFill,
