@@ -20,7 +20,7 @@ which UniFi itself deletes after a day or a week.
 | ![Usage — apps, categories and top apps](assets/screenshots/usage.png) | ![Device — traffic, signal and events](assets/screenshots/device.png) |
 | **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, apps, sessions and events |
 | ![Network — live map with access-point detail](assets/screenshots/network.png) | ![Protection — blocks and intrusions with filters](assets/screenshots/security.png) |
-| **Network** — live map: internet line, VMs and containers under their host, access point selected | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
+| **Network** — a card per gateway, switch and access point: ports, devices by band and signal, problems counted; access point selected | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
 | ![Devices — new devices, maker and where they connect](assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) |
 | **Devices** — new devices, maker, switch port or access point, rename | **Limits** — daily limits per app and device |
 | ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) | |
@@ -36,10 +36,13 @@ which UniFi itself deletes after a day or a week.
   provider, public IP, % up and how much of the line is in use.
 - **Activity › Timeline** — every device as a row, the day's hours as columns: when each device was busy, when it
   roamed or reconnected, when something was blocked. Click any hour to see it in 5-minute steps.
-- **Network** — a live map: internet → gateway → switches and access points → devices. Wi-Fi
-  devices show band and signal; virtual machines and containers fold under the server that runs
-  them; a device the switch lost track of stays at its last known port (↺). Click the internet
-  line for its public-IP history, an access point for its radios, a switch for its ports.
+- **Network** — the internet line, then a card per gateway, switch and access point, from the
+  gateway outward: switch ports as tiles with the devices on each port, Wi-Fi devices by band
+  with their signal, problems counted on each card. Virtual machines and containers fold under
+  the server that runs them; a device the switch lost track of stays at its last known port (↺).
+  Pick any time in the last 90 days to see the network as it was then; **History** shows
+  internet speed, latency, devices online and every restart or change. Click the internet line
+  for its public-IP history, an access point for its radios, a switch for its ports.
 - **Device** — per device: traffic, Wi-Fi signal or wired link speed, apps, sessions, events,
   connection time, online history, CSV export, block / unblock.
 - **Devices** — every device UniFi knows, new ones first: maker, where it connected (switch port

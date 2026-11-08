@@ -1,2 +1,3 @@
 ### Changed
-- Overview builds much faster on networks with PCs that sleep often or many devices: the wired-link check no longer scans every 5-minute record once per slow stretch, Wi-Fi and wired read the samples once between them, and new devices are found from the index. Same numbers as before.
+- Network, redesigned: the internet line across the top, then one card per gateway, switch and access point, from the gateway outward. Switch ports are tiles, devices are listed by port or by Wi-Fi band with their signal, and each card counts its weak signals and slow links. A line under the title sums up the network.
+- Network: Map and History are two views instead of one long page; picking a time in History opens the map at that moment.

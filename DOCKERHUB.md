@@ -20,7 +20,7 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 | ![Usage — apps, categories and top apps](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/usage.png) | ![Device — traffic, signal and events](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/device.png) |
 | **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, apps, sessions and events |
 | ![Network — live map with access-point detail](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/network.png) | ![Protection — blocks and intrusions with filters](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/security.png) |
-| **Network** — live map: internet line, VMs and containers under their host, access point selected | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
+| **Network** — a card per gateway, switch and access point: ports, devices by band and signal, problems counted; access point selected | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
 | ![Devices — new devices, maker and where they connect](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) |
 | **Devices** — new devices, maker, switch port or access point, rename | **Activity › Limits** — daily limits per app and device |
 | ![Sites — every site each device connected to, by category](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/sites.png) | |
@@ -33,7 +33,7 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 - **Overview** — today's findings in plain language: big transfers, weak Wi-Fi, slow links, blocked
   threats, new devices, equipment problems.
 - **Activity › By hour** — devices × hours: when each device was busy, roamed or got blocked.
-- **Network** — live map with Wi-Fi band and signal, VMs and containers under their host, the internet line with public-IP history.
+- **Network** — a card per gateway, switch and access point with ports, Wi-Fi band and signal, VMs and containers under their host; the network at any time in the last 90 days, and its history.
 - **Device** — traffic, signal or link speed, apps, sessions, events, online history, block / unblock.
 - **Devices** — new devices first, with maker and switch port or access point; rename (saved in UniFi);
   offline devices checked on the network every 5 minutes; blocked devices listed with Unblock;

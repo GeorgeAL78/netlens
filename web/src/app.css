@@ -321,7 +321,51 @@ table.t tr.click:hover td { background: #141b26; }
 .btn.quiet { background: transparent; border-color: transparent; color: var(--muted, inherit); }
 .btn.quiet:hover { border-color: var(--line, currentColor); }
 /* Network history (UU-C-213): the map's time and the whole-network timeline. */
-.timebar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 14px; }
+.timebar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* The map, redesigned (UU-C-219): internet bar, then a card per gateway / switch / access point. */
+.net-toolbar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; margin: 0 0 16px; }
+.net-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; color: var(--muted); }
+.net-summary strong { color: var(--text); }
+.net-views { align-self: flex-end; }
+.netmap { display: flex; flex-direction: column; gap: 16px; }
+.netbar { display: flex; flex-wrap: wrap; gap: 10px 32px; padding: 14px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line-2); color: var(--text); }
+.netbar:hover { color: var(--text); border-color: var(--accent-strong); }
+.netbar.sel { outline: 2px solid var(--accent); }
+.netbar-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.eq-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap: 16px; align-items: start; }
+.eq-card { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 12px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line-2); min-width: 0; scroll-margin-top: 90px; }
+.eq-card.gw { border-color: var(--accent-strong); }
+.eq-card.sel { outline: 2px solid var(--accent); }
+.eq-card.offline { opacity: 0.7; border-style: dashed; }
+.eq-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; color: var(--text); }
+.eq-head:hover { color: var(--text); }
+.eq-head:hover .eq-name { color: var(--accent); }
+.eq-kind { grid-column: 1; color: var(--dim); }
+.eq-card.gw .eq-kind { color: var(--accent); }
+.eq-name { grid-column: 1; font-size: 16px; }
+.eq-head .mono { grid-column: 1; }
+.eq-issues { grid-column: 2; grid-row: 1 / span 2; align-self: start; padding: 2px 8px; border-radius: 99px; background: #2a2414; color: var(--warn); white-space: nowrap; }
+.eq-via a { color: var(--muted); text-decoration: underline; text-decoration-color: var(--line-2); }
+.eq-radios { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); }
+.portstrip { display: flex; flex-wrap: wrap; gap: 4px; }
+.port-tile { position: relative; min-width: 26px; height: 24px; padding: 0 4px; border-radius: 6px; display: inline-grid; place-items: center; font-size: 11px; font-family: var(--mono, ui-monospace, monospace); border: 1px solid var(--line-2); color: var(--faint); background: transparent; }
+.port-tile.up { background: #12301f; border-color: #1f5236; color: var(--ok); }
+.port-tile.slow { background: #2a2414; border-color: #5a4419; color: var(--warn); }
+.port-tile.link { box-shadow: inset 0 -2px 0 var(--accent-strong); }
+.port-tile i { position: absolute; top: -7px; right: -4px; font-style: normal; font-size: 10px; color: var(--accent); }
+.eq-group { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 10px; }
+.eq-port { display: flex; flex-direction: column; gap: 2px; }
+.eq-port-label { padding: 0 6px 2px; }
+.crow { display: flex; align-items: center; gap: 6px; border-radius: 8px; min-width: 0; }
+.crow.sel, .crow:has(.crow-main:hover) { background: var(--raised); }
+.crow-main, .crow.crow-eq { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; padding: 5px 6px; color: var(--text); }
+.crow-main:hover, .crow.crow-eq:hover { color: var(--text); background: var(--raised); border-radius: 8px; }
+.crow-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+.crow-meta { display: inline-flex; gap: 10px; flex-shrink: 0; white-space: nowrap; }
+.crow.guest .crow-name { font-size: 12.5px; color: var(--muted); }
+.crow-guests { align-self: flex-start; margin: 0 0 2px 22px; background: none; border: 1px dashed var(--line-2); border-radius: 6px; color: var(--muted); padding: 1px 6px; cursor: pointer; }
+.crow-guests.on { color: var(--text); }
+.crow-guestlist { margin: 0 0 4px 14px; padding-left: 8px; border-left: 1px dashed var(--line-2); }
 .timebar input { background: var(--panel); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px; padding: 5px 8px; font: inherit; font-size: 13px; color-scheme: dark; }
 .net-timeline { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
 .net-timeline .card-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }

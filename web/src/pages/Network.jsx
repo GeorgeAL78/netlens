@@ -21,58 +21,6 @@ const mapHref = (at, q) => href("network", null, at ? { ...q, at } : q);
 
 const kindOf = (t) => (/uap/.test(t || "") ? "Access point" : /usw/.test(t || "") ? "Switch" : /udm|ugw|uxg/.test(t || "") ? "Gateway" : "Device");
 
-function size(b) {
-  return b > 200e6 ? "l" : b > 10e6 ? "m" : "";
-}
-
-// A device chip. Wi-Fi chips show band and signal (UU-C-165); a host shows its VMs / containers
-// folded into a second chip that opens them.
-function Client({ c, sel, selC, guest = false }) {
-  const [open, setOpen] = useState(false);
-  const at = useContext(AtCtx);
-  const gs = c.guests || [];
-  const wifi = !c.wired && c.radio;
-  const chip = (
-    <a
-      className={`pill ${size(c.bytes15m)} ${sel ? "sel" : ""} ${guest ? "guest" : ""}`}
-      href={mapHref(at, { c: c.mac })}
-      title={`${c.name} · ${bytes(c.bytes15m)} in 15 min${splitTip(c.down15m, c.up15m)}${c.note ? ` · probably here: ${c.note}` : ""}${c.placed ? ` · last seen here ${ago(c.placed.ts)} — UniFi now only knows it is ${c.placed.nowAt}` : ""}`}
-    >
-      <span className={`status-dot ${healthClass(c.health)}`} />
-      {c.name}
-      {c.placed && <span className="dim small" aria-label="last seen here">↺</span>}
-      {wifi && <span className={`mono small ${c.signal != null && c.signal < -75 ? "warn" : "dim"}`}>{BAND_SHORT[c.radio] || ""}{c.signal != null ? ` · ${c.signal}` : ""}</span>}
-      {guest && c.kind && <span className="small dim">{KIND[c.kind]}{c.how === "presence" ? "?" : ""}</span>}
-    </a>
-  );
-  if (!gs.length) return chip;
-  return (
-    <span className="host">
-      {chip}
-      <button className={`pill guests ${open ? "on" : ""}`} onClick={() => setOpen((v) => !v)} aria-expanded={open} title="Virtual machines and containers on this device">
-        {open ? "▾" : "▸"} {guestCount(gs)}
-      </button>
-      {open && (
-        <span className="guest-list">
-          {gs.map((g) => <Client key={g.mac} c={g} sel={selC === g.mac} selC={selC} guest />)}
-        </span>
-      )}
-    </span>
-  );
-}
-
-function NodeStat({ n }) {
-  if (/uap/.test(n.type || "")) {
-    const busy = Math.max(0, ...n.radios.map((r) => r.util || 0));
-    return <span className="mono small dim">{n.clients.length} clients · {busy}% busy</span>;
-  }
-  if (/usw/.test(n.type || "")) {
-    const up = n.ports.filter((p) => p.up).length;
-    return <span className="mono small dim">{up}/{n.ports.length} ports up</span>;
-  }
-  return <span className="mono small dim">{n.clients.length} devices</span>;
-}
-
 // A switch, access point or gateway over time (UU-C-198), from NetLens' own samples.
 const HISTORY_DAYS = [[1, "24 hours"], [7, "7 days"], [30, "30 days"], [90, "90 days"]];
 const EVENT_CLASS = { bad: "bad", warn: "warn", ok: "ok" };
@@ -230,7 +178,7 @@ function Panel({ data, route }) {
               ))}
             </div>
             <h2>Clients by band</h2>
-            <div className="kv">{Object.entries(byBand).map(([b, n]) => <div key={b}><span>{b}</span><span className="mono">{n}</span></div>)}</div>
+            <div className="kv">{Object.entries(byBand).sort(([x], [y]) => parseFloat(x) - parseFloat(y)).map(([b, n]) => <div key={b}><span>{b}</span><span className="mono">{n}</span></div>)}</div>
             {Object.keys(bySsid).length > 0 && (
               <>
                 <h2>By Wi-Fi network</h2>
@@ -265,113 +213,256 @@ function Panel({ data, route }) {
   return null;
 }
 
-// The real topology (UU-C-093): each switch / AP hangs off the device and port it reports as its
-// uplink; wired devices are grouped by the port they are on.
+// The map, redesigned (UU-C-219): the internet line on top, then one card per gateway, switch and
+// access point, from the gateway outward. A card says what it hangs off ("via Office switch ·
+// port 3") instead of nesting, an access point lists its devices by band, a switch shows its
+// ports as tiles with the devices on each port below. Problems are counted on the card.
 function portSpeed(node, idx) {
   const p = (node.ports || []).find((x) => x.idx === idx);
   return p?.up && p.speed ? speed(p.speed) : null;
 }
+const isGw = (n) => /udm|ugw|uxg/.test(n.type || "");
+const isApN = (n) => /uap/.test(n.type || "");
+const trouble = (c) => c.health === "warn";
 
-function Branch({ node, all, byName, gateway, sel, selC, root = false }) {
-  const mapAt = useContext(AtCtx);
-  const parentOf = (n) => (n.uplink?.device && byName[n.uplink.device]) || gateway;
-  const kids = all.filter((n) => n !== gateway && n !== node && parentOf(n) === node);
-  const wired = node.clients.filter((c) => c.wired);
-  const wifi = node.clients.filter((c) => !c.wired);
-  const ports = new Map();
-  const at = (p) => {
-    const k = p ?? "?";
-    if (!ports.has(k)) ports.set(k, { kids: [], clients: [] });
-    return ports.get(k);
-  };
-  for (const k of kids) at(k.uplink?.port).kids.push(k);
-  for (const c of wired) at(c.port).clients.push(c);
-  const order = [...ports.keys()].sort((a, b) => (a === "?" ? 1 : b === "?" ? -1 : a - b));
-  const isAp = /uap/.test(node.type || "");
+// One device on a card: health, name, then band and signal or link speed, and traffic.
+function ClientRow({ c, sel, selC, guest = false }) {
+  const [open, setOpen] = useState(false);
+  const at = useContext(AtCtx);
+  const gs = c.guests || [];
+  const wifi = !c.wired;
+  const tip = `${c.name} · ${bytes(c.bytes15m)} in 15 min${splitTip(c.down15m, c.up15m)}${c.note ? ` · probably here: ${c.note}` : ""}${c.placed ? ` · last seen here ${ago(c.placed.ts)} — UniFi now only knows it is ${c.placed.nowAt}` : ""}`;
   return (
-    <div className={`branch-tree ${root ? "root" : ""}`}>
-      <a className={`node ${root ? "gw" : ""} ${sel === node.mac ? "sel" : ""}`} href={mapHref(mapAt, { n: node.mac })}>
-        <span className="small" style={{ color: root ? "var(--accent)" : "var(--dim)" }}>
-          {kindOf(node.type)}{node.online === false ? " · offline" : ""}
-        </span>
-        <strong>{node.name}</strong>
-        {root ? (
-          <span className="mono small dim">{node.cpu != null ? `CPU ${Math.round(node.cpu)}%` : ""}{node.temp != null ? ` · ${Math.round(node.temp)} °C` : ""} · up {duration(node.uptime)}</span>
-        ) : (
-          <NodeStat n={node} />
-        )}
-      </a>
-      {(order.length > 0 || (isAp && wifi.length > 0)) && (
-        <div className="ports">
-          {order.map((p) => {
-            const g = ports.get(p);
-            const sp = p === "?" ? null : portSpeed(node, p);
-            return (
-              <div key={p} className="port-row">
-                <span className="port-label">
-                  <strong>{p === "?" ? "Port ?" : `Port ${p}`}</strong>
-                  <span className="mono small dim">{[sp, g.clients.length > 1 ? `${g.clients.length} devices` : null].filter(Boolean).join(" · ")}</span>
-                </span>
-                <div className="port-body">
-                  {g.kids.map((k) => (
-                    <Branch key={k.mac} node={k} all={all} byName={byName} gateway={gateway} sel={sel} selC={selC} />
-                  ))}
-                  {g.clients.length > 0 && (
-                    <div className="chips">
-                      {g.clients.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-          {isAp && wifi.length > 0 && (
-            <div className="port-row">
-              <span className="port-label">
-                <strong>Wi-Fi</strong>
-                <span className="mono small dim">{wifi.length} devices</span>
-              </span>
-              <div className="port-body">
-                <div className="chips">{wifi.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}</div>
-              </div>
-            </div>
-          )}
-        </div>
+    <>
+      <div className={`crow ${sel ? "sel" : ""} ${guest ? "guest" : ""}`}>
+        <a className="crow-main" href={mapHref(at, { c: c.mac })} title={tip}>
+          <span className={`status-dot ${healthClass(c.health)}`} />
+          <span className="crow-name">{c.name}</span>
+          {c.placed && <span className="dim small" title="Last seen on this port">↺</span>}
+          {guest && c.kind && <span className="small dim">{KIND[c.kind]}{c.how === "presence" ? "?" : ""}</span>}
+          <span className="crow-meta mono small">
+            {c.bytes15m > 0 && <span className="dim">{bytes(c.bytes15m)}</span>}
+            {wifi ? (
+              <span className={c.signal != null && c.signal < -75 ? "warn" : ""}>{c.signal != null ? `${c.signal} dBm` : "—"}</span>
+            ) : (
+              c.speed != null && <span className={c.speed <= 100 ? "warn" : "dim"}>{speed(c.speed)}</span>
+            )}
+          </span>
+        </a>
+      </div>
+      {gs.length > 0 && (
+        <button className={`crow-guests small ${open ? "on" : ""}`} onClick={() => setOpen((v) => !v)} aria-expanded={open} title="Virtual machines and containers on this device">
+          {open ? "▾" : "▸"} {guestCount(gs)}
+        </button>
       )}
+      {open && <div className="crow-guestlist">{gs.map((g) => <ClientRow key={g.mac} c={g} sel={selC === g.mac} selC={selC} guest />)}</div>}
+    </>
+  );
+}
+
+// A switch's or gateway's ports as tiles: up, down, slow, and what is on each.
+function PortStrip({ node, onPort }) {
+  if (!node.ports?.length) return null;
+  return (
+    <div className="portstrip" role="list" aria-label={`${node.name} ports`}>
+      {node.ports.map((p) => {
+        const on = onPort.get(p.idx);
+        const what = on ? [...on.kids.map((k) => k.name), ...on.clients.map((c) => c.name)] : [];
+        const isUp = node.uplink?.port === p.idx && !isGw(node);
+        const cls = !p.up ? "down" : p.speed && p.speed <= 100 ? "slow" : "up";
+        return (
+          <span key={p.idx} role="listitem" className={`port-tile ${cls} ${on?.kids.length ? "link" : ""}`} title={`Port ${p.idx}${p.name && p.name !== `Port ${p.idx}` ? ` (${p.name})` : ""} · ${p.up ? speed(p.speed) : "down"}${isUp ? " · uplink" : ""}${what.length ? ` · ${what.join(", ")}` : ""}`}>
+            {p.idx}
+            {isUp && <i aria-hidden="true">↑</i>}
+          </span>
+        );
+      })}
     </div>
   );
 }
 
-function Tree({ data, sel, selC }) {
+function NodeCard({ node, parent, kids, sel, selC }) {
   const at = useContext(AtCtx);
+  const ap = isApN(node);
+  const wired = node.clients.filter((c) => c.wired);
+  const wifi = node.clients.filter((c) => !c.wired);
+  const weak = wifi.filter(trouble).length;
+  const slow = wired.filter(trouble).length;
+  // Ports: child equipment and wired devices on each.
+  const onPort = new Map();
+  const slot = (p) => {
+    const k = p ?? "?";
+    if (!onPort.has(k)) onPort.set(k, { kids: [], clients: [] });
+    return onPort.get(k);
+  };
+  for (const k of kids) slot(k.uplink?.port).kids.push(k);
+  for (const c of wired) slot(c.port).clients.push(c);
+  const portOrder = [...onPort.keys()].sort((a, b) => (a === "?" ? 1 : b === "?" ? -1 : a - b));
+  // Wi-Fi devices by band, in the radios' order.
+  const bands = new Map();
+  for (const r of node.radios || []) if (BAND[r.radio] && !bands.has(BAND[r.radio])) bands.set(BAND[r.radio], []);
+  for (const c of wifi) {
+    const b = BAND[c.radio] || "Wi-Fi";
+    if (!bands.has(b)) bands.set(b, []);
+    bands.get(b).push(c);
+  }
+  const stat = isGw(node)
+    ? [node.cpu != null ? `CPU ${Math.round(node.cpu)}%` : null, node.temp != null ? `${Math.round(node.temp)} °C` : null, `up ${duration(node.uptime)}`].filter(Boolean).join(" · ")
+    : ap
+      ? `${wifi.length} on Wi-Fi · ${Math.max(0, ...node.radios.map((r) => r.util || 0))}% busy`
+      : `${(node.ports || []).filter((p) => p.up).length}/${(node.ports || []).length} ports up`;
+  return (
+    <section id={`node-${node.mac}`} className={`eq-card ${isGw(node) ? "gw" : ""} ${sel === node.mac ? "sel" : ""} ${node.online === false ? "offline" : ""}`}>
+      <a className="eq-head" href={mapHref(at, { n: node.mac })}>
+        <span className="eq-kind small">{kindOf(node.type)}{node.online === false ? " · offline" : ""}</span>
+        <strong className="eq-name">{node.name}</strong>
+        <span className="mono small dim">{stat}</span>
+        {(weak > 0 || slow > 0) && <span className="eq-issues small">{[weak ? `${weak} weak signal` : null, slow ? `${slow} slow link` : null].filter(Boolean).join(" · ")}</span>}
+      </a>
+      {parent && (
+        <span className="eq-via small dim">
+          via <a href={`#node-${parent.mac}`} onClick={(e) => { e.preventDefault(); document.getElementById(`node-${parent.mac}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>{parent.name}</a>
+          {node.uplink?.port != null ? ` · port ${node.uplink.port}` : ""}
+          {node.uplink?.speed ? ` · ${speed(node.uplink.speed)}` : ""}
+          {node.uplink?.wireless ? " · wireless" : ""}
+        </span>
+      )}
+      {ap && node.radios.length > 0 && (
+        <div className="eq-radios small">
+          {node.radios.map((r) => (
+            <span key={r.radio} className="mono" title={`${r.clients ?? 0} clients`}>
+              {BAND[r.radio] || r.radio} · ch {r.channel}{r.width ? ` · ${r.width}` : ""} · <span className={(r.util || 0) >= 70 ? "warn" : ""}>{r.util ?? 0}%</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <PortStrip node={node} onPort={onPort} />
+      {portOrder.length > 0 && (
+        <div className="eq-group">
+          {portOrder.map((p) => {
+            const g = onPort.get(p);
+            const sp = p === "?" ? null : portSpeed(node, p);
+            return (
+              <div key={p} className="eq-port">
+                <span className="eq-port-label small dim">{p === "?" ? "Port unknown" : `Port ${p}`}{sp ? ` · ${sp}` : ""}</span>
+                {g.kids.map((k) => (
+                  <a key={k.mac} className="crow crow-eq" href={`#node-${k.mac}`} onClick={(e) => { e.preventDefault(); document.getElementById(`node-${k.mac}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
+                    <span className={`status-dot ${k.online === false ? "off" : ""}`} />
+                    <span className="crow-name">{k.name}</span>
+                    <span className="crow-meta small dim">{kindOf(k.type).toLowerCase()} ↓</span>
+                  </a>
+                ))}
+                {g.clients.map((c) => <ClientRow key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {wifi.length > 0 && (
+        <div className="eq-group">
+          {[...bands.entries()].filter(([, list]) => list.length).map(([b, list]) => (
+            <div key={b} className="eq-port">
+              <span className="eq-port-label small dim">{b} · {list.length}</span>
+              {list.map((c) => <ClientRow key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}
+            </div>
+          ))}
+        </div>
+      )}
+      {!node.clients.length && !kids.length && <span className="small dim">Nothing connected.</span>}
+    </section>
+  );
+}
+
+function NetBar({ data, sel }) {
+  const at = useContext(AtCtx);
+  const w = data.wan;
+  const link = data.gateway?.uplink?.speed;
+  const ok = w?.status === "ok";
+  return (
+    <a className={`netbar ${sel === "internet" ? "sel" : ""}`} href={mapHref(at, { n: "internet" })}>
+      <span className="netbar-item">
+        <span className="small dim">Internet</span>
+        <strong>{w?.isp || "WAN"}</strong>
+      </span>
+      <span className="netbar-item">
+        <span className="small dim">Status</span>
+        <span className={`mono ${ok ? "ok" : "warn"}`}>{ok ? "OK" : w?.status || "unknown"}{w?.latency != null ? ` · ${w.latency} ms` : ""}</span>
+      </span>
+      {w?.ip && (
+        <span className="netbar-item">
+          <span className="small dim">Public IP</span>
+          <span className="mono">{w.ip}</span>
+        </span>
+      )}
+      {wanNow(w, link) && (
+        <span className="netbar-item">
+          <span className="small dim">Right now</span>
+          <span className="mono">{wanNow(w, link)}</span>
+        </span>
+      )}
+      {w?.availability != null && (
+        <span className="netbar-item">
+          <span className="small dim">Up</span>
+          <span className="mono">{+Number(w.availability).toFixed(2)}%</span>
+        </span>
+      )}
+    </a>
+  );
+}
+
+function NetMap({ data, sel, selC }) {
   const gateway = data.gateway;
   if (!gateway) return <div className="card empty">No gateway data yet.</div>;
   const all = [gateway, ...data.nodes];
   const byName = Object.fromEntries(all.map((n) => [n.name, n]));
+  const parentOf = (n) => (n === gateway ? null : (n.uplink?.device && byName[n.uplink.device]) || gateway);
+  const kidsOf = (n) => all.filter((k) => k !== n && parentOf(k) === n).sort((a, b) => (a.uplink?.port ?? 99) - (b.uplink?.port ?? 99));
+  // From the gateway outward, so a card's parent always comes first.
+  const order = [];
+  const seen = new Set();
+  const walk = (n) => {
+    if (seen.has(n)) return;
+    seen.add(n);
+    order.push(n);
+    for (const k of kidsOf(n)) walk(k);
+  };
+  walk(gateway);
+  for (const n of all) walk(n);
   return (
-    <div className="map">
-      <a className={`node internet ${sel === "internet" ? "sel" : ""}`} href={mapHref(at, { n: "internet" })}>
-        <span className="dim small">Internet</span>
-        <strong>{data.wan?.isp || "WAN"}</strong>
-        <span className={`mono small ${data.wan?.status === "ok" ? "ok" : "warn"}`}>
-          {data.wan?.status === "ok" ? "OK" : data.wan?.status || "unknown"}
-          {data.wan?.latency != null ? ` · ${data.wan.latency} ms` : ""}
-        </span>
-        {data.wan?.ip ? <span className="mono small">{data.wan.ip}</span> : null}
-        {data.wan?.availability != null ? <span className="mono small dim">up {+Number(data.wan.availability).toFixed(2)}%</span> : null}
-        {wanNow(data.wan, gateway.uplink?.speed) ? <span className="mono small">{wanNow(data.wan, gateway.uplink?.speed)}</span> : null}
-        {gateway.uplink?.speed ? <span className="mono small dim">WAN link {speed(gateway.uplink.speed)}</span> : null}
-      </a>
-      <Branch node={gateway} all={all} byName={byName} gateway={gateway} sel={sel} selC={selC} root />
-      {data.loose.length > 0 && (
-        <div className="port-row" style={{ marginTop: 8 }}>
-          <span className="port-label">
-            <strong>Elsewhere</strong>
-            <span className="small dim">behind other devices</span>
-          </span>
-          <div className="port-body"><div className="chips">{data.loose.map((c) => <Client key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}</div></div>
-        </div>
-      )}
+    <div className="netmap">
+      <NetBar data={data} sel={sel} />
+      <div className="eq-grid">
+        {order.map((n) => <NodeCard key={n.mac} node={n} parent={parentOf(n)} kids={kidsOf(n)} sel={sel} selC={selC} />)}
+        {data.loose.length > 0 && (
+          <section className="eq-card">
+            <div className="eq-head static">
+              <span className="eq-kind small">Elsewhere</span>
+              <strong className="eq-name">Behind other devices</strong>
+              <span className="small dim">UniFi cannot place these on a port or access point</span>
+            </div>
+            <div className="eq-group"><div className="eq-port">{data.loose.map((c) => <ClientRow key={c.mac} c={c} sel={selC === c.mac} selC={selC} />)}</div></div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// One line under the title: how many devices, and how many need a look.
+function Summary({ data }) {
+  const flat = [...[data.gateway, ...data.nodes].filter(Boolean).flatMap((n) => n.clients), ...data.loose];
+  const wifi = flat.filter((c) => !c.wired).length;
+  const weak = flat.filter((c) => !c.wired && c.health === "warn").length;
+  const slow = flat.filter((c) => c.wired && c.health === "warn").length;
+  const offline = [data.gateway, ...data.nodes].filter((n) => n && n.online === false).length;
+  return (
+    <div className="net-summary small">
+      <span><strong>{flat.length}</strong> devices</span>
+      <span>{wifi} Wi-Fi · {flat.length - wifi} wired</span>
+      {weak > 0 && <span className="warn">{weak} weak signal</span>}
+      {slow > 0 && <span className="warn">{slow} slow link</span>}
+      {offline > 0 && <span className="bad">{offline} equipment offline</span>}
+      {!weak && !slow && !offline && <span className="ok">all healthy</span>}
     </div>
   );
 }
@@ -410,7 +501,7 @@ function NetworkTimeline({ route }) {
   const [days, setDays] = useState(1);
   const { data, error, loading, reload } = useApi(`/api/network/timeline?days=${days}`);
   const when = (t) => (days === 1 ? clock(t) : shortDate(t));
-  const jump = (t) => go("network", null, { ...route.query, c: null, at: Math.min(Date.now() - 61e3, Math.round(t)) });
+  const jump = (t) => go("network", null, { ...route.query, c: null, v: null, at: Math.min(Date.now() - 61e3, Math.round(t)) });
   const sum = data?.summary;
   const row = (label, note, items) => (
     <div className="history-radio">
@@ -472,7 +563,7 @@ function NetworkTimeline({ route }) {
             <p className="dim small" style={{ margin: 0 }}>No restarts, outages, channel or port changes and no new devices in this period.</p>
           )}
           {data.moreEvents > 0 && <p className="dim small" style={{ margin: 0 }}>{data.moreEvents} earlier changes not listed.</p>}
-          <p className="dim small" style={{ margin: 0 }}>Click a bar or a time to see the map as it was then. Recorded with every update, kept 90 days.</p>
+          <p className="dim small" style={{ margin: 0 }}>Click a bar or a time to open the map as it was then. Recorded with every update, kept 90 days.</p>
         </>
       )}
     </section>
@@ -485,6 +576,9 @@ export default function Network({ route }) {
   const empty = at && data && !data.gateway && !data.nodes?.length && !data.loose?.length;
   const sel = route.query.n || null;
   const selC = route.query.c || null;
+  // Map or History (UU-C-219): the history was a card far below the map.
+  const view = route.query.v === "history" ? "history" : "map";
+  const setView = (v) => go("network", null, { ...route.query, v: v === "map" ? null : v });
   return (
     <div className="split">
       <div className="main">
@@ -494,21 +588,26 @@ export default function Network({ route }) {
               <span className={`small ${at ? "warn" : "dim"}`}>{at ? `Network · as it was ${shortDate(at)}` : "Network · live, refreshes every minute"}</span>
               <h1>Your network</h1>
             </div>
-            <div className="legend">
-              <span><span className="status-dot" style={{ marginRight: 6 }} />healthy</span>
-              <span><span className="status-dot warn" style={{ marginRight: 6 }} />weak signal or slow link</span>
-              <span><span className="status-dot off" style={{ marginRight: 6 }} />offline</span>
-              <span className="dim">· bigger chip = more data in 15 min · Wi-Fi: band (GHz) · signal (dBm) · ↺ last seen there · click anything for details</span>
+            <div className="seg net-views" role="tablist" aria-label="Network view">
+              <button role="tab" aria-selected={view === "map"} className={view === "map" ? "on" : ""} onClick={() => setView("map")}>Map</button>
+              <button role="tab" aria-selected={view === "history"} className={view === "history" ? "on" : ""} onClick={() => setView("history")}>History</button>
             </div>
           </div>
-          <TimeBar at={at} route={route} />
-          {error && <Failed error={error} reload={reload} />}
-          {!data && loading && <Loading />}
-          {empty && <div className="card empty">Nothing was recorded at that time: NetLens was not running, or it is before the 90 days it keeps.</div>}
-          <AtCtx.Provider value={at}>
-            {data && !empty && <Tree data={data} sel={sel} selC={selC} />}
-          </AtCtx.Provider>
-          <NetworkTimeline route={route} />
+          {view === "map" && (
+            <>
+              <div className="net-toolbar">
+                {data && !empty ? <Summary data={data} /> : <span />}
+                <TimeBar at={at} route={route} />
+              </div>
+              {error && <Failed error={error} reload={reload} />}
+              {!data && loading && <Loading />}
+              {empty && <div className="card empty">Nothing was recorded at that time: NetLens was not running, or it is before the 90 days it keeps.</div>}
+              <AtCtx.Provider value={at}>
+                {data && !empty && <NetMap data={data} sel={sel} selC={selC} />}
+              </AtCtx.Provider>
+            </>
+          )}
+          {view === "history" && <NetworkTimeline route={route} />}
         </div>
       </div>
       <AtCtx.Provider value={at}>{data && <Panel data={data} route={route} />}</AtCtx.Provider>
