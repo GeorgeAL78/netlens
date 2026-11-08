@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.21.1 — 2026-11-08
+
+### Changed
+- Network: every switch and access point card shows its CPU, temperature and uptime, like the gateway's.
+
 ## 2.21.0 — 2026-11-08
 
 ### Changed

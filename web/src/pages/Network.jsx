@@ -306,8 +306,10 @@ function NodeCard({ node, parent, kids, sel, selC }) {
     if (!bands.has(b)) bands.set(b, []);
     bands.get(b).push(c);
   }
+  // CPU, temperature (where the device has a sensor) and uptime, on every card (UU-C-221).
+  const health = [node.cpu != null ? `CPU ${Math.round(node.cpu)}%` : null, node.temp != null ? `${Math.round(node.temp)} °C` : null, node.uptime != null ? `up ${duration(node.uptime)}` : null].filter(Boolean).join(" · ");
   const stat = isGw(node)
-    ? [node.cpu != null ? `CPU ${Math.round(node.cpu)}%` : null, node.temp != null ? `${Math.round(node.temp)} °C` : null, `up ${duration(node.uptime)}`].filter(Boolean).join(" · ")
+    ? null
     : ap
       ? `${wifi.length} on Wi-Fi · ${Math.max(0, ...node.radios.map((r) => r.util || 0))}% busy`
       : `${(node.ports || []).filter((p) => p.up).length}/${(node.ports || []).length} ports up`;
@@ -316,7 +318,8 @@ function NodeCard({ node, parent, kids, sel, selC }) {
       <a className="eq-head" href={mapHref(at, { n: node.mac })}>
         <span className="eq-kind small">{kindOf(node.type)}{node.online === false ? " · offline" : ""}</span>
         <strong className="eq-name">{node.name}</strong>
-        <span className="mono small dim">{stat}</span>
+        {stat && <span className="mono small dim">{stat}</span>}
+        {health && <span className={`mono small dim ${node.temp >= 80 || node.cpu >= 90 ? "warn" : ""}`}>{health}</span>}
         {(weak > 0 || slow > 0) && <span className="eq-issues small">{[weak ? `${weak} weak signal` : null, slow ? `${slow} slow link` : null].filter(Boolean).join(" · ")}</span>}
       </a>
       {parent && (
