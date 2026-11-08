@@ -158,6 +158,9 @@ Settings to turn the listener off.
 
 - **The login password is required** on first start: the dashboard can block devices.
 - It is meant for your LAN. Do not expose it to the internet; use a VPN to reach it remotely.
+- **Access key (optional)**: Settings › Access key makes a read-only key for scripts, sent as
+  `Authorization: Bearer <key>`. It reads the JSON behind every page (`/api/...`) and nothing
+  else — no blocking, no settings, no history export. Stored as a hash, shown once.
 - The API key never leaves the server: the UI only learns whether one is stored.
 - Passwords are stored as scrypt hashes; sessions are signed cookies; five wrong passwords lock
   that address out for five minutes. Plain HTTP — fine on a home LAN, not across untrusted networks.

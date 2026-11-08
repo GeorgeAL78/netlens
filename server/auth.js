@@ -40,6 +40,34 @@ export function checkPassword(password) {
   return want.length === got.length && crypto.timingSafeEqual(want, got);
 }
 
+// A read-only access key (UU-C-204) for scripts and assistants that cannot type the password.
+// Made in Settings, shown once, stored only as a SHA-256 hash (it is random, so no salt is
+// needed). It opens GET requests under /api/ and nothing else.
+const tokenHash = (t) => crypto.createHash("sha256").update(String(t)).digest("hex");
+export const hasToken = () => Boolean(db.getSetting("api_token_hash", ""));
+export const tokenCreated = () => Number(db.getSetting("api_token_created", "")) || null;
+export function newToken() {
+  const token = `nl_${crypto.randomBytes(24).toString("base64url")}`;
+  db.setSetting("api_token_hash", tokenHash(token));
+  db.setSetting("api_token_created", String(Date.now()));
+  return token;
+}
+export function clearToken() {
+  db.setSetting("api_token_hash", "");
+  db.setSetting("api_token_created", "");
+}
+export function bearer(req) {
+  const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ""));
+  return m ? m[1] : null;
+}
+export function checkToken(token) {
+  const stored = db.getSetting("api_token_hash", "");
+  if (!stored || !token) return false;
+  const want = Buffer.from(stored, "hex");
+  const got = Buffer.from(tokenHash(token), "hex");
+  return want.length === got.length && crypto.timingSafeEqual(want, got);
+}
+
 function sign(body) {
   return crypto.createHmac("sha256", secret()).update(body).digest("base64url");
 }

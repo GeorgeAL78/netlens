@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.18.0 — 2026-11-08
+
+### Added
+- Settings › Access key: a read-only key so a script or an assistant can read NetLens's data as JSON without the password. It can only read: it cannot block devices, change settings or export history. Shown once; replace it or turn it off at any time.
+
 ## 2.17.2 — 2026-11-08
 
 ### Fixed

@@ -68,7 +68,21 @@ app.get("/healthz", (_req, res) => res.json({ ok: true, version: process.env.APP
 // one; after that every page and API call needs the session cookie. Plain HTTP on the LAN —
 // fine for a home network, not for the internet.
 const OPEN_PATHS = new Set(["/healthz", "/login", "/api/login", "/api/logout"]);
+// The read-only access key (UU-C-204): GET under /api/ only, never the history export (every
+// record in one file). Wrong keys count towards the same lockout as wrong passwords.
+const KEY_DENIED = new Set(["/api/history/export"]);
 app.use((req, res, next) => {
+  const key = auth.bearer(req);
+  if (key && auth.hasPassword()) {
+    const ip = req.ip || req.socket.remoteAddress || "?";
+    if (auth.lockedOut(ip)) return res.status(429).json({ error: "Too many attempts — try again in 5 minutes" });
+    if (!auth.checkToken(key)) {
+      auth.recordFailure(ip);
+      return res.status(401).json({ error: "access key not valid" });
+    }
+    if (req.method !== "GET" || !req.path.startsWith("/api/") || KEY_DENIED.has(req.path)) return res.status(403).json({ error: "the access key can only read data" });
+    return next();
+  }
   if (!auth.hasPassword() || OPEN_PATHS.has(req.path) || auth.hasSession(req)) return next();
   if (req.path.startsWith("/api/")) return res.status(401).json({ error: "login required" });
   return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
@@ -709,6 +723,8 @@ app.get("/api/settings", (_req, res) => {
     ...s,
     tz,
     hasPassword: auth.hasPassword(),
+    // Only whether a read-only access key exists and since when, never the key (UU-C-204).
+    accessKeyCreated: auth.hasToken() ? auth.tokenCreated() : null,
     // The owner chose to run without a login (UU-C-082).
     loginDisabled: db.getSetting("login_disabled", "") === "1",
     serverMode: SERVER_MODE,
@@ -727,6 +743,17 @@ app.post("/api/login", (req, res) => {
   }
   auth.clearFailures(ip);
   auth.startSession(res);
+  res.json({ ok: true });
+});
+
+// Make (or replace) the read-only access key; the only time it is ever shown (UU-C-204).
+// The key itself cannot reach these: it is refused for anything but GET.
+app.post("/api/access-key", (_req, res) => {
+  if (!auth.hasPassword()) return res.status(409).json({ error: "Set a login password first: without one the dashboard is open anyway" });
+  res.json({ key: auth.newToken(), created: auth.tokenCreated() });
+});
+app.delete("/api/access-key", (_req, res) => {
+  auth.clearToken();
   res.json({ ok: true });
 });
 

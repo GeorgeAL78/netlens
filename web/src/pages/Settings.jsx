@@ -11,6 +11,7 @@ const SECTIONS = [
   ["login", "Login"],
   ["data", "Data & history"],
   ["adblock", "Ad-block counts"],
+  ["access", "Access key"],
 ];
 
 function Console() {
@@ -184,6 +185,66 @@ function AdBlock() {
   );
 }
 
+// A read-only access key for scripts and assistants (UU-C-204). Shown once; replacing it or
+// turning it off stops the old one at once.
+function AccessKey() {
+  const [s, setS] = useState(null);
+  const [key, setKey] = useState("");
+  const [msg, setMsg] = useState("");
+  useEffect(() => {
+    api("/api/settings").then(setS).catch((e) => setMsg(e.message));
+  }, []);
+  async function make() {
+    if (s?.accessKeyCreated && !window.confirm("Replace the access key? The old one stops working at once.")) return;
+    setMsg("");
+    try {
+      const r = await api("/api/access-key", { method: "POST", body: JSON.stringify({}) });
+      setKey(r.key);
+      setS((x) => ({ ...x, accessKeyCreated: r.created }));
+    } catch (e) {
+      setMsg(e.message);
+    }
+  }
+  async function remove() {
+    if (!window.confirm("Turn the access key off? Anything using it loses access at once.")) return;
+    setMsg("");
+    try {
+      await api("/api/access-key", { method: "DELETE" });
+      setKey("");
+      setS((x) => ({ ...x, accessKeyCreated: null }));
+      setMsg("Access key turned off.");
+    } catch (e) {
+      setMsg(e.message);
+    }
+  }
+  const noLogin = s && !s.hasPassword;
+  return (
+    <SettingsSection icon="shield" title="Access key (optional)" hint="Lets a script or an assistant read NetLens's data without the password: every page's numbers, as JSON. It can only read — it cannot block devices, change settings or export history. Send it as the header Authorization: Bearer <key>.">
+      {noLogin ? (
+        <p className="setup-dim">There is no login password, so the data is already open to anyone on your network. Set a password first.</p>
+      ) : (
+        <>
+          <p className="setup-dim">{!s ? "…" : s.accessKeyCreated ? `A key is on, made ${new Date(s.accessKeyCreated).toLocaleDateString()}.` : "No key yet."}</p>
+          {key && (
+            <div className="setup-row">
+              <label>
+                Your key — copy it now, it is not shown again
+                <input readOnly value={key} onFocus={(e) => e.target.select()} />
+              </label>
+            </div>
+          )}
+          <div className="account-actions">
+            <button type="button" className="btn primary" onClick={make} disabled={!s}>{s?.accessKeyCreated ? "Replace key" : "Make a key"}</button>
+            {key && navigator.clipboard && <button type="button" className="btn" onClick={() => navigator.clipboard.writeText(key).then(() => setMsg("Copied."))}>Copy</button>}
+            {s?.accessKeyCreated && <button type="button" className="btn" onClick={remove}>Turn off</button>}
+          </div>
+        </>
+      )}
+      {msg && <p className="setup-dim">{msg}</p>}
+    </SettingsSection>
+  );
+}
+
 export default function Settings({ route, version }) {
   const [tz, setTz] = useState(null);
   useEffect(() => {
@@ -211,6 +272,7 @@ export default function Settings({ route, version }) {
           <AccountSettings tz={tz} onTz={saveTz} />
           <div id="s-data"><Data /></div>
           <div id="s-adblock"><AdBlock /></div>
+          <div id="s-access"><AccessKey /></div>
         </main>
       </div>
     </div>
