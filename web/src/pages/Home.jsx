@@ -17,7 +17,7 @@ const TAG = { alert: "LIMIT", usage: "ACTIVITY", wifi: "WI-FI", wired: "WIRED", 
 function actionsFor(f, date, days) {
   const a = [];
   // Usage has 7 / 30 / 90 days: a 3- or 14-day view opens the next larger one.
-  if (f.list) return [{ label: "Open in Usage", to: href("usage", null, days ? { r: Number(days) <= 7 ? "7d" : "30d" } : { d: date }) }];
+  if (f.list) return [{ label: "Open in Usage", to: href("usage", null, days ? { r: Number(days) <= 7 ? "7d" : Number(days) <= 30 ? "30d" : "90d" } : { d: date }) }];
   if (f.alert) {
     a.push({ label: "Open in Usage", to: href("usage", null, { d: f.alert.day, mac: f.alert.mac, app: f.alert.app, cat: f.alert.cat }) });
     a.push({ label: "Limits", to: href("alerts") });
@@ -39,10 +39,11 @@ const RANGES = [
   ["today", "Today"],
   ["7", "7 days"],
   ["30", "30 days"],
+  ["90", "90 days"],
 ];
 
 export default function Home({ route }) {
-  const days = ["3", "7", "14", "30"].includes(route.query.r) ? route.query.r : null;
+  const days = ["3", "7", "14", "30", "90"].includes(route.query.r) ? route.query.r : null;
   const date = route.query.d || todayKey();
   const picked = !days && route.query.d && route.query.d !== todayKey();
   const range = days || (picked ? "day" : "today");

@@ -6,6 +6,7 @@ import { annotateFlow, reclassifyCachedRow, nameBareIpFlows, CLASSIFIER_VERSION 
 import { logError } from "./log.js";
 import { fetchBuckets, fetchHourly, BUCKET_REACH_MS, HOUR_MS } from "./buckets.js";
 import * as flowstore from "./flowstore.js";
+import { VIEW_WORKER } from "./role.js";
 
 const BUCKET_SETTLE_MS = 30 * 60 * 1000;
 // Bumped when 5-minute buckets on disk are known to be wrong, forcing one full re-read of
@@ -19,10 +20,10 @@ const BUCKET_VERSION = 2;
 const cacheDir = path.join(databaseDir, "cache");
 const legacyFile = path.join(databaseDir, "unifi-cache.json");
 const OVERLAP_MS = 60 * 1000;
-// Keep a month on disk, but only ever ask UniFi for the recent window (see
+// Keep 90 days on disk (30 until UU-C-211), but only ever ask UniFi for the recent window (see
 // FETCH_DAYS in index.js). Days age out of RETAIN_DAYS long after they stop being
-// fetched, so "Pick a day" reaches back 30 days while console load stays flat.
-export const RETAIN_DAYS = 30;
+// fetched, so "Pick a day" reaches back 90 days while console load stays flat.
+export const RETAIN_DAYS = 90;
 
 const days = new Map();
 let lastError = null;
@@ -396,7 +397,66 @@ function restore() {
   }
 }
 
-restore();
+// A view worker's copy of the days (UU-C-210): the day files as the main thread last wrote
+// them, nothing deleted, upgraded or migrated (the main thread did that at its start). Each
+// file is re-read only when it changed on disk; every day's connection-record count comes
+// fresh from flows.db.
+const fileStamp = new Map();
+function dayFromFile(dayKey, entry, flowDays) {
+  return {
+    dayKey,
+    start: Number(entry.start),
+    end: Number(entry.end),
+    traffic: entry.traffic || [],
+    flowCount: flowDays.get(dayKey)?.count || 0,
+    buckets: entry.buckets || [],
+    bucketSpans: entry.bucketSpans || [],
+    hourlyRead: Number(entry.hourlyRead) || 0,
+    fineSpans: entry.fineSpans || (entry.hourlyRead ? [] : entry.bucketSpans || []),
+    bucketVersion: Number(entry.bucketVersion || 0),
+    coveredThrough: Number(entry.coveredThrough || entry.end || 0),
+    fetchedAt: Number(entry.fetchedAt),
+    classifierVersion: CLASSIFIER_VERSION,
+    closedTrafficRead: Boolean(entry.closedTrafficRead),
+    warming: false,
+    pending: null,
+  };
+}
+export function reloadChanged() {
+  if (!fs.existsSync(cacheDir)) return;
+  const cutoff = Date.now() - RETAIN_DAYS * 86400000;
+  const flowDays = flowstore.dayInfo();
+  const seen = new Set();
+  for (const name of fs.readdirSync(cacheDir)) {
+    const match = /^day-(\d{4}-\d{2}-\d{2})\.json$/.exec(name);
+    if (!match) continue;
+    const dayKey = match[1];
+    const file = path.join(cacheDir, name);
+    try {
+      const st = fs.statSync(file);
+      const stamp = `${st.mtimeMs}:${st.size}`;
+      seen.add(dayKey);
+      const cur = days.get(dayKey);
+      if (cur && fileStamp.get(dayKey) === stamp) {
+        cur.flowCount = flowDays.get(dayKey)?.count || 0;
+        continue;
+      }
+      const entry = JSON.parse(fs.readFileSync(file, "utf8"));
+      if (!entry?.fetchedAt || Number(entry.end) < cutoff) {
+        days.delete(dayKey);
+        continue;
+      }
+      days.set(dayKey, dayFromFile(dayKey, entry, flowDays));
+      fileStamp.set(dayKey, stamp);
+    } catch {
+      // Being replaced right now (written to .tmp, then renamed): keep the copy we have.
+    }
+  }
+  for (const k of [...days.keys()]) if (!seen.has(k)) days.delete(k);
+}
+
+if (VIEW_WORKER) reloadChanged();
+else restore();
 
 export function hasDay(dayKey) {
   return Boolean(days.get(dayKey)?.fetchedAt);

@@ -3,13 +3,14 @@ import { api, bytes, clock, dayLabel, go, href, todayKey, useApi } from "../lib.
 import { DayStep, Failed, Finder, Loading, Bytes, Split } from "../ui.jsx";
 
 // Sites (UU-C-135): every site each device connected to, from the connection records NetLens
-// keeps (30 days), with a chip per category. Not a DNS log — UniFi has none — and a browser
+// keeps (90 days), with a chip per category. Not a DNS log — UniFi has none — and a browser
 // using secure DNS leaves only an address, which the watch list names where it can.
 
 const RANGES = [
   ["day", "Today"],
   ["7d", "7 days"],
   ["30d", "30 days"],
+  ["90d", "90 days"],
 ];
 const SORTS = [
   ["n", "Connections"],
@@ -208,7 +209,7 @@ export default function Sites({ route }) {
                 {!r.sites.length && (
                   <tr>
                     <td colSpan={6} className="dim">
-                      {r.days ? "No site matches." : "No connection records for this period — NetLens keeps them for 30 days."}
+                      {r.days ? "No site matches." : "No connection records for this period — NetLens keeps them for 90 days."}
                     </td>
                   </tr>
                 )}

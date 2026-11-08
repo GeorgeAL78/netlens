@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 import { databaseDir } from "./paths.js";
 import { destinationsParallel } from "./destpool.js";
+import { VIEW_WORKER, readOnlyIfView } from "./role.js";
 
 // Connection records (flows) live here, not in the day JSON files (UU-C-062). They were
 // ~90% of each 35-40 MB day file and all of them sat in memory; a report now reads only
@@ -12,7 +13,7 @@ import { destinationsParallel } from "./destpool.js";
 // row's index in that day. Reads return rows in (day, seq) order, so every tie-break the
 // report had over the in-memory arrays is kept exactly.
 const FLOWS_FILE = path.join(databaseDir, "flows.db");
-const db = new DatabaseSync(FLOWS_FILE);
+const db = readOnlyIfView(new DatabaseSync(FLOWS_FILE, { readOnly: VIEW_WORKER }));
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA synchronous = NORMAL");
 db.exec(`
@@ -331,8 +332,16 @@ export function siteSummary(days, mac, span) {
 // them are built on first use.
 function ensureSummaries(days) {
   const built = siteDaysBuilt();
-  const missing = days.filter((d) => !built.has(d));
+  let missing = days.filter((d) => !built.has(d));
   if (!missing.length) return;
+  if (VIEW_WORKER) {
+    // A day with no connection records has nothing to summarise. One that has them but no
+    // summary yet cannot be built read-only: the main thread answers this request (UU-C-210).
+    const info = dayInfo();
+    missing = missing.filter((d) => info.get(d)?.count > 0);
+    if (!missing.length) return;
+    throw new Error("flow summaries not built yet");
+  }
   db.exec("BEGIN");
   try {
     for (const d of missing) {
@@ -355,7 +364,9 @@ function backfillSummaries() {
   ensureSummaries([day]);
   setTimeout(backfillSummaries, 250).unref?.();
 }
-if (splitAdded) setTimeout(backfillSummaries, 5000).unref?.();
+// Always on the main thread, not only after an upgrade (UU-C-210): view workers are read-only,
+// and a day without its summaries sends their request back to the main thread.
+if (!VIEW_WORKER) setTimeout(backfillSummaries, splitAdded ? 5000 : 1000).unref?.();
 
 function siteSummaryDays(days, mac) {
   ensureSummaries(days);

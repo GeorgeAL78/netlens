@@ -1,2 +1,5 @@
+### Added
+- Usage detail and connection records are kept for 90 days instead of 30, like everything else NetLens stores. Overview, Sites and the failed-joins card get a 90 days button. Older days already gone are not brought back.
+
 ### Changed
-- Apps and device reports over 7, 30 or 90 days build 3 to 6 times faster: the connection records behind them are read on every CPU core, read once per device instead of once per session, and dates are no longer formatted the slow way. Same numbers as before.
+- Pages are built on worker threads: while a long Overview or Apps report builds, the rest of NetLens answers at once (2 ms instead of over a second on a test copy). Same numbers as before; if a worker fails, the page is built as before.

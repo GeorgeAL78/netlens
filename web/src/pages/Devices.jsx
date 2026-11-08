@@ -220,7 +220,7 @@ export default function Devices({ route }) {
                 <h2>Wi-Fi join problems</h2>
                 <span className="hint">devices that tried to join the Wi-Fi and failed</span>
                 <div className="seg" role="group" aria-label="Period" style={{ marginLeft: "auto" }}>
-                  {[[1, "Today"], [7, "7 days"], [30, "30 days"]].map(([n, label]) => (
+                  {[[1, "Today"], [7, "7 days"], [30, "30 days"], [90, "90 days"]].map(([n, label]) => (
                     <button key={n} className={joinDays === n ? "on" : ""} onClick={() => setJoinDays(n)}>{label}</button>
                   ))}
                 </div>

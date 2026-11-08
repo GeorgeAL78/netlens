@@ -3,8 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { dbFile, databaseDir } from "./paths.js";
 import { appCategory } from "./sitecats.js";
+import { VIEW_WORKER, readOnlyIfView } from "./role.js";
 
-const db = new DatabaseSync(dbFile);
+const db = readOnlyIfView(new DatabaseSync(dbFile, { readOnly: VIEW_WORKER }));
 db.exec("PRAGMA journal_mode = WAL");
 db.exec(`
   CREATE TABLE IF NOT EXISTS clients (

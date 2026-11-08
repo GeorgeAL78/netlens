@@ -47,7 +47,7 @@ export function categoryForHost(host) {
 
 const RESOLVERS = ["1.1.1.1", "8.8.8.8"];
 const HOUR = 3600e3;
-const KEEP_MS = 60 * 86400e3;
+const KEEP_MS = 90 * 86400e3; // 60 until UU-C-211: as long as the connection records it names
 let running = false;
 
 export async function refresh(now = Date.now(), { force = false } = {}) {

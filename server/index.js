@@ -36,8 +36,29 @@ import {
 } from "./classify.js";
 import { logError } from "./log.js";
 import { makerOf } from "./oui.js";
+import { parentPort, workerData } from "node:worker_threads";
+import { VIEW_WORKER } from "./role.js";
+import * as viewpool from "./viewpool.js";
 
 const app = express();
+
+// View mode (UU-C-210, viewpool.js): this thread only answers the main thread's read-only page
+// requests. Nothing else may reach it, and before answering it catches up with any data the
+// main thread has written since its last request.
+let viewVersion = -1;
+if (VIEW_WORKER) {
+  app.use((req, res, next) => {
+    if (!viewpool.trusted(req, workerData.secret)) return res.status(403).end();
+    const v = Number(req.get("x-netlens-data"));
+    if (Number.isFinite(v) && v !== viewVersion) {
+      // Only files that changed on disk are read again, so this is cheap.
+      cache.reloadChanged();
+      tz = db.getSetting("tz", "") || systemTz();
+      viewVersion = v;
+    }
+    next();
+  });
+}
 
 // ---- Server mode (Docker, UU-C-054, UU-C-059) --------------------------------------------
 // The app runs as a container with a web UI. Connection settings and the login password are
@@ -46,20 +67,23 @@ const app = express();
 const SERVER_MODE = process.env.UNIFI_SERVER_MODE === "1";
 const BIND = process.env.UNIFI_BIND || (SERVER_MODE ? "0.0.0.0" : "127.0.0.1");
 
-if (process.env.SIEM_PORT && !db.getSetting("siem_port", "")) db.applyConnectionSettings({ siemPort: process.env.SIEM_PORT });
-// The container listens for UniFi's syslog (ad-block counts) on 5514 by default (UU-C-079), so
-// only UniFi's SIEM server needs pointing at it. Applied once: a port cleared in Settings stays off.
-if (SERVER_MODE && !db.metaGet("siem_default_applied")) {
-  if (!db.getSetting("siem_port", "")) db.applyConnectionSettings({ siemPort: 5514 });
-  db.metaSet("siem_default_applied", "1");
+// One-time start-up settings: the main thread only, never a view worker (UU-C-210).
+if (!VIEW_WORKER) {
+  if (process.env.SIEM_PORT && !db.getSetting("siem_port", "")) db.applyConnectionSettings({ siemPort: process.env.SIEM_PORT });
+  // The container listens for UniFi's syslog (ad-block counts) on 5514 by default (UU-C-079), so
+  // only UniFi's SIEM server needs pointing at it. Applied once: a port cleared in Settings stays off.
+  if (SERVER_MODE && !db.metaGet("siem_default_applied")) {
+    if (!db.getSetting("siem_port", "")) db.applyConnectionSettings({ siemPort: 5514 });
+    db.metaSet("siem_default_applied", "1");
+  }
+  // Forgotten password: start once with NETLENS_RESET_PASSWORD=1, then set a new one in the UI.
+  if (process.env.NETLENS_RESET_PASSWORD === "1" && auth.hasPassword()) {
+    auth.clearPassword();
+    console.warn("NETLENS_RESET_PASSWORD=1: the login password was cleared — set a new one in the UI, then remove the variable");
+  }
+  // Older installs set UI_PASSWORD in the environment; adopt it once, then the UI owns it.
+  if (process.env.UI_PASSWORD && !auth.hasPassword()) auth.setPassword(process.env.UI_PASSWORD);
 }
-// Forgotten password: start once with NETLENS_RESET_PASSWORD=1, then set a new one in the UI.
-if (process.env.NETLENS_RESET_PASSWORD === "1" && auth.hasPassword()) {
-  auth.clearPassword();
-  console.warn("NETLENS_RESET_PASSWORD=1: the login password was cleared — set a new one in the UI, then remove the variable");
-}
-// Older installs set UI_PASSWORD in the environment; adopt it once, then the UI owns it.
-if (process.env.UI_PASSWORD && !auth.hasPassword()) auth.setPassword(process.env.UI_PASSWORD);
 
 // Container health check; deliberately before the login.
 app.get("/healthz", (_req, res) => res.json({ ok: true, version: process.env.APP_VERSION || "dev" }));
@@ -72,6 +96,8 @@ const OPEN_PATHS = new Set(["/healthz", "/login", "/api/login", "/api/logout"]);
 // record in one file). Wrong keys count towards the same lockout as wrong passwords.
 const KEY_DENIED = new Set(["/api/history/export"]);
 app.use((req, res, next) => {
+  // A view worker's requests were checked by the main thread and by the gate above.
+  if (VIEW_WORKER) return next();
   const key = auth.bearer(req);
   if (key && auth.hasPassword()) {
     const ip = req.ip || req.socket.remoteAddress || "?";
@@ -90,7 +116,7 @@ app.use((req, res, next) => {
 app.get("/login", (_req, res) => {
   res.type("html").send(auth.LOGIN_PAGE);
 });
-if (SERVER_MODE && !auth.hasPassword() && db.getSetting("login_disabled", "") !== "1") {
+if (!VIEW_WORKER && SERVER_MODE && !auth.hasPassword() && db.getSetting("login_disabled", "") !== "1") {
   console.warn("No login password yet: open the web UI and finish the setup to set one");
 }
 // UNIFI_PORT wins over the stored setting so a second instance can run alongside the
@@ -141,12 +167,28 @@ function prewarmOverview() {
     const date = zonedDateKey(Date.now());
     const key = `/api/findings?date=${date}`;
     if (memo.get(key)?.v === memoVersion) return;
+    // On a view worker when there is one, so this thread stays free (UU-C-210).
+    if (viewpool.available()) {
+      const v = memoVersion;
+      viewpool
+        .request(key, v)
+        .then((r) => r.status === 200 && remember(key, v, r.body.toString("utf8")))
+        .catch(() => {});
+      return;
+    }
     memo.set(key, { v: memoVersion, body: JSON.stringify(findingsBody({ date })) });
   } catch (err) {
     logError("prewarm overview", err);
   }
 }
+function remember(key, v, text) {
+  if (v !== memoVersion) return;
+  if (memo.size >= 200) memo.clear();
+  memo.set(key, { v, body: text });
+}
 app.use((req, res, next) => {
+  // A view worker remembers nothing itself: the main thread keeps the answers (UU-C-210).
+  if (VIEW_WORKER) return next();
   if (req.method !== "GET") {
     res.on("finish", dataChanged);
     return next();
@@ -156,15 +198,30 @@ app.use((req, res, next) => {
   const hit = memo.get(key);
   if (hit && hit.v === memoVersion) return res.set("X-NetLens-Cache", "hit").type("json").send(hit.body);
   const v = memoVersion;
-  const json = res.json.bind(res);
-  res.json = (body) => {
-    if (res.statusCode !== 200 || v !== memoVersion) return json(body);
-    const text = JSON.stringify(body);
-    if (memo.size >= 200) memo.clear();
-    memo.set(key, { v, body: text });
-    return res.type("json").send(text);
+  const here = () => {
+    const json = res.json.bind(res);
+    res.json = (body) => {
+      if (res.statusCode !== 200 || v !== memoVersion) return json(body);
+      const text = JSON.stringify(body);
+      remember(key, v, text);
+      return res.type("json").send(text);
+    };
+    next();
   };
-  next();
+  // Built on a view worker while this thread keeps answering everything else (UU-C-210). A
+  // client error (400) is the answer; anything worse is built here instead.
+  if (!viewpool.available()) return here();
+  viewpool
+    .request(key, v)
+    .then((r) => {
+      if (r.status >= 500) throw new Error(`view worker answered ${r.status}`);
+      if (r.status === 200) remember(key, v, r.body.toString("utf8"));
+      res.status(r.status).set("X-NetLens-View", "worker").type(r.type || "json").send(r.body);
+    })
+    .catch((err) => {
+      viewpool.noteFailure(key, err);
+      if (!res.headersSent) here();
+    });
 });
 
 function sendError(res, source, err) {
@@ -381,7 +438,7 @@ function dayJob(dayKey) {
 }
 
 // How far back we ever ask UniFi. Independent of how long days are kept on disk
-// (cache.RETAIN_DAYS = 30): old days stay readable, they just stop being refreshed.
+// (cache.RETAIN_DAYS = 90): old days stay readable, they just stop being refreshed.
 const FETCH_DAYS = 8;
 
 // Days that fall between the oldest day we already hold and the automatic fetch
@@ -1047,9 +1104,9 @@ app.get("/api/threats", (req, res) => {
 // ---- Views of the redesigned interface (UU-C-087), read-only like /api/report -------------
 function dayContext(query) {
   const todayKey = zonedDateKey(Date.now());
-  // The last N days up to now (Home's ranges, UU-C-094).
+  // The last N days up to now (Home's ranges, UU-C-094; 90 since UU-C-211).
   const days = Number(query.days);
-  if ([3, 7, 14, 30].includes(days)) {
+  if ([3, 7, 14, 30, 90].includes(days)) {
     const start = zonedMidnight(addDays(todayKey, -(days - 1)));
     const now = Date.now();
     return { date: todayKey, days, today: false, bundle: cache.readDays(dayKeysForRange(start, now)), start, end: now, now };
@@ -2689,6 +2746,8 @@ export function startHttpServer({ openBrowser = false } = {}) {
       if (!offline && !snapshotTimer) snapshotTimer = setInterval(runSnapshot, snapshotMinutes * 60 * 1000);
       // SIEM logs forwarded by syslog-ng (UU-C-050): listen if a port is set.
       siem.configure();
+      // Read-only pages on worker threads (UU-C-210); started now that the schema is current.
+      viewpool.start(new URL(import.meta.url));
       if (!offline) {
         cache
           .warm(defaultCacheJobs(), { mode: "delta" })
@@ -2737,8 +2796,14 @@ export function closeHttpServer() {
 process.on("uncaughtException", (err) => logError("uncaughtException", err));
 process.on("unhandledRejection", (err) => logError("unhandledRejection", err));
 
+// A view worker loads this same file (its argv still names it), so it is never "launched".
 const launchedDirectly =
-  Boolean(process.argv[1]) && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+  !VIEW_WORKER && Boolean(process.argv[1]) && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]);
+
+// View mode: serve the main thread on a loopback port it is told about (UU-C-210).
+if (VIEW_WORKER) {
+  const server = app.listen(0, "127.0.0.1", () => parentPort.postMessage({ ready: true, port: server.address().port }));
+}
 
 // Clean shutdown on docker stop / Ctrl+C (UU-C-142). Node as PID 1 ignores SIGTERM unless it
 // listens for it, so Docker used to wait 10 s and kill the process mid-write. Now: stop taking

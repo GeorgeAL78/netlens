@@ -49,7 +49,7 @@ which UniFi itself deletes after a day or a week.
   on top, with an Unblock button, and every device has Block / Unblock. Failed Wi-Fi joins
   (couldn't log in, no IP address, DNS failed…) are listed per device with the usual cause,
   kept 90 days.
-- **Activity › Sites** — every site each device connected to over the last 30 days, with a filter per
+- **Activity › Sites** — every site each device connected to over the last 90 days, with a filter per
   category (social, gaming, school, ads and tracking, AI, adult…), search, and the times of
   each connection. Taken from UniFi's connection records, not a DNS log (UniFi has none). When a
   browser's secure DNS hides the name, NetLens names the address if it belongs to a watched
@@ -82,7 +82,7 @@ UniFi keeps fine-grained data only briefly. On the console this was built agains
 | Daily per-device totals, System Log | 90 days |
 | Wi-Fi signal, equipment health | only "right now" |
 
-NetLens samples the console every 5 minutes and keeps its own copy (usage 30 days, events and
+NetLens samples the console every 5 minutes and keeps its own copy (usage and connection records 90 days, events and
 Wi-Fi/equipment samples 90 days, daily totals a year), so history survives.
 
 ## Requirements
@@ -138,7 +138,7 @@ connection records, network events, Wi-Fi and equipment samples. *Import history
 a file into this installation: days it does not have are added, a day it has is replaced only
 by a fuller copy, and events and samples are added where missing. Use it to move to a new
 server, to restore a backup, or to bring in history from another installation. Settings, the
-API key and the password are never in the file. Days older than the 30 days of usage history
+API key and the password are never in the file. Days older than the 90 days of usage history
 are skipped.
 
 ### Optional environment variables
