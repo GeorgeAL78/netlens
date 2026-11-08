@@ -216,6 +216,7 @@ app.use((req, res, next) => {
     .then((r) => {
       if (r.status >= 500) throw new Error(`view worker answered ${r.status}`);
       if (r.status === 200) remember(key, v, r.body.toString("utf8"));
+      if (r.timing) res.set("Server-Timing", r.timing);
       res.status(r.status).set("X-NetLens-View", "worker").type(r.type || "json").send(r.body);
     })
     .catch((err) => {
@@ -1152,9 +1153,13 @@ app.post("/api/findings/hidden", (req, res) => {
 
 // Overview's feed. Also built right after each data change for today (prewarmOverview), so the
 // first visit after a snapshot is instant too (UU-C-166).
+// Server-Timing of the last Overview built here (UU-C-215).
+let findingsTiming = "";
 function findingsBody(query) {
   {
+    const t0 = performance.now();
     const ctx = dayContext(query);
+    const tCtx = performance.now();
     const maps = db.dpiMaps();
     const list = views.findings({
       ...ctx,
@@ -1171,7 +1176,12 @@ function findingsBody(query) {
     const online = db.queryClientSamples(ctx.now - 15 * 60 * 1000, ctx.now + 1, null);
     const onlineMacs = new Map();
     for (const r of online) onlineMacs.set(r.mac, r.wired);
-    const blocked = insights.threats(ctx.start, ctx.end).total;
+    const tFind = performance.now();
+    const lt = views.lastThreats;
+    const blocked = lt && lt.start === ctx.start && lt.end === ctx.end ? lt.total : insights.threats(ctx.start, ctx.end).total;
+    const tBlocked = performance.now();
+    const ms = (x) => Math.round(x);
+    findingsTiming = [["context", tCtx - t0], ...views.lastTimings, ["blockedcount", tBlocked - tFind]].map(([n, d]) => `${n};dur=${ms(d)}`).join(", ");
     // Alert rules that fired in the period lead the feed (UU-C-114).
     let alerts = [];
     try {
@@ -1235,7 +1245,9 @@ function findingsBody(query) {
 
 app.get("/api/findings", (req, res) => {
   try {
-    res.json(findingsBody(req.query));
+    const body = findingsBody(req.query);
+    if (findingsTiming) res.set("Server-Timing", findingsTiming);
+    res.json(body);
   } catch (err) {
     sendError(res, "GET /api/findings", err);
   }

@@ -259,7 +259,25 @@ const GB = 1e9;
 const IN_USE_BYTES_PER_HOUR = 500e6;
 const fmtGB = (b) => (b >= GB ? `${(b / GB).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`);
 
+// Time spent per part of the Overview, for its Server-Timing header (UU-C-215): read from the
+// owner's server through the API, since a profile can only be taken on dev.
+export let lastTimings = [];
+// The period's blocked total from the same insights.threats call, so the Overview's "Blocked"
+// count does not build every incident a second time (UU-C-215).
+export let lastThreats = null;
+function lapper() {
+  const laps = [];
+  let t0 = performance.now();
+  lastTimings = laps;
+  return (name) => {
+    const t = performance.now();
+    laps.push([name, t - t0]);
+    t0 = t;
+  };
+}
+
 export function findings({ bundle, start, end, now, lostSpans, clock, appName, catName = () => "", dayKey, today, days }) {
+  const lap = lapper();
   const when = today ? "today" : days ? `in these ${days} days` : "that day";
   const nameOf = insights.names();
   const out = [];
@@ -370,6 +388,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     });
   }
 
+  lap("top");
   // Unusual: a device far above its own normal, from UniFi's daily totals of the 14 days
   // before the period (UU-C-127). Today is compared while still under way, so only a device
   // already past 3x a whole normal day is flagged.
@@ -408,6 +427,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     }
   }
 
+  lap("unusual");
   // The day's biggest burst: the largest session of 5-minute rows, any device and app.
   const rows = bundle.buckets
     .filter((b) => b[0] >= start && b[0] < end)
@@ -443,6 +463,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     });
   }
 
+  lap("burst");
   // Weak Wi-Fi: over an hour below −80 dBm.
   for (const c of insights.wifiList(start, end).clients) {
     const poorMin = Math.round(((c.badShare || 0) / 100) * c.minutes);
@@ -458,6 +479,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     });
   }
 
+  lap("weakwifi");
   // Access points on one channel (UU-C-198). An hour or more, so a channel scan or a brief change
   // stays quiet; only when a radio carries devices. Both busy is worth acting on.
   for (const p of insights.channelOverlaps(start, end)) {
@@ -478,6 +500,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     });
   }
 
+  lap("channels");
   // Failed Wi-Fi joins (UU-C-146): only when it is worth a look — 20+ in the period, or more
   // failures than successful joins. One-offs stay on the device page.
   const JOIN_PHRASE = { login: "couldn't log in to Wi-Fi", refused: "was refused by an access point", noip: "joined Wi-Fi but got no IP address", dns: "joined Wi-Fi but its DNS lookups failed", other: "failed to join Wi-Fi" };
@@ -496,6 +519,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     });
   }
 
+  lap("joins");
   // Slow or renegotiated wired links.
   const wired = insights.wiredList(start, end).clients;
   const fastest = db.fastestWiredLinks(wired.map((c) => c.mac), end - 30 * 86400e3);
@@ -526,8 +550,10 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     }
   }
 
+  lap("wired");
   // Security: each IPS hit; firewall rules grouped; repeat offenders.
   const t = insights.threats(start, end);
+  lastThreats = { start, end, total: t.total };
   // One finding per source → target: four attempts from one address are one story, not four.
   const groups = new Map();
   for (const it of t.items.filter((i) => i.kind === "Threat blocked")) {
@@ -562,12 +588,14 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
   for (const [rule, v] of byRule) {
     out.push({ id: `rule-${rule}`, kind: "security", level: "info", ts: v.ts, title: `Your “${rule}” rule fired ${v.n === 1 ? "once" : `${v.n} times`}`, text: v.sources.size ? `From ${[...v.sources].slice(0, 3).join(", ")}${v.sources.size > 3 ? " and others" : ""}.` : "", rule });
   }
+  lap("security");
   // New devices: first seen by this installation today.
   const firstSeen = db.firstSeenSince ? db.firstSeenSince(start) : [];
   for (const d of firstSeen) {
     out.push({ id: `new-${d.mac}`, kind: "device", level: "warn", ts: d.ts, title: `New device on your network: ${nameOf(d.mac)}`, text: `First seen ${days ? new Date(d.ts).toLocaleDateString() + " " : ""}${clock(d.ts)}${d.wired ? " on a wired port" : " on Wi-Fi"}. If you don't recognise it, block it from its page.`, mac: d.mac });
   }
 
+  lap("newdevices");
   // The public IP changed in the period (UU-C-176): after a power cut, a gateway restart or the
   // ISP renewing the address. Only a change NetLens saw, i.e. a new address after a known one.
   {
@@ -584,6 +612,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       });
     }
   }
+  lap("publicip");
   // Equipment: offline, hot or with an update waiting.
   for (const d of db.latestDeviceSamples()) {
     if (d.state !== 1) out.push({ id: `dev-off-${d.mac}`, kind: "equipment", level: "bad", ts: d.ts, title: `${d.name || d.model} is offline`, text: "UniFi reports it disconnected.", device: d.mac });
@@ -591,6 +620,7 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     if (d.data?.upgradable) out.push({ id: `dev-fw-${d.mac}`, kind: "equipment", level: "info", ts: d.ts, title: `Firmware update available for ${d.name || d.model}`, text: d.data?.firmware ? `Running ${d.data.firmware}.` : "", device: d.mac });
   }
 
+  lap("equipment");
   // Missing data.
   if (lostSpans.length) {
     const ms = lostSpans.reduce((n, s) => n + (Math.min(s.to, now) - s.from), 0);
@@ -599,5 +629,6 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
 
   const order = { bad: 0, warn: 1, info: 2 };
   out.sort((a, b) => order[a.level] - order[b.level] || b.ts - a.ts);
+  lap("rest");
   return out;
 }

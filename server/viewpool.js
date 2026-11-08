@@ -70,7 +70,7 @@ export function request(url, version) {
       (res) => {
         const chunks = [];
         res.on("data", (c) => chunks.push(c));
-        res.on("end", () => resolve({ status: res.statusCode, type: res.headers["content-type"], body: Buffer.concat(chunks) }));
+        res.on("end", () => resolve({ status: res.statusCode, type: res.headers["content-type"], timing: res.headers["server-timing"], body: Buffer.concat(chunks) }));
         res.on("error", reject);
       }
     );
