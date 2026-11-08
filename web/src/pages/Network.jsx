@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { ago, bytes, clock, duration, go, href, shortDate, speed, useApi, wanNow, splitTip } from "../lib.js";
 import { Bars, Failed, Loading, healthClass, Bytes, Split } from "../ui.jsx";
 
@@ -91,7 +91,8 @@ function History({ mac }) {
   );
 }
 
-function Panel({ data, route }) {
+function Panel({ data, route, closeHref }) {
+  const close = <a className="iconbtn panel-close" href={closeHref} aria-label="Close" title="Close (Esc)">×</a>;
   const all = [data.gateway, ...data.nodes].filter(Boolean);
   const flat = [...all.flatMap((n) => n.clients), ...data.loose];
   const hostOf = route.query.c ? flat.find((h) => (h.guests || []).some((g) => g.mac === route.query.c)) || null : null;
@@ -103,6 +104,7 @@ function Panel({ data, route }) {
     const link = data.gateway?.uplink?.speed;
     return (
       <aside className="panel" aria-label="Internet">
+        {close}
         <span className="tag dim">INTERNET</span>
         <h2 style={{ fontSize: 22 }}>{w.isp || "WAN"}</h2>
         <div className="kv">
@@ -129,6 +131,7 @@ function Panel({ data, route }) {
   if (client) {
     return (
       <aside className="panel" aria-label="Selected device">
+        {close}
         <span className={`tag ${client.health === "warn" ? "warn" : client.health === "off" ? "dim" : "ok"}`}>
           {client.health === "warn" ? (client.wired ? "SLOW LINK" : "WEAK SIGNAL") : client.health === "off" ? "OFFLINE" : "HEALTHY"}
         </span>
@@ -160,6 +163,7 @@ function Panel({ data, route }) {
     }
     return (
       <aside className="panel" aria-label="Selected equipment">
+        {close}
         <span className="tag dim">{kindOf(node.type).toUpperCase()} · {node.model}</span>
         <h2 style={{ fontSize: 22 }}>{node.name}</h2>
         <div className="kv">
@@ -584,9 +588,25 @@ export default function Network({ route }) {
   // Map or History (UU-C-219): the history was a card far below the map.
   const view = route.query.v === "history" ? "history" : "map";
   const setView = (v) => go("network", null, { ...route.query, v: v === "map" ? null : v });
+  // Closing the panel (UU-C-225): a click on empty space beside it, Escape, or its ×.
+  const picked = Boolean(sel || selC);
+  const closeHref = href("network", null, { ...route.query, n: null, c: null });
+  const onMainClick = (e) => {
+    if (!picked || e.button !== 0 || e.target.closest("a, button, input, select, textarea, label, summary, [role=button], [role=tab]")) return;
+    if (String(window.getSelection?.() || "")) return; // finishing a text selection is not a click away
+    window.location.hash = closeHref;
+  };
+  useEffect(() => {
+    if (!picked) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape" && !e.target.closest?.("input, select, textarea")) window.location.hash = closeHref;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picked, closeHref]);
   return (
     <div className="split">
-      <div className="main">
+      <div className="main" onClick={onMainClick}>
         <div className="page wide">
           <div className="page-head">
             <div className="titles">
@@ -615,7 +635,7 @@ export default function Network({ route }) {
           {view === "history" && <NetworkTimeline route={route} />}
         </div>
       </div>
-      <AtCtx.Provider value={at}>{data && <Panel data={data} route={route} />}</AtCtx.Provider>
+      <AtCtx.Provider value={at}>{data && <Panel data={data} route={route} closeHref={closeHref} />}</AtCtx.Provider>
     </div>
   );
 }

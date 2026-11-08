@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.21.3 — 2026-11-08
+
+### Changed
+- Network: the device and equipment panel closes when you click beside it, press Escape, or use its × button.
+
 ## 2.21.2 — 2026-11-08
 
 ### Added

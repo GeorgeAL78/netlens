@@ -225,7 +225,8 @@ table.t tr.click:hover td { background: #141b26; }
   flex: 1 1 360px; max-width: 420px; border-left: 1px solid #1c2330; background: var(--panel-2); padding: 22px 22px 28px;
   display: flex; flex-direction: column; gap: 14px; position: sticky; top: 67px; align-self: flex-start; max-height: calc(100vh - 67px); overflow-y: auto;
 }
-@media (max-width: 1000px) { .panel { max-width: none; border-left: 0; border-top: 1px solid #1c2330; position: static; max-height: none; } }
+.panel-close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; font-size: 18px; }
+@media (max-width: 1000px) { .panel { max-width: none; border-left: 0; border-top: 1px solid #1c2330; position: relative; max-height: none; } }
 .kv { display: flex; flex-direction: column; }
 .kv > div { display: flex; justify-content: space-between; gap: 16px; padding: 8px 0; border-bottom: 1px solid #1a212c; font-size: 13px; }
 .kv > div > span:first-child { color: var(--dim); flex: none; }
