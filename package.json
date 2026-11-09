@@ -1,7 +1,7 @@
 {
   "name": "netlens",
   "private": true,
-  "version": "2.21.3",
+  "version": "2.22.0",
   "description": "NetLens — a dashboard for UniFi networks: traffic, Wi-Fi quality, equipment health and security for a UniFi network, as a self-hosted web app",
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "dev:web": "vite",
     "build": "vite build",
     "start": "node server/index.js",
-    "check": "node scripts/check-report-isolation.mjs",
+    "check": "node scripts/check-report-isolation.mjs && node scripts/check-api-spec.mjs",
     "audit": "node scripts/audit-report.mjs"
   },
   "dependencies": {

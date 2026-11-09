@@ -42,19 +42,23 @@ export function checkPassword(password) {
 
 // A read-only access key (UU-C-204) for scripts and assistants that cannot type the password.
 // Made in Settings, shown once, stored only as a SHA-256 hash (it is random, so no salt is
-// needed). It opens GET requests under /api/ and nothing else.
+// needed). A "read" key opens GET requests under /api/; a "full" key (UU-C-227) also the safe
+// changes listed in server/apispec.js. Keys made before UU-C-227 have no scope stored: read.
 const tokenHash = (t) => crypto.createHash("sha256").update(String(t)).digest("hex");
 export const hasToken = () => Boolean(db.getSetting("api_token_hash", ""));
 export const tokenCreated = () => Number(db.getSetting("api_token_created", "")) || null;
-export function newToken() {
+export const tokenScope = () => (db.getSetting("api_token_scope", "") === "full" ? "full" : "read");
+export function newToken(scope = "read") {
   const token = `nl_${crypto.randomBytes(24).toString("base64url")}`;
   db.setSetting("api_token_hash", tokenHash(token));
   db.setSetting("api_token_created", String(Date.now()));
+  db.setSetting("api_token_scope", scope === "full" ? "full" : "read");
   return token;
 }
 export function clearToken() {
   db.setSetting("api_token_hash", "");
   db.setSetting("api_token_created", "");
+  db.setSetting("api_token_scope", "");
 }
 export function bearer(req) {
   const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization || ""));

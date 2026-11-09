@@ -11,7 +11,7 @@ const SECTIONS = [
   ["login", "Login"],
   ["data", "Data & history"],
   ["adblock", "Ad-block counts"],
-  ["access", "Access key"],
+  ["access", "API & AI"],
 ];
 
 function Console() {
@@ -191,16 +191,21 @@ function AccessKey() {
   const [s, setS] = useState(null);
   const [key, setKey] = useState("");
   const [msg, setMsg] = useState("");
+  // Read only, or read and the safe changes (UU-C-227).
+  const [scope, setScope] = useState("read");
   useEffect(() => {
-    api("/api/settings").then(setS).catch((e) => setMsg(e.message));
+    api("/api/settings").then((x) => {
+      setS(x);
+      if (x.accessKeyScope) setScope(x.accessKeyScope);
+    }).catch((e) => setMsg(e.message));
   }, []);
   async function make() {
     if (s?.accessKeyCreated && !window.confirm("Replace the access key? The old one stops working at once.")) return;
     setMsg("");
     try {
-      const r = await api("/api/access-key", { method: "POST", body: JSON.stringify({}) });
+      const r = await api("/api/access-key", { method: "POST", body: JSON.stringify({ scope }) });
       setKey(r.key);
-      setS((x) => ({ ...x, accessKeyCreated: r.created }));
+      setS((x) => ({ ...x, accessKeyCreated: r.created, accessKeyScope: r.scope }));
     } catch (e) {
       setMsg(e.message);
     }
@@ -211,20 +216,30 @@ function AccessKey() {
     try {
       await api("/api/access-key", { method: "DELETE" });
       setKey("");
-      setS((x) => ({ ...x, accessKeyCreated: null }));
+      setS((x) => ({ ...x, accessKeyCreated: null, accessKeyScope: null }));
       setMsg("Access key turned off.");
     } catch (e) {
       setMsg(e.message);
     }
   }
   const noLogin = s && !s.hasPassword;
+  const origin = window.location.origin;
+  const scopeText = (sc) => (sc === "full" ? "read and make safe changes" : "read only");
   return (
-    <SettingsSection icon="shield" title="Access key (optional)" hint="Lets a script or an assistant read NetLens's data without the password: every page's numbers, as JSON. It can only read — it cannot block devices, change settings or export history. Send it as the header Authorization: Bearer <key>.">
+    <SettingsSection icon="shield" title="API and AI access" hint="Lets a script or an AI assistant use NetLens: every page's data as JSON, and with a full key the safe changes — rename a device, set where a VM runs, check a device, manage alerts, hide findings, refresh. No key can block devices, change settings, the password or this key, or import or export history.">
+      <div className="kv">
+        <div><span>MCP (Claude and other assistants)</span><span className="mono">{origin}/mcp</span></div>
+        <div><span>REST, described</span><span className="mono"><a href="/api/openapi.json" target="_blank" rel="noreferrer">{origin}/api/openapi.json</a></span></div>
+      </div>
       {noLogin ? (
-        <p className="setup-dim">There is no login password, so the data is already open to anyone on your network. Set a password first.</p>
+        <p className="setup-dim">There is no login password, so the API and the MCP endpoint are open to anyone on your network, with the safe changes. Set a password to require a key.</p>
       ) : (
         <>
-          <p className="setup-dim">{!s ? "…" : s.accessKeyCreated ? `A key is on, made ${new Date(s.accessKeyCreated).toLocaleDateString()}.` : "No key yet."}</p>
+          <p className="setup-dim">Send the key as the header Authorization: Bearer &lt;key&gt; — in an assistant, add a custom connector with the MCP address above and that header. {!s ? "…" : s.accessKeyCreated ? `A key is on (${scopeText(s.accessKeyScope)}), made ${new Date(s.accessKeyCreated).toLocaleDateString()}.` : "No key yet."}</p>
+          <div className="seg" role="radiogroup" aria-label="What the key may do">
+            <button type="button" role="radio" aria-checked={scope === "read"} className={scope === "read" ? "on" : ""} onClick={() => setScope("read")}>Read only</button>
+            <button type="button" role="radio" aria-checked={scope === "full"} className={scope === "full" ? "on" : ""} onClick={() => setScope("full")}>Read and safe changes</button>
+          </div>
           {key && (
             <div className="setup-row">
               <label>
@@ -234,7 +249,7 @@ function AccessKey() {
             </div>
           )}
           <div className="account-actions">
-            <button type="button" className="btn primary" onClick={make} disabled={!s}>{s?.accessKeyCreated ? "Replace key" : "Make a key"}</button>
+            <button type="button" className="btn primary" onClick={make} disabled={!s}>{s?.accessKeyCreated ? (s.accessKeyScope === scope ? "Replace key" : `Replace with a ${scope === "full" ? "full" : "read-only"} key`) : "Make a key"}</button>
             {key && navigator.clipboard && <button type="button" className="btn" onClick={() => navigator.clipboard.writeText(key).then(() => setMsg("Copied."))}>Copy</button>}
             {s?.accessKeyCreated && <button type="button" className="btn" onClick={remove}>Turn off</button>}
           </div>

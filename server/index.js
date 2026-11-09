@@ -39,6 +39,8 @@ import { makerOf } from "./oui.js";
 import { parentPort, workerData } from "node:worker_threads";
 import { VIEW_WORKER } from "./role.js";
 import * as viewpool from "./viewpool.js";
+import * as apispec from "./apispec.js";
+import { mcpPost } from "./mcp.js";
 
 const app = express();
 
@@ -92,8 +94,10 @@ app.get("/healthz", (_req, res) => res.json({ ok: true, version: process.env.APP
 // one; after that every page and API call needs the session cookie. Plain HTTP on the LAN —
 // fine for a home network, not for the internet.
 const OPEN_PATHS = new Set(["/healthz", "/login", "/api/login", "/api/logout"]);
-// The read-only access key (UU-C-204): GET under /api/ only, never the history export (every
-// record in one file). Wrong keys count towards the same lockout as wrong passwords.
+// The access key (UU-C-204): GET under /api/ only, never the history export (every record in one
+// file). A full key (UU-C-227) also makes the safe changes in server/apispec.js, and either key
+// may use the MCP endpoint, which offers the write tools only to a full key. Wrong keys count
+// towards the same lockout as wrong passwords.
 const KEY_DENIED = new Set(["/api/history/export"]);
 app.use((req, res, next) => {
   // A view worker's requests were checked by the main thread and by the gate above.
@@ -106,10 +110,14 @@ app.use((req, res, next) => {
       auth.recordFailure(ip);
       return res.status(401).json({ error: "access key not valid" });
     }
-    if (req.method !== "GET" || !req.path.startsWith("/api/") || KEY_DENIED.has(req.path)) return res.status(403).json({ error: "the access key can only read data" });
-    return next();
+    req.keyScope = auth.tokenScope();
+    if (req.path === "/mcp") return next();
+    if (req.method === "GET" && req.path.startsWith("/api/") && !KEY_DENIED.has(req.path)) return next();
+    if (req.keyScope === "full" && apispec.isKeyWrite(req.method, req.path)) return next();
+    return res.status(403).json({ error: req.keyScope === "full" ? "the access key cannot do this: only reading and the changes in /api/openapi.json" : "the access key can only read data" });
   }
   if (!auth.hasPassword() || OPEN_PATHS.has(req.path) || auth.hasSession(req)) return next();
+  if (req.path === "/mcp") return res.status(401).set("WWW-Authenticate", 'Bearer realm="netlens"').json({ error: "an access key is required: Settings › API and AI access" });
   if (req.path.startsWith("/api/")) return res.status(401).json({ error: "login required" });
   return res.redirect(`/login?next=${encodeURIComponent(req.originalUrl)}`);
 });
@@ -799,6 +807,7 @@ app.get("/api/settings", (_req, res) => {
     hasPassword: auth.hasPassword(),
     // Only whether a read-only access key exists and since when, never the key (UU-C-204).
     accessKeyCreated: auth.hasToken() ? auth.tokenCreated() : null,
+    accessKeyScope: auth.hasToken() ? auth.tokenScope() : null,
     // The owner chose to run without a login (UU-C-082).
     loginDisabled: db.getSetting("login_disabled", "") === "1",
     serverMode: SERVER_MODE,
@@ -822,14 +831,32 @@ app.post("/api/login", (req, res) => {
 
 // Make (or replace) the read-only access key; the only time it is ever shown (UU-C-204).
 // The key itself cannot reach these: it is refused for anything but GET.
-app.post("/api/access-key", (_req, res) => {
+app.post("/api/access-key", (req, res) => {
   if (!auth.hasPassword()) return res.status(409).json({ error: "Set a login password first: without one the dashboard is open anyway" });
-  res.json({ key: auth.newToken(), created: auth.tokenCreated() });
+  const key = auth.newToken(req.body?.scope === "full" ? "full" : "read");
+  res.json({ key, created: auth.tokenCreated(), scope: auth.tokenScope() });
 });
 app.delete("/api/access-key", (_req, res) => {
   auth.clearToken();
   res.json({ ok: true });
 });
+
+// For scripts and assistants (UU-C-227): the API described, and the same routes as MCP tools.
+app.get("/api/openapi.json", (_req, res) => res.json(apispec.openapi(process.env.APP_VERSION)));
+app.post("/mcp", (req, res) => {
+  // DNS rebinding: a web page may not drive this from the owner's browser.
+  const origin = req.headers.origin;
+  if (origin && !LOOPBACK_ORIGIN.test(origin)) {
+    let same = false;
+    try {
+      same = new URL(origin).host === req.headers.host;
+    } catch {}
+    if (!same) return res.status(403).json({ error: "origin not allowed" });
+  }
+  const canWrite = !req.keyScope || req.keyScope === "full";
+  mcpPost(req, res, { canWrite, version: process.env.APP_VERSION }).catch((err) => sendError(res, "POST /mcp", err));
+});
+app.all("/mcp", (_req, res) => res.status(405).set("Allow", "POST").json({ error: "POST JSON-RPC here; there is no event stream" }));
 
 app.post("/api/logout", (_req, res) => {
   auth.endSession(res);

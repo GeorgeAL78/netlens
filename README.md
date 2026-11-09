@@ -72,6 +72,9 @@ which UniFi itself deletes after a day or a week.
 - **Missing data is marked, never shown as a quiet hour**, and filled from UniFi's daily
   per-device totals where those still exist.
 - **History export / import**, an optional syslog listener for ad-block counts.
+- **API and AI access** — an MCP endpoint (`/mcp`) so Claude or another assistant can ask about
+  your network and make safe changes, and the same operations as a REST API described at
+  `/api/openapi.json`. See [API and AI access](#api-and-ai-access).
 
 ## Why it runs all the time
 
@@ -157,13 +160,35 @@ container listens on port `5514` (TCP and UDP) by default: publish that port and
 this server (CyberSecure → Traffic Logging → Activity Logging → SIEM Server). Clear the port in
 Settings to turn the listener off.
 
+## API and AI access
+
+NetLens offers 31 operations (23 that read, 8 that make safe changes) in two forms, built from
+one list so they always match:
+
+- **MCP** at `http://<host>:3780/mcp` (Streamable HTTP, JSON answers). In Claude, add a custom
+  connector with that address; in Claude Code,
+  `claude mcp add --transport http netlens http://<host>:3780/mcp --header "Authorization: Bearer <key>"`.
+- **REST**, described at `http://<host>:3780/api/openapi.json` (OpenAPI 3.1).
+
+Reading covers every page: Overview findings, usage by device and app, sites, devices and
+presence, the network map now or at any time in the last 90 days, equipment history, Wi-Fi,
+Protection and alerts. The safe changes are: rename a device, set which device a VM runs on,
+check a device on the network, add / switch / delete a usage alert, hide or show an Overview
+finding, and refresh from UniFi. Nothing through this route can block a device, change
+settings, the password or the key, import or export history, or stop NetLens.
+
+With a login password, every call needs an access key: **Settings › API & AI** makes one,
+*Read only* or *Read and safe changes*, sent as `Authorization: Bearer <key>`. Without a
+password the API is open to anyone on your LAN, like the dashboard.
+
 ## Security
 
 - **The login password is required** on first start: the dashboard can block devices.
 - It is meant for your LAN. Do not expose it to the internet; use a VPN to reach it remotely.
-- **Access key (optional)**: Settings › Access key makes a read-only key for scripts, sent as
-  `Authorization: Bearer <key>`. It reads the JSON behind every page (`/api/...`) and nothing
-  else — no blocking, no settings, no history export. Stored as a hash, shown once.
+- **Access key (optional)**: Settings › API & AI makes a key for scripts and assistants, sent as
+  `Authorization: Bearer <key>`. A read-only key reads the JSON behind every page; a full key
+  also makes the safe changes listed above. Neither can block devices, change settings or
+  export history. Stored as a hash, shown once. `/mcp` refuses requests from other web pages.
 - The API key never leaves the server: the UI only learns whether one is stored.
 - Passwords are stored as scrypt hashes; sessions are signed cookies; five wrong passwords lock
   that address out for five minutes. Plain HTTP — fine on a home LAN, not across untrusted networks.
