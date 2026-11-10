@@ -42,7 +42,9 @@ which UniFi itself deletes after a day or a week.
   the server that runs them; a device the switch lost track of stays at its last known port (↺).
   Pick any time in the last 90 days to see the network as it was then; **History** shows
   internet speed, latency, devices online and every restart or change. Click the internet line
-  for its public-IP history, an access point for its radios, a switch for its ports.
+  for its public-IP history, an access point for its radios, a switch for its ports. Every card
+  shows firmware (UniFi OS for the gateway) and flags an available update or an end-of-life
+  model; the panel adds the model, address, Wi-Fi experience and PoE budget.
 - **Device** — per device: traffic, Wi-Fi signal or wired link speed, apps, sessions, events,
   connection time, online history, CSV export, block / unblock.
 - **Devices** — every device UniFi knows, new ones first: maker, where it connected (switch port
@@ -70,7 +72,9 @@ which UniFi itself deletes after a day or a week.
 - **Local-network traffic** (a media server, a NAS) shown separately — UniFi's counters only
   cover internet traffic.
 - **Missing data is marked, never shown as a quiet hour**, and filled from UniFi's daily
-  per-device totals where those still exist.
+  per-device totals where those still exist (Network 10; Network 11 no longer provides them).
+- **Survives UniFi starting over**: Network 11 clears UniFi's statistics when it is installed;
+  NetLens keeps its own history and today's traffic carries on from what it had.
 - **History export / import**, an optional syslog listener for ad-block counts.
 - **API and AI access** — an MCP endpoint (`/mcp`) so Claude or another assistant can ask about
   your network and make safe changes, and the same operations as a REST API described at

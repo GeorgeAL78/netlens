@@ -952,9 +952,14 @@ app.post("/api/shutdown", (_req, res) => {
 
 // Gateway/WAN strip, equipment health, Wi-Fi quality, threats (UU-C-056). SQLite only —
 // like /api/report, these never wait on UniFi.
+// UniFi's versions (UU-C-229), as last read by the main thread.
+function unifiVersions() {
+  const v = health.storedVersions();
+  return v.network ? { network: v.network, previousNetwork: v.previousNetwork || null, os: v.os || null, stats: v.stats || null, updateAvailable: Boolean(v.updateAvailable), checkedAt: v.checkedAt || null } : null;
+}
 app.get("/api/gateway", (_req, res) => {
   try {
-    res.json({ ...insights.gatewayStatus(), poll: health.state });
+    res.json({ ...insights.gatewayStatus(), unifi: unifiVersions(), poll: health.state });
   } catch (err) {
     sendError(res, "GET /api/gateway", err);
   }
@@ -1287,7 +1292,7 @@ app.get("/api/network", (req, res) => {
     const atRaw = Number(req.query.at);
     const at = Number.isFinite(atRaw) && atRaw > 0 ? Math.min(now, Math.max(now - 90 * 86400e3, atRaw)) : null;
     const bundle = cache.readDays([zonedDateKey(at ?? now)]);
-    res.json({ tz, ts: now, ...views.networkMap({ bundle, now, at }) });
+    res.json({ tz, ts: now, unifi: unifiVersions(), ...views.networkMap({ bundle, now, at }) });
   } catch (err) {
     sendError(res, "GET /api/network", err);
   }

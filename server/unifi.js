@@ -450,6 +450,28 @@ export const getStations = () => siteStat("sta");
 export const getDevices = () => siteStat("device");
 export const getHealth = () => siteStat("health");
 
+// Versions (UU-C-229). stat/sysinfo has the Network application's version, the one before it
+// and the console's UniFi OS version (console_display_version). The Integration API's device
+// list has the model names UniFi shows ("U7-Pro-Wall") where stat/device has codes ("U7PIW").
+export async function getSysinfo() {
+  return (await siteStat("sysinfo"))[0] || null;
+}
+export async function listIntegrationDevices() {
+  const { siteId } = config();
+  return paginate(`/proxy/network/integration/v1/sites/${siteId}/devices`);
+}
+// "MODERN" on Network 11 (the new statistics engine; stat/report/* is always empty there),
+// "LEGACY" before it. Network 10 has no such endpoint: anything but MODERN counts as legacy.
+export async function getStatsSource() {
+  try {
+    const r = await request("/proxy/network/v2/api/stats/source");
+    return typeof r === "string" ? r : r?.source || r?.raw || "LEGACY";
+  } catch (err) {
+    if (err.status === 404 || err.status === 400) return "LEGACY";
+    throw err;
+  }
+}
+
 // Per-device daily totals (UU-C-057). UniFi keeps its daily scale for 90 days (stat/sysinfo:
 // data_retention_time_in_hours_for_daily_scale = 2160), far longer than the 7 days of
 // hourly DPI. One number per device per day, internet traffic only, buckets at local

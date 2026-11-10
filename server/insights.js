@@ -217,6 +217,10 @@ export function deviceHistory(mac, days, now) {
     else if (prev && prev.state !== 1 && r.state === 1) events.push({ ts: r.ts, level: "ok", what: "Back online" });
     // Timed from its uptime: the first sample after a restart can be hours later if NetLens was off.
     else if (prev && r.uptime != null && prev.uptime != null && r.uptime < prev.uptime) events.push({ ts: Math.max(prev.ts, r.ts - r.uptime * 1000), level: "warn", what: "Restarted" });
+    // Firmware changes (UU-C-229); a gateway's firmware is its UniFi OS.
+    // Compared on the full version (every sample has it); shown as UniFi shows it.
+    const shown = (x) => x?.data?.version || x?.data?.firmware;
+    if (prev?.data?.firmware && r.data?.firmware && prev.data.firmware !== r.data.firmware) events.push({ ts: r.ts, level: "info", what: `${/udm|ugw|uxg/.test(r.type || "") ? "UniFi OS" : "Firmware"} updated to ${shown(r)}`, detail: `from ${prev.data.version || prev.data.firmware}` });
     const slot = Math.min(count - 1, Math.floor((r.ts - start) / step));
     for (const x of r.data.radios || []) {
       const h = radios.get(x.radio) || { radio: x.radio, band: bandName(x.radio), slots: Array.from({ length: count }, () => []), last: null };

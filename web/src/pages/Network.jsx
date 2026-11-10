@@ -153,6 +153,7 @@ function Panel({ data, route, closeHref }) {
   }
   if (node) {
     const isAp = /uap/.test(node.type || "");
+    const isGwNode = /udm|ugw|uxg/.test(node.type || "");
     const isSw = /usw/.test(node.type || "");
     const byBand = {};
     const bySsid = {};
@@ -164,7 +165,7 @@ function Panel({ data, route, closeHref }) {
     return (
       <aside className="panel" aria-label="Selected equipment">
         {close}
-        <span className="tag dim">{kindOf(node.type).toUpperCase()} · {node.model}</span>
+        <span className="tag dim">{kindOf(node.type).toUpperCase()} · {node.model}{node.modelCode ? ` (${node.modelCode})` : ""}</span>
         <h2 style={{ fontSize: 22 }}>{node.name}</h2>
         <div className="kv">
           <div><span>Status</span><span className={node.online ? "ok" : "bad"}>{node.online ? "online" : "offline"}</span></div>
@@ -172,7 +173,17 @@ function Panel({ data, route, closeHref }) {
           {node.cpu != null && <div><span>CPU · memory</span><span className="mono">{Math.round(node.cpu)}% · {Math.round(node.mem ?? 0)}%</span></div>}
           {node.temp != null && <div><span>Temperature</span><span className={`mono ${node.temp >= 80 ? "warn" : ""}`}>{Math.round(node.temp)} °C</span></div>}
           <div><span>Up</span><span className="mono">{duration(node.uptime)}</span></div>
-          {node.uplink && <div><span>Uplink</span><span>{node.uplink.device || "—"}{node.uplink.port != null ? ` port ${node.uplink.port}` : ""}{node.uplink.speed ? ` · ${speed(node.uplink.speed)}` : ""}</span></div>}
+          {node.uplink && <div><span>Uplink</span><span>{node.uplink.device || (isGwNode ? "Internet" : "—")}{node.uplink.port != null ? ` port ${node.uplink.port}` : ""}{node.uplink.speed ? ` · ${speed(node.uplink.speed)}` : ""}</span></div>}
+          {node.ip && <div><span>{isGwNode ? "LAN address" : "Address"}</span><span className="mono">{node.ip}</span></div>}
+          {isGwNode && data.unifi ? (
+            <div><span>UniFi</span><span className="mono">OS {data.unifi.os || node.firmware || "?"} · Network {data.unifi.network}{data.unifi.updateAvailable ? " (update available)" : ""}</span></div>
+          ) : (
+            node.firmware && <div><span>Firmware</span><span className="mono">{node.firmware}</span></div>
+          )}
+          {node.upgradable && <div><span>Update</span><span className="ok">{node.upgradeTo ? `${node.upgradeTo} available` : "available"}</span></div>}
+          {node.eol && <div><span>Support</span><span className="warn">End of life: UniFi gives it no more firmware</span></div>}
+          {node.satisfaction != null && <div><span>Wi-Fi experience</span><span className={`mono ${node.satisfaction < 70 ? "warn" : ""}`}>{node.satisfaction}%</span></div>}
+          {node.poeMax > 0 && <div><span>PoE budget</span><span className="mono">{node.poeUsed != null ? `${+Number(node.poeUsed).toFixed(1)} of ` : ""}{node.poeMax} W</span></div>}
         </div>
         {isAp && (
           <>
@@ -312,7 +323,8 @@ function NodeCard({ node, parent, kids, sel, selC }) {
     bands.get(b).push(c);
   }
   // CPU, temperature (where the device has a sensor) and uptime, on every card (UU-C-221).
-  const health = [node.cpu != null ? `CPU ${Math.round(node.cpu)}%` : null, node.temp != null ? `${Math.round(node.temp)} °C` : null, node.uptime != null ? `up ${duration(node.uptime)}` : null].filter(Boolean).join(" · ");
+  // Firmware too (UU-C-229): a gateway's firmware is its UniFi OS.
+  const health = [node.cpu != null ? `CPU ${Math.round(node.cpu)}%` : null, node.temp != null ? `${Math.round(node.temp)} °C` : null, node.uptime != null ? `up ${duration(node.uptime)}` : null, node.firmware ? `${isGw(node) ? "OS" : "fw"} ${node.firmware}` : null].filter(Boolean).join(" · ");
   const stat = isGw(node)
     ? null
     : ap
@@ -325,6 +337,7 @@ function NodeCard({ node, parent, kids, sel, selC }) {
         <strong className="eq-name">{node.name}</strong>
         {stat && <span className="mono small dim">{stat}</span>}
         {health && <span className={`mono small dim ${node.temp >= 80 || node.cpu >= 90 ? "warn" : ""}`}>{health}</span>}
+        {(node.upgradable || node.eol) && <span className={`small ${node.eol ? "warn" : "ok"}`}>{node.eol ? "End of life: no more firmware" : `Firmware update available${node.upgradeTo ? `: ${node.upgradeTo}` : ""}`}</span>}
         {node.overheating && <span className="eq-issues hot small">overheating</span>}
         {!node.overheating && (weak > 0 || slow > 0) && <span className="eq-issues small">{[weak ? `${weak} weak signal` : null, slow ? `${slow} slow link` : null].filter(Boolean).join(" · ")}</span>}
       </a>

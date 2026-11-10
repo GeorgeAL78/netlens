@@ -164,6 +164,7 @@ function persistDay(entry) {
         classifierVersion: CLASSIFIER_VERSION,
         closedTrafficRead: Boolean(entry.closedTrafficRead),
         traffic: entry.traffic,
+        trafficBase: entry.trafficBase || null,
         // In flows.db since UU-C-062. An old file that still has a non-empty array is
         // migrated on restore.
         flows: [],
@@ -354,6 +355,7 @@ function restore() {
           start: Number(entry.start),
           end: Number(entry.end),
           traffic: entry.traffic || [],
+          trafficBase: entry.trafficBase || null,
           flowCount,
           buckets: entry.buckets || [],
           bucketSpans: entry.bucketSpans || [],
@@ -408,6 +410,7 @@ function dayFromFile(dayKey, entry, flowDays) {
     start: Number(entry.start),
     end: Number(entry.end),
     traffic: entry.traffic || [],
+    trafficBase: entry.trafficBase || null,
     flowCount: flowDays.get(dayKey)?.count || 0,
     buckets: entry.buckets || [],
     bucketSpans: entry.bucketSpans || [],
@@ -570,7 +573,9 @@ export async function loadDay(dayKey, start, end, { mode = "read" } = {}) {
     ]);
     // A closed day is read whole and replaces whatever partial traffic we had; an
     // open day accumulates. See readClosedDayTraffic for why.
-    const traffic = dayClosed ? keepLargerDay(cur.traffic, trafficRows) : trafficRows;
+    const { traffic, trafficBase } = dayClosed
+      ? { traffic: keepLargerDay(cur.traffic, trafficRows), trafficBase: null }
+      : openDayTraffic(dayKey, cur, trafficRows, now);
     // Whole-day pass: a bare-IP flow borrows a name from another flow in the same day
     // where UniFi resolved that address. Run after the merge so the table is complete.
     // Always merge flows, even on a full refetch. UniFi drops flow history days before
@@ -604,6 +609,7 @@ export async function loadDay(dayKey, start, end, { mode = "read" } = {}) {
       start,
       end,
       traffic,
+      trafficBase,
       flowCount,
       buckets: cur.buckets || [],
       bucketSpans: cur.bucketSpans || [],
@@ -726,6 +732,54 @@ function trafficTotal(rows) {
 // missed, but UniFi also ages days out, and near its retention edge a re-read returns
 // less. On 2026-09-22 a re-read of Sep 15 came back 31.9 GB against 43.1 GB stored —
 // the same shape as the flow wipe in UU-F-039. Keep whichever total is larger.
+// UniFi's own traffic counters can start over mid-day: Network 11 clears its statistics history
+// on the upgrade (UU-C-229), and the day's whole-day re-read then returned almost nothing,
+// replacing 57.9 GB with 0.0 GB. For the open day, a re-read that comes back far below what the
+// last read gave means UniFi reset: what NetLens had becomes the day's base, and UniFi's new
+// counting is added on top of it until midnight. A read that climbs straight back within 30
+// minutes was a glitch, not a reset, and drops the base again. An empty read keeps what we had.
+const RESET_RATIO = 0.5;
+const RESET_MIN_BYTES = 100e6;
+const GLITCH_MS = 30 * 60 * 1000;
+function addTraffic(a, b) {
+  const byMac = new Map();
+  for (const rows of [a, b]) {
+    for (const c of rows || []) {
+      const mac = c.client?.mac;
+      const cur = byMac.get(mac) || { client: c.client, usage: new Map() };
+      for (const u of c.usage || []) {
+        const k = `${u.appId}|${u.catId}`;
+        const x = cur.usage.get(k) || { ...u, bytesRx: 0, bytesTx: 0, totalBytes: 0, activitySeconds: 0 };
+        x.bytesRx += u.bytesRx || 0;
+        x.bytesTx += u.bytesTx || 0;
+        x.totalBytes += u.totalBytes || (u.bytesRx || 0) + (u.bytesTx || 0);
+        x.activitySeconds += u.activitySeconds || 0;
+        cur.usage.set(k, x);
+      }
+      byMac.set(mac, cur);
+    }
+  }
+  return [...byMac.values()].map((c) => ({ client: c.client, usage: [...c.usage.values()] }));
+}
+export function openDayTraffic(dayKey, cur, fresh, now = Date.now()) {
+  const base = cur.trafficBase || null;
+  const had = trafficTotal(cur.traffic);
+  const got = trafficTotal(fresh);
+  if (!got && had) return { traffic: cur.traffic, trafficBase: base };
+  // What UniFi itself reported last time: the whole day, or only its part since a reset.
+  const lastFresh = base ? had - trafficTotal(base.rows) : had;
+  if (base && now - base.at < GLITCH_MS && got >= trafficTotal(base.rows) * 0.9) {
+    console.warn(`cache ${dayKey}: UniFi's traffic is back to ${got} bytes; the earlier drop was a glitch`);
+    return { traffic: fresh, trafficBase: null };
+  }
+  if (lastFresh >= RESET_MIN_BYTES && got < lastFresh * RESET_RATIO) {
+    console.warn(`cache ${dayKey}: UniFi's traffic fell from ${lastFresh} to ${got} bytes: its counters reset; keeping ${had} bytes and adding to them`);
+    const next = { at: now, rows: cur.traffic };
+    return { traffic: addTraffic(next.rows, fresh), trafficBase: next };
+  }
+  return base ? { traffic: addTraffic(base.rows, fresh), trafficBase: base } : { traffic: fresh, trafficBase: null };
+}
+
 function keepLargerDay(stored, fresh) {
   return trafficTotal(fresh) >= trafficTotal(stored) ? fresh : stored;
 }

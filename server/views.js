@@ -177,6 +177,16 @@ export function networkMap({ bundle, now, at = null }) {
     ports: d.data?.ports || [],
     uplink: d.data?.uplink || null,
     overheating: d.data?.overheating === true,
+    // UU-C-229: firmware and the rest of what UniFi knows about the device.
+    firmware: d.data?.version || d.data?.firmware || null,
+    upgradable: d.data?.upgradable === true,
+    upgradeTo: d.data?.upgradeTo || null,
+    eol: d.data?.eol === true,
+    modelCode: d.data?.modelCode && d.data.modelCode !== d.model ? d.data.modelCode : null,
+    ip: d.data?.ip || null,
+    satisfaction: d.data?.satisfaction ?? null,
+    poeMax: d.data?.poeMax ?? null,
+    poeUsed: d.data?.poeUsed ?? null,
     clients: [],
   });
   const nodes = new Map();
@@ -630,12 +640,35 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     }
   }
   lap("publicip");
+  // UniFi itself (UU-C-229): a Network application update NetLens saw happen, or one waiting.
+  {
+    let v = {};
+    try {
+      v = JSON.parse(db.getSetting("unifi_versions", "{}") || "{}");
+    } catch {}
+    const c = v.changed;
+    if (c?.at >= start && c.at < end) {
+      const toEleven = Number(String(c.from).split(".")[0]) < 11 && Number(String(c.to).split(".")[0]) >= 11;
+      out.push({
+        id: `unifi-${c.to}`,
+        kind: "equipment",
+        level: "info",
+        ts: c.at,
+        title: `UniFi Network updated: ${c.from} → ${c.to}`,
+        text: toEleven
+          ? "Network 11 starts UniFi's own statistics over, so UniFi's graphs begin at the update. NetLens keeps its own history, and today's traffic carries on from what it had."
+          : `Seen at ${clock(c.at)}.`,
+      });
+    }
+    if (v.updateAvailable && v.network) out.push({ id: "unifi-update", kind: "equipment", level: "info", ts: v.checkedAt || end, title: "UniFi Network update available", text: `Running ${v.network}.` });
+  }
   // Equipment: offline, hot or with an update waiting.
   for (const d of db.latestDeviceSamples()) {
     if (d.state !== 1) out.push({ id: `dev-off-${d.mac}`, kind: "equipment", level: "bad", ts: d.ts, title: `${d.name || d.model} is offline`, text: "UniFi reports it disconnected.", device: d.mac });
     else if (d.data?.overheating) out.push({ id: `dev-hot-${d.mac}`, kind: "equipment", level: "bad", ts: d.ts, title: `${d.name || d.model} is overheating`, text: `UniFi reports it overheating${d.temp != null ? ` at ${Math.round(d.temp)} °C` : ""}. Check its airflow and what is stacked on or around it.`, device: d.mac });
     else if (d.temp != null && d.temp >= 80) out.push({ id: `dev-hot-${d.mac}`, kind: "equipment", level: "warn", ts: d.ts, title: `${d.name || d.model} runs hot: ${Math.round(d.temp)} °C`, text: "Check its airflow.", device: d.mac });
-    if (d.data?.upgradable) out.push({ id: `dev-fw-${d.mac}`, kind: "equipment", level: "info", ts: d.ts, title: `Firmware update available for ${d.name || d.model}`, text: d.data?.firmware ? `Running ${d.data.firmware}.` : "", device: d.mac });
+    if (d.data?.upgradable) out.push({ id: `dev-fw-${d.mac}`, kind: "equipment", level: "info", ts: d.ts, title: `Firmware update available for ${d.name || d.model}`, text: [d.data?.version || d.data?.firmware ? `Running ${d.data.version || d.data.firmware}` : null, d.data?.upgradeTo ? `${d.data.upgradeTo} is available` : null].filter(Boolean).join("; ") + ".", device: d.mac });
+    if (d.data?.eol) out.push({ id: `dev-eol-${d.mac}`, kind: "equipment", level: "warn", ts: d.ts, title: `${d.name || d.model} has reached end of life`, text: "UniFi lists this model as end of life: it gets no more firmware updates.", device: d.mac });
   }
 
   lap("equipment");

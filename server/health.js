@@ -40,6 +40,10 @@ function clientRow(c, ts) {
   };
 }
 
+// Model names as UniFi shows them, from the Integration API (UU-C-229): stat/device only has
+// codes such as "UDMA6A8" for a Cloud Gateway Fiber. Refreshed hourly with the versions.
+const modelNames = new Map();
+
 function deviceRow(d, ts) {
   const temps = (d.temperatures || []).map((t) => num(t.value)).filter((v) => v != null);
   const ss = d["system-stats"] || {};
@@ -48,7 +52,7 @@ function deviceRow(d, ts) {
     mac: lower(d.mac),
     name: d.name || d.model || null,
     type: d.type || null,
-    model: d.model || null,
+    model: modelNames.get(lower(d.mac)) || d.model || null,
     state: num(d.state),
     cpu: num(ss.cpu),
     mem: num(ss.mem),
@@ -81,6 +85,16 @@ function deviceRow(d, ts) {
         : null,
       firmware: d.version || null,
       upgradable: Boolean(d.upgradable),
+      // UU-C-229: what UniFi shows, and what else it knows about the device.
+      version: d.displayable_version || null,
+      upgradeTo: d.upgrade_to_firmware || null,
+      eol: d.model_in_eol === true,
+      modelCode: d.model || null,
+      // A gateway's ip is its WAN address; its address on the LAN is lan_ip.
+      ip: (/udm|ugw|uxg/.test(d.type || "") ? d.lan_ip || d.connect_request_ip : d.ip) || null,
+      satisfaction: num(d.satisfaction) >= 0 ? num(d.satisfaction) : null,
+      poeMax: num(d.total_max_power),
+      poeUsed: num(d.total_used_power),
     },
   };
 }
@@ -116,8 +130,51 @@ function wanRow(health, ts) {
 let lastPrune = 0;
 export const state = { lastPolledAt: null, error: null, counts: null };
 
+// UniFi's versions (UU-C-229): the Network application, the one before it, UniFi OS, and which
+// statistics engine answers. Read hourly; a change of Network version is remembered with when
+// NetLens first saw it, for the Overview and because Network 11 restarted UniFi's own history.
+export const versions = { network: null, previousNetwork: null, os: null, stats: null, updateAvailable: false, checkedAt: 0, changed: null, error: null };
+try {
+  Object.assign(versions, JSON.parse(db.getSetting("unifi_versions", "{}") || "{}"), { error: null });
+} catch {}
+// From the database, not this module's copy: pages are built on view workers (UU-C-210).
+export function storedVersions() {
+  try {
+    return JSON.parse(db.getSetting("unifi_versions", "{}") || "{}");
+  } catch {
+    return {};
+  }
+}
+const majorOf = (v) => Number(String(v || "").split(".")[0]) || 0;
+export async function refreshVersions({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && now - versions.checkedAt < 60 * 60 * 1000) return versions;
+  try {
+    const [info, devs] = await Promise.all([unifi.getSysinfo(), unifi.listIntegrationDevices().catch(() => [])]);
+    for (const d of devs) if (d.macAddress && d.model) modelNames.set(lower(d.macAddress), d.model);
+    const network = info?.version || null;
+    const stats = majorOf(network) >= 11 ? await unifi.getStatsSource().catch(() => null) : "LEGACY";
+    const changed = versions.network && network && network !== versions.network ? { from: versions.network, to: network, at: now } : versions.changed;
+    Object.assign(versions, {
+      network,
+      previousNetwork: info?.previous_version || null,
+      os: info?.console_display_version || null,
+      stats,
+      updateAvailable: info?.update_available === true,
+      checkedAt: now,
+      changed,
+      error: null,
+    });
+    db.setSetting("unifi_versions", JSON.stringify({ ...versions, error: undefined }));
+  } catch (err) {
+    versions.error = err.message;
+  }
+  return versions;
+}
+
 export async function pollHealth() {
   const ts = Date.now();
+  await refreshVersions();
   try {
     const [stations, devices, health] = await Promise.all([unifi.getStations(), unifi.getDevices(), unifi.getHealth()]);
     const clients = stations.map((c) => clientRow(c, ts)).filter((c) => c.mac);
@@ -236,6 +293,12 @@ export const daily = { lastFetchedAt: 0, rows: 0, error: null };
 export async function refreshDaily(dayKeyOf, { force = false } = {}) {
   const now = Date.now();
   if (!force && now - daily.lastFetchedAt < 60 * 60 * 1000) return { skipped: true };
+  // Network 11 retired stat/report: it answers ok with no rows, for good (UU-C-229). The totals
+  // NetLens already kept stay; nothing new comes, so don't ask.
+  if (versions.stats === "MODERN") {
+    Object.assign(daily, { lastFetchedAt: now, rows: 0, error: null, retired: true });
+    return { retired: true };
+  }
   try {
     const rows = await unifi.getDailyUser(now - DAILY_REACH_MS, now);
     const out = rows
