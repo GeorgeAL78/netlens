@@ -317,7 +317,9 @@ async function refreshDailyModern(dayKeyOf, now) {
       const mine = siteObjectId && rows.some((c) => c.siteId === siteObjectId) ? rows.filter((c) => c.siteId === siteObjectId) : rows;
       let points = 0;
       for (const c of mine) {
-        const mac = lower(c.clientId);
+        // clientId is the MAC today; a later version could switch it to an id like the rules'
+        // (UU-C-237), so only a MAC-shaped value is used and anything else is skipped.
+        const mac = [c.clientId, c.clientMac, c.mac].map(lower).find((v) => /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(v || ""));
         if (!mac) continue;
         for (const p of c.series || []) {
           const k = `${mac}|${p.timestamp}`;

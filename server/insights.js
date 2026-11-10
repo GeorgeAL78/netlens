@@ -794,14 +794,24 @@ function withDirection(d) {
 }
 
 // A System Log rule by its current name (UU-C-185): ids learned from the connection records.
+// The id is taken as it comes, whatever its form ("<id>", or "obj_<id>_<n>" for an Object):
+// Network 11 changed rules from 24-hex ids to UUIDs (UU-C-236), and a later update may again.
+// An old id follows its rule to the new one (`policy_aliases`, UU-C-237).
 function ruleNames() {
   let names = new Map();
+  let aliases = new Map();
   try {
     names = new Map(JSON.parse(db.getSetting("policy_names", "[]")));
+    aliases = new Map(JSON.parse(db.getSetting("policy_aliases", "[]")));
   } catch {
     /* the System Log's own names */
   }
-  return (trigger) => (trigger?.n ? names.get(/^obj_([0-9a-f]+)_\d+$/i.exec(String(trigger.i || ""))?.[1] || trigger.i) || trigger.n : null);
+  const nameOf = (id) => (id ? names.get(aliases.get(id)) ?? names.get(id) : undefined);
+  return (trigger) => {
+    if (!trigger?.n) return null;
+    const raw = String(trigger.i || "");
+    return nameOf(raw) ?? nameOf(/^obj_(.+)_\d+$/.exec(raw)?.[1]) ?? trigger.n;
+  };
 }
 
 export function threats(start, end) {

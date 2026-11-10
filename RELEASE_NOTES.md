@@ -1,2 +1,3 @@
-### Added
-- Traffic per switch port: each port on a switch or the gateway shows what went through it in the last 15 minutes, on its card and in the panel, and in the device's history the total per period and the peak rate. This includes local traffic (a NAS, a media server, backups), which UniFi's per-app counters never see.
+### Fixed
+- A wired device whose port is only 100 Mbps (many TVs) no longer reads as a slow link on the Network page, the Day grid or its own page, as long as it never linked faster in the last 30 days. Overview already worked this way. A device that drops from its usual speed is still flagged.
+- On Network 11, which gave firewall rules new ids, a renamed rule's blocks in the System Log show its current name again. NetLens no longer depends on what UniFi's ids look like, and events from before such a change follow the rule to its new id.

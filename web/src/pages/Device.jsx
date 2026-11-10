@@ -158,7 +158,7 @@ export default function Device({ route }) {
       <div className="page-head">
         <div className="titles">
           {!wired && poorHours > 0 && <span className="tag warn">WEAK SIGNAL{isToday ? " TODAY" : ""}</span>}
-          {wired && link?.speed != null && link.speed <= 100 && <span className="tag warn">SLOW LINK</span>}
+          {wired && link?.speed != null && link.speed <= 100 && !row?.usualSpeed && <span className="tag warn">SLOW LINK</span>}
           <h1 style={{ fontSize: 32 }}>{name}</h1>
           <span className="muted">
             {link?.unsampled && !current && !link.via
@@ -212,7 +212,7 @@ export default function Device({ route }) {
               <>
                 <div className="card tight stat">
                   <span className="label">Link speed</span>
-                  <span className={`value ${link?.speed <= 100 ? "warn" : ""}`}>{speed(link?.speed)}</span>
+                  <span className={`value ${link?.speed <= 100 && !row?.usualSpeed ? "warn" : ""}`} title={row?.usualSpeed ? "Its usual speed: it never linked faster in 30 days" : undefined}>{speed(link?.speed)}</span>
                   <span className="sub">{link?.via || "—"}{link?.port != null ? ` · port ${link.port}` : ""}</span>
                 </div>
                 <div className="card tight stat">

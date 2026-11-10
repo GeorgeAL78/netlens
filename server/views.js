@@ -26,10 +26,13 @@ function linkOf(r, nameOf) {
     : { wired: false, ip: r.ip ?? null, via: r.ap_mac ? nameOf(r.ap_mac) : null, signal: r.signal ?? null, radio: r.radio || null, essid: r.essid || null, uptime: r.uptime ?? null, ts: r.ts };
 }
 
-function healthOf(link, now, today) {
+// `best`: the device's fastest wired link in 30 days. One that never linked faster than 100 Mbps
+// (a TV, a smart plug) is at its usual speed, as Overview has judged it since UU-C-189 (UU-C-235).
+const usualSpeed = (speed, best) => speed != null && best != null && best <= speed;
+function healthOf(link, now, today, best = null) {
   if (!link) return "off";
   if (today && now - link.ts > 15 * 60 * 1000) return "off";
-  if (link.wired) return link.speed != null && link.speed <= 100 ? "warn" : "ok";
+  if (link.wired) return link.speed != null && link.speed <= 100 && !usualSpeed(link.speed, best) ? "warn" : "ok";
   return link.signal != null && link.signal < -80 ? "warn" : "ok";
 }
 
@@ -97,6 +100,7 @@ export function dayGrid({ bundle, start, end, now, today }) {
   const logs = insights.logHistory(start, end, null, now);
   const storedIp = new Map(db.listStoredClients().filter((c) => c.ip).map((c) => [String(c.mac).toLowerCase(), c.ip]));
   const macs = new Set([...totals.keys(), ...hourly.keys(), ...marks.keys()]);
+  const fastest = db.fastestWiredLinks([...macs].filter((m) => samples.get(m)?.wired), end - 30 * 86400e3);
   const rows = [...macs].map((mac) => {
     const sampled = linkOf(samples.get(mac), nameOf);
     // No samples that day: the System Log's last word on where it was attached, unless the
@@ -117,7 +121,8 @@ export function dayGrid({ bundle, start, end, now, today }) {
       ipLastKnown: !dayIp && Boolean(lastIp),
       link,
       // Past days with only the log: judged on the logged signal; today it needs a sample.
-      health: sampled ? healthOf(sampled, now, today) : !today && link?.via ? healthOf(link, now, false) : "off",
+      usualSpeed: link?.wired && link.speed != null && link.speed <= 100 && usualSpeed(link.speed, fastest.get(mac)) ? true : undefined,
+      health: sampled ? healthOf(sampled, now, today, fastest.get(mac)) : !today && link?.via ? healthOf(link, now, false, fastest.get(mac)) : "off",
       hourly: hourly.get(mac) || new Array(24).fill(0),
       marks: marks.get(mac) || null,
       total: totals.get(mac) || (hourly.get(mac) || []).reduce((n, v) => n + v, 0),
@@ -204,6 +209,7 @@ export function networkMap({ bundle, now, at = null }) {
   if (gateway) nodes.set(gateway.mac, node(gateway));
   for (const d of infra) nodes.set(d.mac, node(d));
   const loose = [];
+  const fastest = db.fastestWiredLinks([...recent].filter(([, r]) => r.wired).map(([mac]) => mac), t - 30 * 86400e3);
   for (const [mac, r] of recent) {
     const link = linkOf(r, nameOf);
     const c = {
@@ -219,8 +225,9 @@ export function networkMap({ bundle, now, at = null }) {
       bytes15m: rate.get(mac) || 0,
       down15m: rateDown.get(mac) || 0,
       up15m: rateUp.get(mac) || 0,
-      health: healthOf(link, t, true),
+      health: healthOf(link, t, true, fastest.get(mac)),
     };
+    if (c.wired && c.speed != null && c.speed <= 100 && usualSpeed(c.speed, fastest.get(mac))) c.usualSpeed = true;
     const parent = nodes.get(r.ap_mac);
     if (parent) parent.clients.push(c);
     else loose.push(c);
@@ -250,6 +257,17 @@ export function networkMap({ bundle, now, at = null }) {
       c.port = hit.port;
       c.placed = { from: "memory", ts: hit.ts, nowAt };
       to.clients.push(c);
+    }
+  }
+  // A 100 Mbps port is not a problem when everything on it is at its usual speed (UU-C-235).
+  // Equipment on a port (a switch, an access point) still counts as slow.
+  for (const n of nodes.values()) {
+    const onPort = new Map();
+    for (const c of n.clients) if (c.wired && c.port != null) onPort.set(c.port, [...(onPort.get(c.port) || []), c]);
+    for (const k of nodes.values()) if (k.uplink?.device === n.name && k.uplink.port != null) onPort.set(k.uplink.port, [...(onPort.get(k.uplink.port) || []), null]);
+    for (const p of n.ports) {
+      const on = onPort.get(p.idx);
+      if (p.up && p.speed && p.speed <= 100 && on?.length && on.every((c) => c?.usualSpeed)) p.usualSpeed = true;
     }
   }
   // Containers and VMs under the device that runs them (UU-C-165).

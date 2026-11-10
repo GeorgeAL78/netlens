@@ -295,9 +295,36 @@ export async function findBlockedFlow({ ts, mac, srcIp, dstIp, ips = false }) {
 // the name a rule had when it fired; its events carry the id ("<id>", or "obj_<id>_<n>" for an
 // Object), so a renamed rule reads the same in both.
 const policyNames = new Map(JSON.parse(db.getSetting("policy_names", "[]")));
+// A UniFi update can give every rule a new id (Network 11: 24-hex ids became UUIDs). An id of a
+// new form whose name only one id of another form has is that rule again: old id -> new id
+// (setting `policy_aliases`), so its old events follow later renames (UU-C-237). Ids are never
+// parsed or checked for a format.
+const idShape = (id) => String(id).replace(/[0-9a-z]/gi, "x");
+function aliasFor(id, name) {
+  const same = [...policyNames].filter(([k, n]) => k !== id && n === name);
+  const other = same.filter(([k]) => idShape(k) !== idShape(id));
+  return same.length === 1 && other.length === 1 ? other[0][0] : null;
+}
+const policyAliases = new Map(JSON.parse(db.getSetting("policy_aliases", "[]")));
+function addAlias(oldId, newId) {
+  if (!oldId || policyAliases.get(oldId) === newId) return false;
+  policyAliases.set(oldId, newId);
+  return true;
+}
+// Rules learned before this change (the owner's Network 11 upgrade): paired once at start.
+{
+  let added = false;
+  for (const [id, name] of policyNames) if (!policyAliases.has(id) && [...policyAliases.values()].indexOf(id) < 0) {
+    const old = aliasFor(id, name);
+    // The newer form is the one most ids have now.
+    if (old && [...policyNames.keys()].filter((k) => idShape(k) === idShape(id)).length >= [...policyNames.keys()].filter((k) => idShape(k) === idShape(old)).length) added = addAlias(old, id) || added;
+  }
+  if (added) db.setSetting("policy_aliases", JSON.stringify([...policyAliases]));
+}
 function learnPolicyNames(all) {
   let changed = false;
   for (const p of all) {
+    if (p.id && p.name && !policyNames.has(p.id) && addAlias(aliasFor(p.id, p.name), p.id)) db.setSetting("policy_aliases", JSON.stringify([...policyAliases]));
     if (p.id && p.name && policyNames.get(p.id) !== p.name) {
       // Blocks stored under the old name show the new one.
       const old = policyNames.get(p.id);

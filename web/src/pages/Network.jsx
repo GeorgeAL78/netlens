@@ -215,7 +215,7 @@ function Panel({ data, route, closeHref }) {
                   <tr key={p.idx}>
                     <td className="mono">{p.idx}</td>
                     <td className={p.up ? "" : "dim"}>{p.name || `Port ${p.idx}`}</td>
-                    <td className={`num ${p.up && p.speed && p.speed <= 100 ? "warn" : p.up ? "" : "dim"}`}>{p.up ? speed(p.speed) : "down"}</td>
+                    <td className={`num ${p.up && p.speed && p.speed <= 100 && !p.usualSpeed ? "warn" : p.up ? "" : "dim"}`} title={p.usualSpeed ? "The usual speed of the device on it" : undefined}>{p.up ? speed(p.speed) : "down"}</td>
                     <td className="num mono dim">{p.toDevice15m != null ? <>{bytes(p.toDevice15m + p.fromDevice15m)}<Split down={p.toDevice15m} up={p.fromDevice15m} /></> : "—"}</td>
                     <td className="num dim">{p.poe ? `${p.poe.toFixed ? p.poe.toFixed(1) : p.poe} W` : "—"}</td>
                     <td className={`num ${(p.rxErrors || 0) + (p.txErrors || 0) > 0 ? "warn" : "dim"}`}>{(p.rxErrors || 0) + (p.txErrors || 0)}</td>
@@ -270,7 +270,7 @@ function ClientRow({ c, sel, selC, guest = false }) {
             {wifi ? (
               <span className={c.signal != null && c.signal < -75 ? "warn" : ""}>{c.signal != null ? `${c.signal} dBm` : "—"}</span>
             ) : (
-              c.speed != null && <span className={c.speed <= 100 ? "warn" : "dim"}>{speed(c.speed)}</span>
+              c.speed != null && <span className={c.speed <= 100 && !c.usualSpeed ? "warn" : "dim"} title={c.usualSpeed ? "Its usual speed: it never linked faster in 30 days" : undefined}>{speed(c.speed)}</span>
             )}
           </span>
         </a>
@@ -294,7 +294,7 @@ function PortStrip({ node, onPort }) {
         const on = onPort.get(p.idx);
         const what = on ? [...on.kids.map((k) => k.name), ...on.clients.map((c) => c.name)] : [];
         const isUp = node.uplink?.port === p.idx && !isGw(node);
-        const cls = !p.up ? "down" : p.speed && p.speed <= 100 ? "slow" : "up";
+        const cls = !p.up ? "down" : p.speed && p.speed <= 100 && !p.usualSpeed ? "slow" : "up";
         return (
           <span key={p.idx} role="listitem" className={`port-tile ${cls} ${on?.kids.length ? "link" : ""}`} title={`Port ${p.idx}${p.name && p.name !== `Port ${p.idx}` ? ` (${p.name})` : ""} · ${p.up ? speed(p.speed) : "down"}${isUp ? " · uplink" : ""}${what.length ? ` · ${what.join(", ")}` : ""}`}>
             {p.idx}
