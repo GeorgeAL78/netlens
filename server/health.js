@@ -179,6 +179,7 @@ export async function pollHealth() {
     const [stations, devices, health] = await Promise.all([unifi.getStations(), unifi.getDevices(), unifi.getHealth()]);
     const clients = stations.map((c) => clientRow(c, ts)).filter((c) => c.mac);
     const devs = devices.map((d) => deviceRow(d, ts)).filter((d) => d.mac);
+    siteObjectId = devices.find((d) => d.site_id)?.site_id || siteObjectId;
     db.saveLiveSamples({ clients, devices: devs, wan: wanRow(health, ts) });
     db.saveLocalNames("device", deviceNames(devices), ts);
     if (ts - lastPrune > 60 * 60 * 1000) {
@@ -290,15 +291,65 @@ const DAILY_REACH_MS = 92 * 24 * 60 * 60 * 1000;
 const DAILY_KEEP_DAYS = 366;
 export const daily = { lastFetchedAt: 0, rows: 0, error: null };
 
+// Network 11 (UU-C-231): per-device internet traffic from the statistics engine's
+// wanTrafficBySiteByClient, hourly buckets summed into local days. Measured against UniFi's DPI
+// over the same three hours: 302.0 / 33.7 MB down / up against 323.9 / 37.3 MB, the busiest
+// device within 10%, the next ones equal. rx is download, as in stat/report. The first run of a
+// process reads every week back to DAILY_REACH_MS or until a week is empty (the engine starts at
+// the upgrade); after that only the last 7 days, and the oldest of them, cut by the window, is
+// not saved. A day's total never shrinks (saveDailyDeviceMax).
+const WEEK_MS = 7 * 24 * 3600e3;
+let engineBackfillAt = 0;
+let siteObjectId = null; // the site's _id, which the engine's rows carry (stat/device site_id)
+async function refreshDailyModern(dayKeyOf, now) {
+  try {
+    const full = now - engineBackfillAt > 24 * 3600e3;
+    const pages = full ? Math.ceil(DAILY_REACH_MS / WEEK_MS) : 1;
+    const seen = new Set();
+    const sums = new Map();
+    let end = now;
+    for (let i = 0; i < pages; i += 1) {
+      const rows = await unifi.getStatsSeries("wanTrafficBySiteByClient", "WEEK", end);
+      const mine = siteObjectId && rows.some((c) => c.siteId === siteObjectId) ? rows.filter((c) => c.siteId === siteObjectId) : rows;
+      let points = 0;
+      for (const c of mine) {
+        const mac = lower(c.clientId);
+        if (!mac) continue;
+        for (const p of c.series || []) {
+          const k = `${mac}|${p.timestamp}`;
+          if (seen.has(k) || !(p.timestamp >= end - WEEK_MS) || p.timestamp >= end) continue;
+          seen.add(k);
+          points += 1;
+          const day = dayKeyOf(Number(p.timestamp));
+          const s = sums.get(`${day}|${mac}`) || { day, mac, rx: 0, tx: 0 };
+          s.rx += (num(p.rxApplicationBytes) || 0) + (num(p.rxOtherBytes) || 0);
+          s.tx += (num(p.txApplicationBytes) || 0) + (num(p.txOtherBytes) || 0);
+          sums.set(`${day}|${mac}`, s);
+        }
+      }
+      if (!points) break;
+      end -= WEEK_MS;
+    }
+    // Only reading the last week: its first day is cut by the window, keep what is stored.
+    const cut = full ? null : dayKeyOf(now - WEEK_MS);
+    const out = [...sums.values()].filter((s) => s.day !== cut).map((s) => ({ ...s, rx: Math.round(s.rx), tx: Math.round(s.tx) }));
+    db.saveDailyDeviceMax(out);
+    db.pruneDailyDevice(dayKeyOf(now - DAILY_KEEP_DAYS * 86400e3));
+    if (full) engineBackfillAt = now;
+    Object.assign(daily, { lastFetchedAt: now, rows: out.length, error: null, source: "statistics engine" });
+    return { rows: out.length, source: "engine" };
+  } catch (err) {
+    daily.error = err.message;
+    throw err;
+  }
+}
+
 export async function refreshDaily(dayKeyOf, { force = false } = {}) {
   const now = Date.now();
   if (!force && now - daily.lastFetchedAt < 60 * 60 * 1000) return { skipped: true };
-  // Network 11 retired stat/report: it answers ok with no rows, for good (UU-C-229). The totals
-  // NetLens already kept stay; nothing new comes, so don't ask.
-  if (versions.stats === "MODERN") {
-    Object.assign(daily, { lastFetchedAt: now, rows: 0, error: null, retired: true });
-    return { retired: true };
-  }
+  // Network 11 retired stat/report: it answers ok with no rows, for good (UU-C-229). Its new
+  // statistics engine has the same numbers (UU-C-231). Network 10 and older keep the old path.
+  if (versions.stats === "MODERN") return refreshDailyModern(dayKeyOf, now);
   try {
     const rows = await unifi.getDailyUser(now - DAILY_REACH_MS, now);
     const out = rows

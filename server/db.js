@@ -792,6 +792,21 @@ export function saveDailyDevice(rows) {
   }
 }
 
+// Daily totals from Network 11's statistics engine (UU-C-231): a day's total only ever grows. The
+// upgrade day holds UniFi's old total from before the upgrade and the engine's from after it;
+// neither is the whole day, and the larger is the better estimate.
+const upDailyMax = db.prepare(`INSERT INTO daily_device (day, mac, rx, tx) VALUES (?, ?, ?, ?) ON CONFLICT(day, mac) DO UPDATE SET rx = MAX(COALESCE(rx, 0), excluded.rx), tx = MAX(COALESCE(tx, 0), excluded.tx)`);
+export function saveDailyDeviceMax(rows) {
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) upDailyMax.run(r.day, r.mac, r.rx, r.tx);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
 export function queryDailyDevice(firstDay, lastDay, mac) {
   const sql = `SELECT day, mac, rx, tx FROM daily_device WHERE day >= ? AND day <= ?${mac ? " AND mac = ?" : ""}`;
   return mac ? db.prepare(sql).all(firstDay, lastDay, mac) : db.prepare(sql).all(firstDay, lastDay);

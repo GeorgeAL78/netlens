@@ -460,6 +460,14 @@ export async function listIntegrationDevices() {
   const { siteId } = config();
   return paginate(`/proxy/network/integration/v1/sites/${siteId}/devices`);
 }
+// One schema of Network 11's statistics engine, for the period before endMs (UU-C-231). WEEK
+// gives hourly buckets over 7 days (DAY: 5 minutes over a day; MONTH: 8 hours, not aligned to
+// local midnight). Each row is one client: { siteId, clientId (its MAC), series: [...] }.
+export async function getStatsSeries(schema, period, endMs) {
+  const r = await request(`/proxy/network/v2/api/stats/recent/series?schema=${encodeURIComponent(schema)}&period=${period}&end=${Number(endMs)}`);
+  return Array.isArray(r) ? r : [];
+}
+
 // "MODERN" on Network 11 (the new statistics engine; stat/report/* is always empty there),
 // "LEGACY" before it. Network 10 has no such endpoint: anything but MODERN counts as legacy.
 export async function getStatsSource() {

@@ -72,7 +72,7 @@ which UniFi itself deletes after a day or a week.
 - **Local-network traffic** (a media server, a NAS) shown separately — UniFi's counters only
   cover internet traffic.
 - **Missing data is marked, never shown as a quiet hour**, and filled from UniFi's daily
-  per-device totals where those still exist (Network 10; Network 11 no longer provides them).
+  per-device totals where those still exist (on Network 11, from its new statistics engine).
 - **Survives UniFi starting over**: Network 11 clears UniFi's statistics when it is installed;
   NetLens keeps its own history and today's traffic carries on from what it had.
 - **History export / import**, an optional syslog listener for ad-block counts.
