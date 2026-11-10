@@ -44,7 +44,10 @@ which UniFi itself deletes after a day or a week.
   internet speed, latency, devices online and every restart or change. Click the internet line
   for its public-IP history, an access point for its radios, a switch for its ports. Every card
   shows firmware (UniFi OS for the gateway) and flags an available update or an end-of-life
-  model; the panel adds the model, address, Wi-Fi experience and PoE budget.
+  model; the panel adds the model, address, Wi-Fi experience and PoE budget. Switch and gateway
+  ports show what went through them in the last 15 minutes and, in the history, per period with
+  the peak rate: local traffic included (a NAS, a media server), which UniFi's per-app counters
+  never see.
 - **Device** — per device: traffic, Wi-Fi signal or wired link speed, apps, sessions, events,
   connection time, online history, CSV export, block / unblock.
 - **Devices** — every device UniFi knows, new ones first: maker, where it connected (switch port

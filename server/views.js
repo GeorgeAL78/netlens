@@ -146,6 +146,17 @@ export function dayGrid({ bundle, start, end, now, today }) {
 
 // ---- Network: gateway → switches / access points → devices ------------------------------
 // `at` (UU-C-213): the map as it was then, from the samples around it; omitted = right now.
+// Each port with what went through it in the 15 minutes before t (UU-C-233), from the samples.
+function portsWithTraffic(d, t) {
+  const ports = d.data?.ports || [];
+  if (!ports.length) return ports;
+  const moved = insights.portRecentOf(d.mac, t);
+  return ports.map(({ rxBytes, txBytes, ...p }) => {
+    const m = moved.get(p.idx);
+    return m ? { ...p, toDevice15m: m.toDevice, fromDevice15m: m.fromDevice } : p;
+  });
+}
+
 export function networkMap({ bundle, now, at = null }) {
   const t = at ?? now;
   const nameOf = insights.names();
@@ -174,7 +185,7 @@ export function networkMap({ bundle, now, at = null }) {
     temp: d.temp,
     uptime: d.uptime,
     radios: d.data?.radios || [],
-    ports: d.data?.ports || [],
+    ports: portsWithTraffic(d, t),
     uplink: d.data?.uplink || null,
     overheating: d.data?.overheating === true,
     // UU-C-229: firmware and the rest of what UniFi knows about the device.

@@ -79,6 +79,10 @@ function deviceRow(d, ts) {
         poe: num(p.poe_power),
         rxErrors: num(p.rx_errors),
         txErrors: num(p.tx_errors),
+        // Running byte totals (UU-C-233): rx = into the port from the device on it, tx = out to
+        // it. They start over when the device restarts.
+        rxBytes: num(p.rx_bytes),
+        txBytes: num(p.tx_bytes),
       })),
       uplink: d.uplink
         ? { speed: num(d.uplink.speed), device: d.uplink.uplink_device_name || null, port: num(d.uplink.uplink_remote_port), wireless: d.uplink.type === "wireless" }

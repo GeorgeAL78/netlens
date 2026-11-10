@@ -203,6 +203,54 @@ export function channelOverlaps(start, end) {
 const linkText = (mbps) => (mbps >= 1000 ? `${+(mbps / 1000).toFixed(1)} Gbps` : `${mbps} Mbps`);
 const HISTORY_EVENTS = 60;
 
+// Bytes through a port between two samples (UU-C-233). The counters are running totals that
+// start over when the device restarts: a smaller value than before is what came since the
+// restart. Samples without counters (before UU-C-233) give nothing.
+export function portDelta(was, x) {
+  if (!was || x.rxBytes == null || x.txBytes == null || was.rxBytes == null || was.txBytes == null) return null;
+  return {
+    fromDevice: x.rxBytes >= was.rxBytes ? x.rxBytes - was.rxBytes : x.rxBytes,
+    toDevice: x.txBytes >= was.txBytes ? x.txBytes - was.txBytes : x.txBytes,
+  };
+}
+
+// Traffic per port of one device in (from, to], from its samples (UU-C-233).
+export function portTrafficOf(mac, from, to) {
+  const rows = db.queryDeviceSamplesOf(mac, from - 30 * 60 * 1000, to + 1);
+  const out = new Map();
+  let prev = null;
+  for (const r of rows) {
+    if (prev && r.ts > from) {
+      const before = new Map((prev.data.ports || []).map((x) => [x.idx, x]));
+      for (const x of r.data.ports || []) {
+        const d = portDelta(before.get(x.idx), x);
+        if (!d) continue;
+        const t = out.get(x.idx) || { toDevice: 0, fromDevice: 0 };
+        t.toDevice += d.toDevice;
+        t.fromDevice += d.fromDevice;
+        out.set(x.idx, t);
+      }
+    }
+    prev = r;
+  }
+  return out;
+}
+
+// The last 15 minutes per port, up to t (UU-C-233): from the newest sample back to the newest one
+// at least 15 minutes older, scaled to 15 minutes (the update interval can be longer than that).
+// Nothing when the newest sample is over an hour old.
+export function portRecentOf(mac, t) {
+  const rows = db.queryDeviceSamplesOf(mac, t - 3 * 3600e3, t + 1);
+  const latest = rows.at(-1);
+  if (!latest || t - latest.ts > 3600e3) return new Map();
+  let k = rows.length - 2;
+  while (k >= 0 && rows[k].ts > latest.ts - 15 * 60 * 1000) k -= 1;
+  if (k < 0) return new Map();
+  const moved = portTrafficOf(mac, rows[k].ts, latest.ts);
+  const scale = (15 * 60 * 1000) / (latest.ts - rows[k].ts);
+  return new Map([...moved].map(([idx, m]) => [idx, { toDevice: Math.round(m.toDevice * scale), fromDevice: Math.round(m.fromDevice * scale) }]));
+}
+
 export function deviceHistory(mac, days, now) {
   const start = now - days * 24 * 3600e3;
   const rows = db.queryDeviceSamplesOf(mac, start, now + 1);
@@ -231,8 +279,17 @@ export function deviceHistory(mac, days, now) {
       radios.set(x.radio, h);
     }
     for (const x of r.data.ports || []) {
-      const p = ports.get(x.idx) || { idx: x.idx, name: x.name || null, errors: 0, poePeak: null, changes: 0, last: null };
+      const p = ports.get(x.idx) || { idx: x.idx, name: x.name || null, errors: 0, poePeak: null, changes: 0, last: null, lastTs: null, toDevice: null, fromDevice: null, peakBps: null };
       const was = p.last;
+      // Traffic (UU-C-233), and the busiest stretch between two samples as a rate.
+      const moved = portDelta(was, x);
+      if (moved) {
+        p.toDevice = (p.toDevice || 0) + moved.toDevice;
+        p.fromDevice = (p.fromDevice || 0) + moved.fromDevice;
+        const secs = (r.ts - p.lastTs) / 1000;
+        if (secs > 0) p.peakBps = Math.max(p.peakBps || 0, ((moved.toDevice + moved.fromDevice) * 8) / secs);
+      }
+      p.lastTs = r.ts;
       // "Port 5" adds nothing after "Port 5 went down"; a name someone gave it does.
       const own = x.name && x.name !== `Port ${x.idx}` ? x.name : null;
       if (was && Boolean(was.up) !== Boolean(x.up)) {
@@ -280,7 +337,7 @@ export function deviceHistory(mac, days, now) {
           })),
         };
       }),
-    ports: [...ports.values()].filter((p) => p.errors > 0 || p.changes > 0 || p.poePeak > 0).map(({ last, ...p }) => p).sort((a, b) => a.idx - b.idx),
+    ports: [...ports.values()].filter((p) => p.errors > 0 || p.changes > 0 || p.poePeak > 0 || (p.toDevice || 0) + (p.fromDevice || 0) > 0).map(({ last, lastTs, ...p }) => p).sort((a, b) => a.idx - b.idx),
     events: events.slice(0, HISTORY_EVENTS),
     moreEvents: Math.max(0, events.length - HISTORY_EVENTS),
   };

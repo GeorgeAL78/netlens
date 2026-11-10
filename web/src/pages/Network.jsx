@@ -58,11 +58,13 @@ function History({ mac }) {
           ))}
           {data.ports.length > 0 && (
             <table className="t">
-              <thead><tr><th>Port</th><th className="num">Changes</th><th className="num">New errors</th><th className="num">PoE peak</th></tr></thead>
+              <thead><tr><th>Port</th><th className="num" title="To the device on the port ↓, from it ↑">Traffic</th><th className="num">Peak</th><th className="num">Changes</th><th className="num">New errors</th><th className="num">PoE peak</th></tr></thead>
               <tbody>
                 {data.ports.map((p) => (
                   <tr key={p.idx}>
                     <td>{p.name || `Port ${p.idx}`}</td>
+                    <td className="num mono">{p.toDevice != null ? <>{bytes(p.toDevice + (p.fromDevice || 0))}<Split down={p.toDevice} up={p.fromDevice} /></> : "—"}</td>
+                    <td className="num mono dim">{p.peakBps ? (p.peakBps >= 1e6 ? speed(+(p.peakBps / 1e6).toFixed(p.peakBps >= 1e8 ? 0 : 1)) : `${Math.round(p.peakBps / 1e3)} kbps`) : "—"}</td>
                     <td className="num">{p.changes}</td>
                     <td className={`num ${p.errors > 0 ? "warn" : "dim"}`}>{p.errors}</td>
                     <td className="num dim">{p.poePeak ? `${p.poePeak.toFixed(1)} W` : "—"}</td>
@@ -207,13 +209,14 @@ function Panel({ data, route, closeHref }) {
           <>
             <h2>Ports</h2>
             <table className="t">
-              <thead><tr><th>#</th><th>Name</th><th className="num">Speed</th><th className="num">PoE</th><th className="num">Errors</th></tr></thead>
+              <thead><tr><th>#</th><th>Name</th><th className="num">Speed</th><th className="num" title="Last 15 minutes: to the device on the port ↓, from it ↑">15 min</th><th className="num">PoE</th><th className="num">Errors</th></tr></thead>
               <tbody>
                 {node.ports.map((p) => (
                   <tr key={p.idx}>
                     <td className="mono">{p.idx}</td>
                     <td className={p.up ? "" : "dim"}>{p.name || `Port ${p.idx}`}</td>
                     <td className={`num ${p.up && p.speed && p.speed <= 100 ? "warn" : p.up ? "" : "dim"}`}>{p.up ? speed(p.speed) : "down"}</td>
+                    <td className="num mono dim">{p.toDevice15m != null ? <>{bytes(p.toDevice15m + p.fromDevice15m)}<Split down={p.toDevice15m} up={p.fromDevice15m} /></> : "—"}</td>
                     <td className="num dim">{p.poe ? `${p.poe.toFixed ? p.poe.toFixed(1) : p.poe} W` : "—"}</td>
                     <td className={`num ${(p.rxErrors || 0) + (p.txErrors || 0) > 0 ? "warn" : "dim"}`}>{(p.rxErrors || 0) + (p.txErrors || 0)}</td>
                   </tr>
@@ -236,6 +239,12 @@ function Panel({ data, route, closeHref }) {
 function portSpeed(node, idx) {
   const p = (node.ports || []).find((x) => x.idx === idx);
   return p?.up && p.speed ? speed(p.speed) : null;
+}
+// What went through the port in the last 15 minutes (UU-C-233), local traffic included.
+function portMoved(node, idx) {
+  const p = (node.ports || []).find((x) => x.idx === idx);
+  const n = p && p.toDevice15m != null ? p.toDevice15m + p.fromDevice15m : 0;
+  return n > 0 ? bytes(n) : null;
 }
 const isGw = (n) => /udm|ugw|uxg/.test(n.type || "");
 const isApN = (n) => /uap/.test(n.type || "");
@@ -364,9 +373,10 @@ function NodeCard({ node, parent, kids, sel, selC }) {
           {portOrder.map((p) => {
             const g = onPort.get(p);
             const sp = p === "?" ? null : portSpeed(node, p);
+            const mv = p === "?" ? null : portMoved(node, p);
             return (
               <div key={p} className="eq-port">
-                <span className="eq-port-label small dim">{p === "?" ? "Port unknown" : `Port ${p}`}{sp ? ` · ${sp}` : ""}</span>
+                <span className="eq-port-label small dim" title={mv ? "Through this port in the last 15 minutes, local traffic included" : undefined}>{p === "?" ? "Port unknown" : `Port ${p}`}{sp ? ` · ${sp}` : ""}{mv ? ` · ${mv}` : ""}</span>
                 {g.kids.map((k) => (
                   <a key={k.mac} className="crow crow-eq" href={`#node-${k.mac}`} onClick={(e) => { e.preventDefault(); document.getElementById(`node-${k.mac}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
                     <span className={`status-dot ${k.online === false ? "off" : ""}`} />
