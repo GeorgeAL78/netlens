@@ -222,7 +222,7 @@ table.t tr.click:hover td { background: #141b26; }
 .split { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; }
 .split > .main { flex: 999 1 600px; min-width: 0; }
 .panel {
-  flex: 1 1 360px; max-width: 420px; border-left: 1px solid #1c2330; background: var(--panel-2); padding: 22px 22px 28px;
+  flex: 0 1 520px; max-width: 540px; border-left: 1px solid #1c2330; background: var(--panel-2); padding: 22px 22px 28px;
   display: flex; flex-direction: column; gap: 14px; position: sticky; top: 67px; align-self: flex-start; max-height: calc(100vh - 67px); overflow-y: auto;
 }
 .panel-close { position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; font-size: 18px; }
@@ -418,3 +418,6 @@ table.t.advice { max-width: 1100px; }
 .wifi-channels table.t { max-width: 560px; }
 .wifi-ap-head { max-width: 1000px; }
 table.t td.num + td:not(.num), table.t th.num + th:not(.num) { padding-left: 20px; }
+
+/* The panel's tables keep every column in view (UU-C-247): a little tighter than page tables. */
+.panel table.t td, .panel table.t th { padding-left: 5px; padding-right: 5px; }

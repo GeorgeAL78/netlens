@@ -2513,6 +2513,20 @@ app.post("/api/devices/:mac/name", async (req, res) => {
 });
 
 // A device's online / on-network / off changes, newest last (UU-C-124).
+// Where a wired device was plugged in (UU-C-248): each switch or gateway port, from and to,
+// newest first, from NetLens's samples (90 days).
+app.get("/api/devices/:mac/places", (req, res) => {
+  try {
+    const mac = String(req.params.mac || "").toLowerCase();
+    if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) return res.status(400).json({ error: "That is not a MAC address." });
+    const days = Math.min(90, Math.max(1, Number(req.query.days) || 30));
+    const now = Date.now();
+    res.json({ mac, days, places: insights.wiredPlaces(mac, now - days * 86400e3, now + 1) });
+  } catch (err) {
+    sendError(res, "GET /api/devices/:mac/places", err);
+  }
+});
+
 app.get("/api/devices/:mac/presence", (req, res) => {
   try {
     const days = Math.min(90, Math.max(1, Number(req.query.days) || 7));

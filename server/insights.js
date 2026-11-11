@@ -236,6 +236,108 @@ export function portTrafficOf(mac, from, to) {
   return out;
 }
 
+// ---- Who is on each port, and where each device was (UU-C-248) ----------------------------
+// A port starts over when a different device takes it: its busiest 5 minutes, drops and notes
+// count from then. A device's own record follows its MAC wherever it is plugged in. A change
+// counts once the new one held for 3 updates (15 minutes), so the overlap while a cable moves
+// (UniFi can list both for an update) is not a change.
+const STEADY = 3;
+export function steadyChanges(seq, accept = () => true) {
+  // seq: [{ ts, key }] in time order (key null = nothing there, skipped). `accept(ts, key)` can
+  // refuse a change (the "new" one was there all along).
+  const changes = [];
+  let cur = null;
+  let cand = null;
+  let count = 0;
+  let candTs = null;
+  for (const { ts, key } of seq) {
+    if (key == null) continue;
+    if (key === cur) {
+      cand = null;
+      count = 0;
+      continue;
+    }
+    if (key === cand) count += 1;
+    else {
+      cand = key;
+      count = 1;
+      candTs = ts;
+    }
+    if (count >= STEADY) {
+      if (cur != null && !accept(candTs, cand)) {
+        cand = null;
+        count = 0;
+        continue;
+      }
+      if (cur != null) changes.push({ ts: candTs, from: cur, to: cand });
+      cur = cand;
+      cand = null;
+      count = 0;
+    }
+  }
+  return { current: cur, changes };
+}
+
+// Per port of a switch or gateway: the device on it now (MAC), since when (null = before the
+// window) and each change. Equipment on a port wins; else the client connected longest (a server,
+// not its containers, which come and go).
+export function portOccupancy(apMac, from, to) {
+  const name = db.latestDeviceSamples().find((d) => d.mac === apMac)?.name;
+  const byTs = new Map();
+  const put = (ts, port, mac, rank) => {
+    const k = `${ts}|${port}`;
+    const best = byTs.get(k);
+    if (!best || rank > best.rank) byTs.set(k, { ts, port, mac, rank });
+  };
+  for (const r of db.wiredSamplesOn(apMac, from, to)) put(r.ts, r.port, r.mac, r.uptime ?? 0);
+  if (name) for (const r of db.uplinksTo(name, from, to)) if (r.port != null) put(r.ts, r.port, r.mac, Number.MAX_SAFE_INTEGER);
+  // When each MAC was first seen on each port in the window: a device that takes over a port is
+  // new there; a server's VM or container that briefly outranks it was there all along.
+  const firstSeen = new Map();
+  const seen = (port, mac, ts) => {
+    const k = `${port}|${mac}`;
+    if (!firstSeen.has(k) || ts < firstSeen.get(k)) firstSeen.set(k, ts);
+  };
+  for (const r of db.wiredSamplesOn(apMac, from, to)) seen(r.port, r.mac, r.ts);
+  if (name) for (const r of db.uplinksTo(name, from, to)) if (r.port != null) seen(r.port, r.mac, r.ts);
+  const perPort = new Map();
+  for (const v of [...byTs.values()].sort((a, b) => a.ts - b.ts)) {
+    const list = perPort.get(v.port) || [];
+    list.push({ ts: v.ts, key: v.mac });
+    perPort.set(v.port, list);
+  }
+  const out = new Map();
+  for (const [port, seq] of perPort) {
+    const { current, changes } = steadyChanges(seq, (ts, mac) => (firstSeen.get(`${port}|${mac}`) ?? 0) >= ts - 10 * 60e3);
+    out.set(Number(port), { current, since: changes.length ? changes[changes.length - 1].ts : null, changes });
+  }
+  return out;
+}
+
+// Where one wired device was plugged in: steady stretches of switch / gateway and port.
+export function wiredPlaces(mac, from, to) {
+  const nameOf = names();
+  const rows = db.wiredPlacesOf(mac, from, to);
+  const seq = rows.map((r) => ({ ts: r.ts, key: r.apMac && r.port != null ? `${r.apMac}|${r.port}` : null }));
+  const { changes } = steadyChanges(seq);
+  // Stretches from the accepted changes: each runs from its start to the next change.
+  const starts = [{ ts: rows.find((r) => r.apMac && r.port != null)?.ts ?? null, key: null }, ...changes.map((c) => ({ ts: c.ts, key: c.to }))];
+  if (starts[0].ts == null) return [];
+  starts[0].key = changes.length ? changes[0].from : steadyChanges(seq).current;
+  const last = rows[rows.length - 1];
+  return starts
+    .map((s, i) => {
+      const [apMac, port] = String(s.key || "").split("|");
+      const until = starts[i + 1]?.ts ?? last.ts;
+      // Its own readings only: the one at the next stretch's start belongs to that stretch.
+      const isLast = i === starts.length - 1;
+      const ip = [...rows].reverse().find((r) => (isLast ? r.ts <= until : r.ts < until) && r.ts >= s.ts && r.ip)?.ip || null;
+      return { via: nameOf(apMac), apMac, port: Number(port), from: s.ts, to: until, current: i === starts.length - 1, ip };
+    })
+    .filter((p) => p.apMac)
+    .reverse();
+}
+
 // Packets dropped and carried per port between two samples (UU-C-245). Running totals that start
 // over when the device restarts, like the bytes; a sample without them gives nothing.
 const DROP_KEYS = ["txDropped", "rxDropped", "txPackets", "rxPackets"];
@@ -371,10 +473,10 @@ export function deviceHistory(mac, days, now) {
       const own = x.name && x.name !== `Port ${x.idx}` ? x.name : null;
       if (was && Boolean(was.up) !== Boolean(x.up)) {
         p.changes += 1;
-        events.push(x.up ? { ts: r.ts, level: "info", what: `Port ${x.idx} came up`, detail: [own, x.speed ? linkText(x.speed) : null].filter(Boolean).join(" · ") } : { ts: r.ts, level: "warn", what: `Port ${x.idx} went down`, detail: own || "" });
+        events.push(x.up ? { ts: r.ts, port: x.idx, level: "info", what: `Port ${x.idx} came up`, detail: [own, x.speed ? linkText(x.speed) : null].filter(Boolean).join(" · ") } : { ts: r.ts, port: x.idx, level: "warn", what: `Port ${x.idx} went down`, detail: own || "" });
       } else if (was && x.up && was.speed && x.speed && was.speed !== x.speed) {
         p.changes += 1;
-        events.push({ ts: r.ts, level: x.speed < was.speed ? "warn" : "info", what: `Port ${x.idx} changed to ${linkText(x.speed)}`, detail: [own, `from ${linkText(was.speed)}`].filter(Boolean).join(" · ") });
+        events.push({ ts: r.ts, port: x.idx, level: x.speed < was.speed ? "warn" : "info", what: `Port ${x.idx} changed to ${linkText(x.speed)}`, detail: [own, `from ${linkText(was.speed)}`].filter(Boolean).join(" · ") });
       }
       // The counters are running totals that restart with the device: only rises count.
       if (was) p.errors += Math.max(0, (x.rxErrors || 0) + (x.txErrors || 0) - (was.rxErrors || 0) - (was.txErrors || 0));
@@ -385,6 +487,20 @@ export function deviceHistory(mac, days, now) {
     }
     prev = r;
   }
+  // A different device on a port (UU-C-248): said as such, and the port's speed change around it
+  // is that device's speed, not a slowdown.
+  if (rows.some((r) => (r.data.ports || []).length)) {
+    const nameOf = names();
+    const occ = portOccupancy(mac, start - 2 * 3600e3, now + 1);
+    const swaps = [];
+    for (const [port, o] of occ) for (const c of o.changes) if (c.ts >= start) swaps.push({ port, ...c });
+    for (const s of swaps) events.push({ ts: s.ts, level: "info", what: `Port ${s.port}: ${nameOf(s.to)} connected`, detail: `was ${nameOf(s.from)}` });
+    for (let i = events.length - 1; i >= 0; i -= 1) {
+      const e = events[i];
+      if (e.port != null && swaps.some((s) => s.port === e.port && Math.abs(s.ts - e.ts) <= 20 * 60e3)) events.splice(i, 1);
+    }
+  }
+  for (const e of events) delete e.port;
   const bandOrder = { ng: 0, na: 1 };
   events.sort((a, b) => b.ts - a.ts);
   return {
@@ -656,6 +772,23 @@ export function wifiList(start, end, samples = null) {
 // Wired devices (UU-C-078): the same 5-minute samples, wired = 1. Which switch and port,
 // link speed now and the slowest seen (a cable or port renegotiating down shows up here),
 // how often the speed changed, and how long the device was connected.
+// The highest value that held for at least `runs` samples in a row; with no such run (a short
+// period), the highest of the longest runs.
+export function steadyTop(values, runs = 3) {
+  const seq = [];
+  for (const v of values) {
+    if (v == null) continue;
+    const last = seq[seq.length - 1];
+    if (last && last.v === v) last.n += 1;
+    else seq.push({ v, n: 1 });
+  }
+  if (!seq.length) return null;
+  const steady = seq.filter((s) => s.n >= runs);
+  if (steady.length) return Math.max(...steady.map((s) => s.v));
+  const longest = Math.max(...seq.map((s) => s.n));
+  return Math.max(...seq.filter((s) => s.n === longest).map((s) => s.v));
+}
+
 export function wiredList(start, end, samples = null) {
   const nameOf = names();
   const byMac = new Map();
@@ -673,7 +806,11 @@ export function wiredList(start, end, samples = null) {
     for (let i = 1; i < list.length; i += 1) if (mbps(list[i]) != null && mbps(list[i - 1]) != null && mbps(list[i]) !== mbps(list[i - 1])) changes += 1;
     // Stretches below the device's top speed (UU-C-125): a sleeping PC drops its link to
     // 10 Mbps on purpose (Wake-on-LAN), so the caller compares them with traffic.
-    const top = speeds.length ? Math.max(...speeds) : null;
+    // A speed counts as the device's top only when it held for 3 updates in a row (UU-C-247): while
+    // a cable moves between ports UniFi can report the device at the previous device's speed for
+    // one update (the TV read 2.5 Gbps once on the U7 Pro's old port), and a 100 Mbps device then
+    // looked like it had dropped from 2.5 Gbps.
+    const top = steadyTop(list.map(mbps));
     const lowSpans = [];
     for (let i = 0; i < list.length; i += 1) {
       const v = mbps(list[i]);

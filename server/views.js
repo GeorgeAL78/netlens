@@ -102,11 +102,17 @@ export function dayGrid({ bundle, start, end, now, today }) {
   const macs = new Set([...totals.keys(), ...hourly.keys(), ...marks.keys()]);
   const fastest = db.fastestWiredLinks([...macs].filter((m) => samples.get(m)?.wired), end - 30 * 86400e3);
   // A wired device's busiest 5 minutes on its port that day (UU-C-239), once per switch.
+  // From when the device arrived on that port, if that day (UU-C-248).
   const peaksOf = new Map();
+  const occOf = new Map();
   const busiestOf = (s) => {
     if (!s?.wired || !s.ap_mac || s.port == null) return undefined;
-    if (!peaksOf.has(s.ap_mac)) peaksOf.set(s.ap_mac, insights.portPeaks(s.ap_mac, start, end));
-    const p = peaksOf.get(s.ap_mac).get(s.port);
+    if (!occOf.has(s.ap_mac)) occOf.set(s.ap_mac, insights.portOccupancy(s.ap_mac, start - 2 * 3600e3, end));
+    const o = occOf.get(s.ap_mac).get(s.port);
+    const from = o && o.current === s.mac && o.since ? Math.max(start, o.since) : start;
+    const key = `${s.ap_mac}|${from}`;
+    if (!peaksOf.has(key)) peaksOf.set(key, insights.portPeaks(s.ap_mac, from, end));
+    const p = peaksOf.get(key).get(s.port);
     return p && !p.uplink && p.bps > 0 ? { bps: p.bps, share: p.share, speed: p.speed, from: p.from, at: p.at, dir: p.dir } : undefined;
   };
   const rows = [...macs].map((mac) => {
@@ -166,16 +172,23 @@ function portsWithTraffic(d, t) {
   if (!ports.length) return ports;
   const moved = insights.portRecentOf(d.mac, t);
   // The busiest 5 minutes in the 24 hours before t, as a share of the link (UU-C-239).
-  const peaks = insights.portPeaks(d.mac, t - 24 * 3600e3, t);
-  // Packets dropped in the same 24 hours (UU-C-245); the running counters are not sent.
-  const drops = insights.portDrops(d.mac, t - 24 * 3600e3, t);
+  // Busiest and dropped in the 24 hours before t (UU-C-239, UU-C-245), counted from when the
+  // device now on the port arrived if that was later (UU-C-248).
+  const dayAgo = t - 24 * 3600e3;
+  const occ = insights.portOccupancy(d.mac, dayAgo - 2 * 3600e3, t + 1);
+  const fromOf = (idx) => Math.max(dayAgo, occ.get(idx)?.since ?? 0);
+  const sinces = new Set(ports.map((p) => fromOf(p.idx)));
+  const peaksAt = new Map([...sinces].map((f) => [f, insights.portPeaks(d.mac, f, t)]));
+  const dropsAt = new Map([...sinces].map((f) => [f, insights.portDrops(d.mac, f, t)]));
   return ports.map(({ rxBytes, txBytes, txDropped, rxDropped, txPackets, rxPackets, ...p }) => {
     const m = moved.get(p.idx);
-    const k = peaks.get(p.idx);
-    const x = drops.get(p.idx);
+    const f = fromOf(p.idx);
+    const k = peaksAt.get(f).get(p.idx);
+    const x = dropsAt.get(f).get(p.idx);
     return {
       ...p,
       ...(m ? { toDevice15m: m.toDevice, fromDevice15m: m.fromDevice } : {}),
+      ...(f > dayAgo ? { since: f } : {}),
       ...(k && k.bps > 0 ? { peak24h: { bps: k.bps, share: k.share, at: k.at } } : {}),
       ...(x ? { drops24h: { toDevice: x.toDevice, fromDevice: x.fromDevice, share: insights.dropShare(x) } } : {}),
     };
@@ -650,22 +663,42 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     const linkWord = (mbps) => (mbps >= 1000 ? `${+(mbps / 1000).toFixed(1)} Gbps` : `${mbps} Mbps`);
     const rate = (bps) => (bps >= 1e9 ? `${(bps / 1e9).toFixed(2)} Gbps` : `${Math.round(bps / 1e6)} Mbps`);
     for (const d of equipment) {
+      // Each port counts from when the device now on it arrived (UU-C-248), and names that device.
+      const occ = insights.portOccupancy(d.mac, start - 2 * 3600e3, end);
+      const fromOf = (idx) => Math.max(start, occ.get(idx)?.since ?? 0);
+      const froms = [...new Set([...(d.data?.ports || []).map((x) => fromOf(x.idx)), start])];
+      const dropsFrom = new Map(froms.map((f) => [f, insights.portDrops(d.mac, f, end)]));
+      const peaksFrom = new Map(froms.map((f) => [f, insights.portPeaks(d.mac, f, end)]));
+      const perPort = (byFrom) => {
+        const m = new Map();
+        for (const x of d.data?.ports || []) {
+          const v = byFrom.get(fromOf(x.idx))?.get(x.idx);
+          if (v) m.set(x.idx, v);
+        }
+        return m;
+      };
+      const whoOn = (idx) => {
+        const cur = occ.get(idx)?.current;
+        if (cur && !linked.get(`${d.mac}|${idx}`)) return cur;
+        const counts = onPort.get(`${d.mac}|${idx}`);
+        return counts ? [...counts].sort((a, b) => b[1] - a[1])[0][0] : null;
+      };
       // Ports throwing packets away (UU-C-245): 0.5% or more of a direction's packets, at least
       // a thousand. Usually traffic from a fast link to a slower one (2.5 Gbps toward 1 Gbps or a
       // 100 Mbps device); flow control on that device lets it ask the sender to pause instead.
       const dropFc = (d.data?.ports || []).reduce((m, x) => m.set(x.idx, x), new Map());
-      for (const [idx, x] of insights.portDrops(d.mac, start, end)) {
+      for (const [idx, x] of perPort(dropsFrom)) {
         const share = insights.dropShare(x);
         if (share < 0.005 || x.toDevice + x.fromDevice < 1000) continue;
         const port = dropFc.get(idx) || {};
-        const counts = onPort.get(`${d.mac}|${idx}`);
-        const who = counts ? [...counts].sort((a, b) => b[1] - a[1])[0][0] : null;
+        const who = whoOn(idx);
         const what = port.wan ? "internet port" : linked.get(`${d.mac}|${idx}`) ? `link to ${linked.get(`${d.mac}|${idx}`)}` : who ? `port to ${nameOf(who)}` : `port ${idx}`;
         const outward = x.toDevice >= x.fromDevice;
         const fc = port.fcTx === false && port.fcRx === false ? " Flow control is off on this port." : port.fcTx || port.fcRx ? " Flow control is on." : "";
         out.push({
           id: `drops-${d.mac}-${idx}`,
-          kind: "wired",
+          // The internet port and links between UniFi devices are the equipment (UU-C-248).
+          kind: port.wan || linked.get(`${d.mac}|${idx}`) ? "equipment" : "wired",
           level: "info",
           ts: end - 1,
           title: `${d.name || d.model}'s ${what} dropped ${(share * 100).toFixed(share >= 0.1 ? 0 : 1)}% of packets`,
@@ -673,16 +706,15 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
           mac: who && !port.wan ? who : undefined,
         });
       }
-      for (const [idx, p] of insights.portPeaks(d.mac, start, end)) {
+      for (const [idx, p] of perPort(peaksFrom)) {
         if (!p.speed || p.share == null || p.share < 0.8) continue;
-        const counts = onPort.get(`${d.mac}|${idx}`);
-        const who = counts ? [...counts].sort((a, b) => b[1] - a[1])[0][0] : null;
+        const who = whoOn(idx);
         const what = p.wan ? "Your internet link" : linked.get(`${d.mac}|${idx}`) ? `The link to ${linked.get(`${d.mac}|${idx}`)}` : who ? nameOf(who) : `${d.name || d.model} port ${idx}`;
         const pctText = `${Math.round(p.share * 100)}%`;
         const toward = p.wan ? (p.dir === "fromDevice" ? "downloading" : "uploading") : p.dir === "toDevice" ? `toward ${who ? "it" : "the device"}` : `from ${who ? "it" : "the device"}`;
         out.push({
           id: `headroom-${d.mac}-${idx}`,
-          kind: "wired",
+          kind: p.wan || linked.get(`${d.mac}|${idx}`) ? "equipment" : "wired",
           level: "info",
           ts: p.at,
           title: `${what} used ${pctText} of its ${linkWord(p.speed)} ${p.wan ? "line" : "link"}`,
@@ -694,6 +726,35 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
   }
 
   lap("headroom");
+  // A device moved to another port (UU-C-248): where it was and where it is, once it has stayed
+  // 15 minutes. From the period's samples (already read), wired only (Wi-Fi roams all the time).
+  {
+    const seqs = new Map();
+    for (const r of clientSamples) {
+      if (!r.wired) continue;
+      const list = seqs.get(r.mac) || [];
+      list.push({ ts: r.ts, key: r.ap_mac && r.port != null ? `${r.ap_mac}|${r.port}` : null });
+      seqs.set(r.mac, list);
+    }
+    const devs = db.latestDeviceSamples();
+    const uplinkKeys = new Set();
+    for (const d of devs) {
+      const parent = d.data?.uplink?.device && devs.find((x) => x.name === d.data.uplink.device);
+      if (parent && d.data.uplink.port != null) uplinkKeys.add(`${parent.mac}|${d.data.uplink.port}`);
+    }
+    const place = (k) => {
+      const [ap, port] = k.split("|");
+      return `${nameOf(ap)} port ${port}`;
+    };
+    for (const [mac, seq] of seqs) {
+      for (const c of insights.steadyChanges(seq).changes) {
+        // A switch that forgot a quiet device reports the uplink for a while; a move to or from a
+        // link between UniFi devices is that, not a move (UU-C-168).
+        if (uplinkKeys.has(c.from) || uplinkKeys.has(c.to)) continue;
+        out.push({ id: `moved-${mac}-${c.ts}`, kind: "wired", level: "info", ts: c.ts, title: `${nameOf(mac)} moved to ${place(c.to)}`, text: `It was on ${place(c.from)} before ${clock(c.ts)}. That port's figures start over; this device's own record follows it.`, mac });
+      }
+    }
+  }
   // Security: each IPS hit; firewall rules grouped; repeat offenders.
   const t = insights.threats(start, end);
   lastThreats = { start, end, total: t.total };
@@ -777,6 +838,44 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       });
     }
     if (v.updateAvailable && v.network) out.push({ id: "unifi-update", kind: "equipment", level: "info", ts: v.checkedAt || end, title: "UniFi Network update available", text: `Running ${v.network}.` });
+  }
+  // Equipment over the period (UU-C-248): restarts, times offline, firmware updates. Restarts that
+  // come with a firmware change are the update, not trouble. More than three restarts of one
+  // device read as one line.
+  {
+    const byMac = new Map();
+    for (const r of db.equipmentTrail(start - 30 * 60e3, end)) {
+      const list = byMac.get(r.mac) || [];
+      list.push(r);
+      byMac.set(r.mac, list);
+    }
+    const fmtGap = (ms) => (ms >= 2 * HOUR ? `${Math.round(ms / HOUR)} h` : `${Math.max(1, Math.round(ms / 60e3))} min`);
+    for (const [mac, rows] of byMac) {
+      const name = rows[rows.length - 1].name || rows[rows.length - 1].model;
+      const gw = /udm|ugw|uxg/.test(rows[rows.length - 1].type || "");
+      const restarts = [];
+      let off = null;
+      for (let i = 1; i < rows.length; i += 1) {
+        const a = rows[i - 1];
+        const b = rows[i];
+        if (b.ts < start) continue;
+        if (b.fw && a.fw && b.fw !== a.fw) {
+          out.push({ id: `fw-${mac}-${b.ts}`, kind: "equipment", level: "info", ts: b.ts, title: `${name}: ${gw ? "UniFi OS" : "firmware"} updated to ${b.version || b.fw}`, text: `From ${a.version || a.fw}.`, device: mac });
+        }
+        if (a.uptime != null && b.uptime != null && b.uptime < a.uptime) restarts.push({ ts: Math.max(a.ts, b.ts - b.uptime * 1000), update: Boolean(b.fw && a.fw && b.fw !== a.fw) });
+        if (a.state === 1 && b.state !== 1) off = b.ts;
+        else if (a.state !== 1 && b.state === 1 && off) {
+          out.push({ id: `down-${mac}-${off}`, kind: "equipment", level: "warn", ts: off, title: `${name} was offline ${fmtGap(b.ts - off)}`, text: `UniFi lost it at ${clock(off)}${days ? ` on ${new Date(off).toLocaleDateString()}` : ""}; back at ${clock(b.ts)}.`, device: mac });
+          off = null;
+        }
+      }
+      const trouble = restarts.filter((r) => !r.update);
+      if (trouble.length > 3) {
+        out.push({ id: `restarts-${mac}`, kind: "equipment", level: "warn", ts: trouble[trouble.length - 1].ts, title: `${name} restarted ${trouble.length} times ${when}`, text: `Last at ${clock(trouble[trouble.length - 1].ts)}. Frequent restarts point to power (PoE budget, adapter) or a crash; its history on the Network page shows each one.`, device: mac });
+      } else {
+        for (const r of trouble) out.push({ id: `restart-${mac}-${r.ts}`, kind: "equipment", level: "info", ts: r.ts, title: `${name} restarted`, text: `At ${clock(r.ts)}${days ? ` on ${new Date(r.ts).toLocaleDateString()}` : ""}, from its own uptime. A restart after a settings change or an update in UniFi is normal.`, device: mac });
+      }
+    }
   }
   // Equipment: offline, hot or with an update waiting.
   for (const d of db.latestDeviceSamples()) {

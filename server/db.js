@@ -760,8 +760,9 @@ export function queryClientSamples(start, end, mac) {
 // faster than it does now is at its usual speed, not on a bad cable.
 export function fastestWiredLinks(macs, since) {
   if (!macs.length) return new Map();
+  // A speed seen fewer than 3 times is a reading taken while a cable moved between ports (UU-C-247).
   const rows = db
-    .prepare(`SELECT mac, MAX(tx_rate) AS rate FROM client_samples WHERE mac IN (${macs.map(() => "?").join(", ")}) AND wired = 1 AND ts >= ? GROUP BY mac`)
+    .prepare(`SELECT mac, MAX(rate) AS rate FROM (SELECT mac, tx_rate AS rate FROM client_samples WHERE mac IN (${macs.map(() => "?").join(", ")}) AND wired = 1 AND ts >= ? AND tx_rate IS NOT NULL GROUP BY mac, tx_rate HAVING COUNT(*) >= 3) GROUP BY mac`)
     .all(...macs, since);
   return new Map(rows.filter((r) => r.rate != null).map((r) => [r.mac, Math.round(r.rate / 1000)]));
 }
@@ -788,6 +789,29 @@ export function lastExactPlaces(macs, since, uplinkKeys, until = Number.MAX_SAFE
 
 export function queryDeviceSamples(start, end) {
   return db.prepare(`SELECT * FROM device_samples WHERE ts >= ? AND ts < ? ORDER BY ts`).all(start, end).map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
+}
+
+// The equipment's own record, light (UU-C-248): state, uptime and firmware per sample, without
+// parsing each sample's JSON, so a 90-day Overview can list restarts, outages and updates.
+export function equipmentTrail(start, end) {
+  return db
+    .prepare(`SELECT ts, mac, name, model, type, state, uptime, json_extract(data, '$.firmware') AS fw, json_extract(data, '$.version') AS version FROM device_samples WHERE ts >= ? AND ts < ? ORDER BY mac, ts`)
+    .all(start, end);
+}
+
+// Who was on a switch's or gateway's ports (UU-C-248): its wired clients' samples, and the
+// equipment whose uplink names it.
+export function wiredSamplesOn(apMac, start, end) {
+  return db.prepare(`SELECT ts, mac, port, uptime FROM client_samples WHERE ap_mac = ? AND wired = 1 AND port IS NOT NULL AND ts >= ? AND ts < ? ORDER BY ts`).all(apMac, start, end);
+}
+export function uplinksTo(name, start, end) {
+  return db
+    .prepare(`SELECT ts, mac, json_extract(data, '$.uplink.port') AS port FROM device_samples WHERE json_extract(data, '$.uplink.device') = ? AND ts >= ? AND ts < ? ORDER BY ts`)
+    .all(name, start, end);
+}
+// One device's wired places over time (UU-C-248).
+export function wiredPlacesOf(mac, start, end) {
+  return db.prepare(`SELECT ts, ap_mac AS apMac, port, ip FROM client_samples WHERE mac = ? AND wired = 1 AND ts >= ? AND ts < ? ORDER BY ts`).all(mac, start, end);
 }
 
 export function queryDeviceSamplesOf(mac, start, end) {
