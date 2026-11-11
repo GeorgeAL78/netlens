@@ -220,6 +220,15 @@ for (const { hq, label, dayBar } of hourChecks) {
   if (chips(atNow) !== chips(map)) failures.push("network map at now differs from the live map");
   if (atNow.wan?.ip !== map.wan?.ip) failures.push("network map at now shows another public IP");
 
+  // Drops (UU-C-245): never negative, never more than a whole share.
+  for (const n of [map.gateway, ...map.nodes].filter(Boolean)) {
+    for (const p of n.ports || []) {
+      const x = p.drops24h;
+      if (x && (x.toDevice < 0 || x.fromDevice < 0 || x.share < 0 || x.share > 1)) failures.push(`network map: ${n.name} port ${p.idx} drops out of range`);
+      if ("txDropped" in p || "txPackets" in p) failures.push(`network map: ${n.name} port ${p.idx} sends raw counters`);
+    }
+  }
+
   // Wi-Fi and Internet (UU-C-239): sane shares, the nearby list's sifted parts drawn from the
   // whole, every bar in place, outages inside the period.
   for (const days of [1, 7, 30]) {

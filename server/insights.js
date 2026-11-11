@@ -236,6 +236,43 @@ export function portTrafficOf(mac, from, to) {
   return out;
 }
 
+// Packets dropped and carried per port between two samples (UU-C-245). Running totals that start
+// over when the device restarts, like the bytes; a sample without them gives nothing.
+const DROP_KEYS = ["txDropped", "rxDropped", "txPackets", "rxPackets"];
+export function dropDelta(was, x) {
+  if (!was || DROP_KEYS.some((k) => x[k] == null || was[k] == null)) return null;
+  const d = {};
+  for (const k of DROP_KEYS) d[k] = x[k] >= was[k] ? x[k] - was[k] : x[k];
+  return d;
+}
+
+// Drops per port of one device in (from, to]: toDevice = sent out of the port to the device on it
+// (tx), fromDevice = received from it (rx); packets the same way, for a share.
+export function portDrops(mac, from, to) {
+  const rows = db.queryDeviceSamplesOf(mac, from - 30 * 60 * 1000, to + 1);
+  const out = new Map();
+  let prev = null;
+  for (const r of rows) {
+    if (prev && r.ts > from) {
+      const before = new Map((prev.data.ports || []).map((x) => [x.idx, x]));
+      for (const x of r.data.ports || []) {
+        const d = dropDelta(before.get(x.idx), x);
+        if (!d) continue;
+        const t = out.get(x.idx) || { toDevice: 0, fromDevice: 0, toPackets: 0, fromPackets: 0 };
+        t.toDevice += d.txDropped;
+        t.fromDevice += d.rxDropped;
+        t.toPackets += d.txPackets;
+        t.fromPackets += d.rxPackets;
+        out.set(x.idx, t);
+      }
+    }
+    prev = r;
+  }
+  return out;
+}
+// Share of packets dropped, the worse direction (a port drops on the way out, toward a slower link).
+export const dropShare = (d) => Math.max(d.toPackets ? d.toDevice / (d.toPackets + d.toDevice) : 0, d.fromPackets ? d.fromDevice / (d.fromPackets + d.fromDevice) : 0);
+
 // Each port's busiest stretch between two samples in (from, to] (UU-C-239): the faster of the two
 // directions (a link carries its full speed each way), as bits/s and as a share of the link.
 // Samples are 5 minutes apart, so this is the busiest 5 minutes, not the briefest burst. A gap
@@ -309,8 +346,18 @@ export function deviceHistory(mac, days, now) {
       radios.set(x.radio, h);
     }
     for (const x of r.data.ports || []) {
-      const p = ports.get(x.idx) || { idx: x.idx, name: x.name || null, errors: 0, poePeak: null, changes: 0, last: null, lastTs: null, toDevice: null, fromDevice: null, peakBps: null };
+      const p = ports.get(x.idx) || { idx: x.idx, name: x.name || null, errors: 0, poePeak: null, changes: 0, last: null, lastTs: null, toDevice: null, fromDevice: null, peakBps: null, drops: null };
       const was = p.last;
+      // Packets dropped (UU-C-245).
+      const dd = dropDelta(was, x);
+      if (dd) {
+        const t = p.drops || { toDevice: 0, fromDevice: 0, toPackets: 0, fromPackets: 0 };
+        t.toDevice += dd.txDropped;
+        t.fromDevice += dd.rxDropped;
+        t.toPackets += dd.txPackets;
+        t.fromPackets += dd.rxPackets;
+        p.drops = t;
+      }
       // Traffic (UU-C-233), and the busiest stretch between two samples as a rate.
       const moved = portDelta(was, x);
       if (moved) {
@@ -367,7 +414,10 @@ export function deviceHistory(mac, days, now) {
           })),
         };
       }),
-    ports: [...ports.values()].filter((p) => p.errors > 0 || p.changes > 0 || p.poePeak > 0 || (p.toDevice || 0) + (p.fromDevice || 0) > 0).map(({ last, lastTs, ...p }) => p).sort((a, b) => a.idx - b.idx),
+    ports: [...ports.values()]
+      .filter((p) => p.errors > 0 || p.changes > 0 || p.poePeak > 0 || (p.toDevice || 0) + (p.fromDevice || 0) > 0 || (p.drops && p.drops.toDevice + p.drops.fromDevice > 0))
+      .map(({ last, lastTs, drops, ...p }) => ({ ...p, dropped: drops ? drops.toDevice + drops.fromDevice : null, dropShare: drops ? dropShare(drops) : null, droppedTo: drops?.toDevice ?? null, droppedFrom: drops?.fromDevice ?? null }))
+      .sort((a, b) => a.idx - b.idx),
     events: events.slice(0, HISTORY_EVENTS),
     moreEvents: Math.max(0, events.length - HISTORY_EVENTS),
   };

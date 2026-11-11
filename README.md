@@ -47,7 +47,8 @@ which UniFi itself deletes after a day or a week.
   model; the panel adds the model, address, Wi-Fi experience and PoE budget. Switch and gateway
   ports show what went through them in the last 15 minutes and, in the history, per period with
   the peak rate: local traffic included (a NAS, a media server), which UniFi's per-app counters
-  never see, and how much of its speed each port's busiest 5 minutes used.
+  never see, how much of its speed each port's busiest 5 minutes used, and how many packets
+  each port dropped (with flow control on or off).
 - **Network › Wi-Fi** — each access point's radios: channel, width, power, how busy the channel
   is and how much of that is other networks (on Network 11 also how often frames are sent again
   and the Wi-Fi experience). Nearby networks, sifted: of the hundreds your access points hear,

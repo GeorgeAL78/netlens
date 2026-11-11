@@ -86,6 +86,14 @@ function deviceRow(d, ts) {
         // it. They start over when the device restarts.
         rxBytes: num(p.rx_bytes),
         txBytes: num(p.tx_bytes),
+        // Packets thrown away and packets carried, running totals like the bytes; flow control
+        // as UniFi reports it per direction (UU-C-245).
+        txDropped: num(p.tx_dropped),
+        rxDropped: num(p.rx_dropped),
+        txPackets: num(p.tx_packets),
+        rxPackets: num(p.rx_packets),
+        fcTx: typeof p.flowctrl_tx === "boolean" ? p.flowctrl_tx : undefined,
+        fcRx: typeof p.flowctrl_rx === "boolean" ? p.flowctrl_rx : undefined,
         // The gateway's internet port, and a device's link to the rest of the network (UU-C-239).
         wan: /^wan/i.test(p.network_name || "") || undefined,
         uplink: p.is_uplink === true || undefined,

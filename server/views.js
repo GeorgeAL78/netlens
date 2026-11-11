@@ -167,10 +167,18 @@ function portsWithTraffic(d, t) {
   const moved = insights.portRecentOf(d.mac, t);
   // The busiest 5 minutes in the 24 hours before t, as a share of the link (UU-C-239).
   const peaks = insights.portPeaks(d.mac, t - 24 * 3600e3, t);
-  return ports.map(({ rxBytes, txBytes, ...p }) => {
+  // Packets dropped in the same 24 hours (UU-C-245); the running counters are not sent.
+  const drops = insights.portDrops(d.mac, t - 24 * 3600e3, t);
+  return ports.map(({ rxBytes, txBytes, txDropped, rxDropped, txPackets, rxPackets, ...p }) => {
     const m = moved.get(p.idx);
     const k = peaks.get(p.idx);
-    return { ...p, ...(m ? { toDevice15m: m.toDevice, fromDevice15m: m.fromDevice } : {}), ...(k && k.bps > 0 ? { peak24h: { bps: k.bps, share: k.share, at: k.at } } : {}) };
+    const x = drops.get(p.idx);
+    return {
+      ...p,
+      ...(m ? { toDevice15m: m.toDevice, fromDevice15m: m.fromDevice } : {}),
+      ...(k && k.bps > 0 ? { peak24h: { bps: k.bps, share: k.share, at: k.at } } : {}),
+      ...(x ? { drops24h: { toDevice: x.toDevice, fromDevice: x.fromDevice, share: insights.dropShare(x) } } : {}),
+    };
   });
 }
 
@@ -642,6 +650,29 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     const linkWord = (mbps) => (mbps >= 1000 ? `${+(mbps / 1000).toFixed(1)} Gbps` : `${mbps} Mbps`);
     const rate = (bps) => (bps >= 1e9 ? `${(bps / 1e9).toFixed(2)} Gbps` : `${Math.round(bps / 1e6)} Mbps`);
     for (const d of equipment) {
+      // Ports throwing packets away (UU-C-245): 0.5% or more of a direction's packets, at least
+      // a thousand. Usually traffic from a fast link to a slower one (2.5 Gbps toward 1 Gbps or a
+      // 100 Mbps device); flow control on that device lets it ask the sender to pause instead.
+      const dropFc = (d.data?.ports || []).reduce((m, x) => m.set(x.idx, x), new Map());
+      for (const [idx, x] of insights.portDrops(d.mac, start, end)) {
+        const share = insights.dropShare(x);
+        if (share < 0.005 || x.toDevice + x.fromDevice < 1000) continue;
+        const port = dropFc.get(idx) || {};
+        const counts = onPort.get(`${d.mac}|${idx}`);
+        const who = counts ? [...counts].sort((a, b) => b[1] - a[1])[0][0] : null;
+        const what = port.wan ? "internet port" : linked.get(`${d.mac}|${idx}`) ? `link to ${linked.get(`${d.mac}|${idx}`)}` : who ? `port to ${nameOf(who)}` : `port ${idx}`;
+        const outward = x.toDevice >= x.fromDevice;
+        const fc = port.fcTx === false && port.fcRx === false ? " Flow control is off on this port." : port.fcTx || port.fcRx ? " Flow control is on." : "";
+        out.push({
+          id: `drops-${d.mac}-${idx}`,
+          kind: "wired",
+          level: "info",
+          ts: end - 1,
+          title: `${d.name || d.model}'s ${what} dropped ${(share * 100).toFixed(share >= 0.1 ? 0 : 1)}% of packets`,
+          text: `${(outward ? x.toDevice : x.fromDevice).toLocaleString("en-US")} packets ${outward ? (port.wan ? "going out to the internet" : "on the way to the device") : "coming in"} were thrown away ${when}${port.speed ? ` (the port runs at ${linkWord(port.speed)})` : ""}. That usually means traffic arriving faster than the link can carry; TCP slows down to cope.${fc}`,
+          mac: who && !port.wan ? who : undefined,
+        });
+      }
       for (const [idx, p] of insights.portPeaks(d.mac, start, end)) {
         if (!p.speed || p.share == null || p.share < 0.8) continue;
         const counts = onPort.get(`${d.mac}|${idx}`);

@@ -24,6 +24,8 @@ const kindOf = (t) => (/uap/.test(t || "") ? "Access point" : /usw/.test(t || ""
 // A switch, access point or gateway over time (UU-C-198), from NetLens' own samples.
 const HISTORY_DAYS = [[1, "24 hours"], [7, "7 days"], [30, "30 days"], [90, "90 days"]];
 const EVENT_CLASS = { bad: "bad", warn: "warn", ok: "ok" };
+// "5,333 · 0.13%"; a share below 0.01% reads "<0.01%" (UU-C-245).
+const dropText = (n, share) => (n == null ? "—" : n === 0 ? "0" : `${n.toLocaleString()} · ${share >= 0.0001 ? `${(share * 100).toFixed(share >= 0.1 ? 0 : 2)}%` : "<0.01%"}`);
 const peakText = (bps) => (bps >= 1e6 ? speed(+(bps / 1e6).toFixed(bps >= 1e8 ? 0 : 1)) : `${Math.round(bps / 1e3)} kbps`);
 
 function History({ mac }) {
@@ -59,13 +61,14 @@ function History({ mac }) {
           ))}
           {data.ports.length > 0 && (
             <table className="t">
-              <thead><tr><th>Port</th><th className="num" title="To the device on the port ↓, from it ↑">Traffic</th><th className="num">Peak</th><th className="num">Changes</th><th className="num">New errors</th><th className="num">PoE peak</th></tr></thead>
+              <thead><tr><th>Port</th><th className="num" title="To the device on the port ↓, from it ↑">Traffic</th><th className="num">Peak</th><th className="num" title="Packets the port threw away in this period, and their share of its packets (the worse direction)">Dropped</th><th className="num">Changes</th><th className="num">New errors</th><th className="num">PoE peak</th></tr></thead>
               <tbody>
                 {data.ports.map((p) => (
                   <tr key={p.idx}>
                     <td>{p.name || `Port ${p.idx}`}</td>
                     <td className="num mono">{p.toDevice != null ? <>{bytes(p.toDevice + (p.fromDevice || 0))}<Split down={p.toDevice} up={p.fromDevice} /></> : "—"}</td>
                     <td className="num mono dim">{p.peakBps ? (p.peakBps >= 1e6 ? speed(+(p.peakBps / 1e6).toFixed(p.peakBps >= 1e8 ? 0 : 1)) : `${Math.round(p.peakBps / 1e3)} kbps`) : "—"}</td>
+                    <td className={`num mono ${p.dropShare >= 0.005 ? "warn" : "dim"}`} title={p.dropped != null ? `${p.droppedTo.toLocaleString()} on the way to the device · ${p.droppedFrom.toLocaleString()} coming from it` : undefined}>{dropText(p.dropped, p.dropShare)}</td>
                     <td className="num">{p.changes}</td>
                     <td className={`num ${p.errors > 0 ? "warn" : "dim"}`}>{p.errors}</td>
                     <td className="num dim">{p.poePeak ? `${p.poePeak.toFixed(1)} W` : "—"}</td>
@@ -210,7 +213,7 @@ function Panel({ data, route, closeHref }) {
           <>
             <h2>Ports</h2>
             <table className="t">
-              <thead><tr><th>#</th><th>Name</th><th className="num">Speed</th><th className="num" title="Last 15 minutes: to the device on the port ↓, from it ↑">15 min</th><th className="num" title="The busiest 5 minutes in the last 24 hours, as a share of the link's speed (the faster direction)">Busiest 24 h</th><th className="num">PoE</th><th className="num">Errors</th></tr></thead>
+              <thead><tr><th>#</th><th>Name</th><th className="num">Speed</th><th className="num" title="Last 15 minutes: to the device on the port ↓, from it ↑">15 min</th><th className="num" title="The busiest 5 minutes in the last 24 hours, as a share of the link's speed (the faster direction)">Busiest 24 h</th><th className="num" title="Packets the port threw away in the last 24 hours, and their share of its packets (the worse direction)">Dropped 24 h</th><th className="num">PoE</th><th className="num">Errors</th></tr></thead>
               <tbody>
                 {node.ports.map((p) => (
                   <tr key={p.idx}>
@@ -219,6 +222,7 @@ function Panel({ data, route, closeHref }) {
                     <td className={`num ${p.up && p.speed && p.speed <= 100 && !p.usualSpeed ? "warn" : p.up ? "" : "dim"}`} title={p.usualSpeed ? "The usual speed of the device on it" : undefined}>{p.up ? speed(p.speed) : "down"}</td>
                     <td className="num mono dim">{p.toDevice15m != null ? <>{bytes(p.toDevice15m + p.fromDevice15m)}<Split down={p.toDevice15m} up={p.fromDevice15m} /></> : "—"}</td>
                     <td className={`num mono ${p.peak24h?.share >= 0.8 ? "warn" : "dim"}`} title={p.peak24h ? `${peakText(p.peak24h.bps)} at ${clock(p.peak24h.at)}` : undefined}>{p.peak24h?.share != null ? `${Math.max(1, Math.round(p.peak24h.share * 100))}%` : p.peak24h ? peakText(p.peak24h.bps) : "—"}</td>
+                    <td className={`num mono ${p.drops24h?.share >= 0.005 ? "warn" : "dim"}`} title={p.drops24h ? `${p.drops24h.toDevice.toLocaleString()} on the way to the device · ${p.drops24h.fromDevice.toLocaleString()} coming from it · flow control ${p.fcTx || p.fcRx ? "on" : p.fcTx === false ? "off" : "unknown"}` : undefined}>{p.drops24h ? dropText(p.drops24h.toDevice + p.drops24h.fromDevice, p.drops24h.share) : "—"}</td>
                     <td className="num dim">{p.poe ? `${p.poe.toFixed ? p.poe.toFixed(1) : p.poe} W` : "—"}</td>
                     <td className={`num ${(p.rxErrors || 0) + (p.txErrors || 0) > 0 ? "warn" : "dim"}`}>{(p.rxErrors || 0) + (p.txErrors || 0)}</td>
                   </tr>
