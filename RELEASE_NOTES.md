@@ -1,8 +1,6 @@
-### Added
-- When a device moves to another port, Overview says where it moved from and to, and its page lists every port it was on, with times.
-- A port starts over when a different device takes it: its busiest 5 minutes and drops count from then, and its history says which device connected instead of warning that the port got slower. Each device's own record follows it wherever it is plugged in.
-- Overview's Network tab now lists restarts, times offline and firmware updates of your UniFi equipment in the period, and the notes about the internet port and the links between UniFi devices.
-
 ### Fixed
-- Moving a device to another port no longer makes its usual speed look like a slow link for a month: a single speed reading taken while the cable moved no longer counts as the device's top speed.
-- The Network panel is wider and its port table keeps every column in view, including drops and errors.
+- When the gateway restarts, Overview says so once, instead of listing every access point as offline: the gateway runs UniFi Network and loses sight of them while it restarts.
+- A device's places show the network it was on, and a change of network on the same port (a port briefly on the wrong VLAN) is a place of its own and a note on Overview. Each place shows the address the device had there.
+
+### Changed
+- README and Docker Hub: new screenshots, including the Wi-Fi, nearby networks and Internet pages.

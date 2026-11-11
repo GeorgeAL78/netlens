@@ -17,14 +17,16 @@ which UniFi itself deletes after a day or a week.
 | --- | --- |
 | ![Overview — findings and the internet line](assets/screenshots/home.png) | ![Day — every device by hour](assets/screenshots/day.png) |
 | **Overview** — findings in plain language, limits on top | **Activity › Timeline** — every device by hour |
-| ![Usage — apps, categories and top apps](assets/screenshots/usage.png) | ![Device — traffic, signal and events](assets/screenshots/device.png) |
-| **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, apps, sessions and events |
-| ![Network — live map with access-point detail](assets/screenshots/network.png) | ![Protection — blocks and intrusions with filters](assets/screenshots/security.png) |
-| **Network** — a card per gateway, switch and access point: ports, devices by band and signal, problems counted; access point selected | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
-| ![Devices — new devices, maker and where they connect](assets/screenshots/devices.png) | ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) |
-| **Devices** — new devices, maker, switch port or access point, rename | **Limits** — daily limits per app and device |
-| ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) | |
-| **Activity › Sites** — every site each device connected to, filtered by category | |
+| ![Usage — apps, categories and top apps](assets/screenshots/usage.png) | ![Device — traffic, places and events](assets/screenshots/device.png) |
+| **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, where it connected (port and network), apps, sessions and events |
+| ![Network — live map with a switch's ports](assets/screenshots/network.png) | ![Protection — blocks and intrusions with filters](assets/screenshots/security.png) |
+| **Network › Map** — a card per gateway, switch and access point; a switch selected: each port's traffic, busiest 5 minutes and dropped packets | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
+| ![Wi-Fi — radios and channel suggestions](assets/screenshots/wifi.png) | ![Nearby networks — the ones sharing your channels](assets/screenshots/wifi-nearby.png) |
+| **Network › Wi-Fi** — each radio's channel, load and interference; channel suggestions from UniFi's RF scans | **Network › Wi-Fi › Nearby** — of the hundreds of networks around, the loud ones on your channels |
+| ![Internet — availability, outages, latency and busiest moments](assets/screenshots/internet.png) | ![Devices — new devices, maker and where they connect](assets/screenshots/devices.png) |
+| **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — new devices, maker, switch port or access point, rename |
+| ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) | ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) |
+| **Activity › Sites** — every site each device connected to, filtered by category | **Limits** — daily limits per app and device |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
@@ -61,8 +63,14 @@ which UniFi itself deletes after a day or a week.
   public-address history and UniFi's last speed test.
 - **Links near their limit** — Overview says when a device's busiest 5 minutes used 80% or more
   of its link (a TV on a 100 Mbps port playing a 4K film, for example); its page shows the figure.
-- **Device** — per device: traffic, Wi-Fi signal or wired link speed, apps, sessions, events,
-  connection time, online history, CSV export, block / unblock.
+- **Moves between ports and networks** — when a device moves to another port, or its port puts it
+  on another network (VLAN), Overview says so and its page lists every port and network it was
+  on. A port starts over when a different device takes it; a device's own record follows it.
+- **Equipment over time** — Overview's Network tab lists restarts, times offline and firmware
+  updates in the period; a gateway restart that made the access points look offline is one note.
+- **Device** — per device: traffic, Wi-Fi signal or wired link speed, where it connected (port
+  and network over time), apps, sessions, events, connection time, online history, CSV export,
+  block / unblock.
 - **Devices** — every device UniFi knows, new ones first: maker, where it connected (switch port
   or access point and band), IP, first and last seen; rename it (saved in UniFi). Offline devices
   are checked on the network every 5 minutes (ping, then common ports, with a MAC check), so a

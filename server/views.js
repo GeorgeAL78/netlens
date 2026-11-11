@@ -729,12 +729,12 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
   // A device moved to another port (UU-C-248): where it was and where it is, once it has stayed
   // 15 minutes. From the period's samples (already read), wired only (Wi-Fi roams all the time).
   {
-    const seqs = new Map();
+    const byMac = new Map();
     for (const r of clientSamples) {
       if (!r.wired) continue;
-      const list = seqs.get(r.mac) || [];
-      list.push({ ts: r.ts, key: r.ap_mac && r.port != null ? `${r.ap_mac}|${r.port}` : null });
-      seqs.set(r.mac, list);
+      const list = byMac.get(r.mac) || [];
+      list.push({ ts: r.ts, apMac: r.ap_mac, port: r.port, ip: r.ip });
+      byMac.set(r.mac, list);
     }
     const devs = db.latestDeviceSamples();
     const uplinkKeys = new Set();
@@ -742,16 +742,23 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       const parent = d.data?.uplink?.device && devs.find((x) => x.name === d.data.uplink.device);
       if (parent && d.data.uplink.port != null) uplinkKeys.add(`${parent.mac}|${d.data.uplink.port}`);
     }
-    const place = (k) => {
-      const [ap, port] = k.split("|");
-      return `${nameOf(ap)} port ${port}`;
-    };
-    for (const [mac, seq] of seqs) {
-      for (const c of insights.steadyChanges(seq).changes) {
+    const place = (p) => `${nameOf(p.apMac)} port ${p.port}`;
+    for (const [mac, rows] of byMac) {
+      const list = insights.placeStretches(rows);
+      for (let i = 1; i < list.length; i += 1) {
+        const a = list[i - 1];
+        const b = list[i];
+        if (b.from < start) continue;
         // A switch that forgot a quiet device reports the uplink for a while; a move to or from a
         // link between UniFi devices is that, not a move (UU-C-168).
-        if (uplinkKeys.has(c.from) || uplinkKeys.has(c.to)) continue;
-        out.push({ id: `moved-${mac}-${c.ts}`, kind: "wired", level: "info", ts: c.ts, title: `${nameOf(mac)} moved to ${place(c.to)}`, text: `It was on ${place(c.from)} before ${clock(c.ts)}. That port's figures start over; this device's own record follows it.`, mac });
+        if (uplinkKeys.has(`${a.apMac}|${a.port}`) || uplinkKeys.has(`${b.apMac}|${b.port}`)) continue;
+        const net = (p) => p.network || "another network";
+        if (a.apMac === b.apMac && a.port === b.port) {
+          out.push({ id: `netmove-${mac}-${b.from}`, kind: "wired", level: "info", ts: b.from, title: `${nameOf(mac)} changed network: ${net(a)} → ${net(b)}`, text: `On ${place(b)}, at ${clock(b.from)}${b.ip ? `, now ${b.ip}` : ""}. Firewall rules for ${net(b)} apply to it now.`, mac });
+          continue;
+        }
+        const nets = a.network && b.network && a.network !== b.network;
+        out.push({ id: `moved-${mac}-${b.from}`, kind: "wired", level: "info", ts: b.from, title: `${nameOf(mac)} moved to ${place(b)}${nets ? ` (${b.network})` : ""}`, text: `It was on ${place(a)}${nets ? ` (${a.network})` : ""} before ${clock(b.from)}. That port's figures start over; this device's own record follows it.`, mac });
       }
     }
   }
@@ -850,6 +857,9 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       byMac.set(r.mac, list);
     }
     const fmtGap = (ms) => (ms >= 2 * HOUR ? `${Math.round(ms / HOUR)} h` : `${Math.max(1, Math.round(ms / 60e3))} min`);
+    const andList = (xs) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`);
+    const offs = [];
+    const gwRestarts = [];
     for (const [mac, rows] of byMac) {
       const name = rows[rows.length - 1].name || rows[rows.length - 1].model;
       const gw = /udm|ugw|uxg/.test(rows[rows.length - 1].type || "");
@@ -865,16 +875,49 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
         if (a.uptime != null && b.uptime != null && b.uptime < a.uptime) restarts.push({ ts: Math.max(a.ts, b.ts - b.uptime * 1000), update: Boolean(b.fw && a.fw && b.fw !== a.fw) });
         if (a.state === 1 && b.state !== 1) off = b.ts;
         else if (a.state !== 1 && b.state === 1 && off) {
-          out.push({ id: `down-${mac}-${off}`, kind: "equipment", level: "warn", ts: off, title: `${name} was offline ${fmtGap(b.ts - off)}`, text: `UniFi lost it at ${clock(off)}${days ? ` on ${new Date(off).toLocaleDateString()}` : ""}; back at ${clock(b.ts)}.`, device: mac });
+          offs.push({ mac, name, from: off, to: b.ts });
           off = null;
         }
       }
-      const trouble = restarts.filter((r) => !r.update);
+      if (gw) for (const r of restarts) gwRestarts.push({ mac, name, ...r });
+      const trouble = gw ? [] : restarts.filter((r) => !r.update);
       if (trouble.length > 3) {
         out.push({ id: `restarts-${mac}`, kind: "equipment", level: "warn", ts: trouble[trouble.length - 1].ts, title: `${name} restarted ${trouble.length} times ${when}`, text: `Last at ${clock(trouble[trouble.length - 1].ts)}. Frequent restarts point to power (PoE budget, adapter) or a crash; its history on the Network page shows each one.`, device: mac });
       } else {
-        for (const r of trouble) out.push({ id: `restart-${mac}-${r.ts}`, kind: "equipment", level: "info", ts: r.ts, title: `${name} restarted`, text: `At ${clock(r.ts)}${days ? ` on ${new Date(r.ts).toLocaleDateString()}` : ""}, from its own uptime. A restart after a settings change or an update in UniFi is normal.`, device: mac });
+        for (const r of trouble) out.push({ id: `restart-${mac}-${r.ts}`, kind: "equipment", level: "info", ts: r.ts, title: `${name} restarted`, text: `At ${clock(r.ts)}, from its own uptime. A restart after a settings change or an update in UniFi is normal.`, device: mac });
       }
+    }
+    // Offline at the same moment is one story (UU-C-248): when the gateway, which runs UniFi
+    // Network, restarts, it loses sight of every access point and switch until they check in again
+    // (on the owner's network: both access points "offline" 14:32-14:38 after the gateway's 14:22
+    // restart for Network 11); devices on them usually keep working meanwhile.
+    offs.sort((a, b) => a.from - b.from);
+    const clusters = [];
+    for (const o of offs) {
+      const c = clusters[clusters.length - 1];
+      if (c && o.from - c.from <= 10 * 60e3) {
+        c.items.push(o);
+        c.to = Math.max(c.to, o.to);
+      } else clusters.push({ from: o.from, to: o.to, items: [o] });
+    }
+    const usedRestarts = new Set();
+    for (const c of clusters) {
+      const names = andList([...new Set(c.items.map((o) => o.name))]);
+      const many = c.items.length > 1;
+      const r = gwRestarts.find((g) => g.ts >= c.from - 30 * 60e3 && g.ts <= c.to);
+      if (r) {
+        usedRestarts.add(r);
+        out.push({ id: `down-${r.mac}-${r.ts}`, kind: "equipment", level: "info", ts: r.ts, title: `${r.name} restarted${r.update ? " for an update" : ""}; ${names} showed offline ${fmtGap(c.to - c.from)}`, text: `The gateway restarted at ${clock(r.ts)}. It runs UniFi Network, so it lost sight of ${many ? "them" : "it"} from ${clock(c.from)} until ${many ? "they" : "it"} checked in again at ${clock(c.to)}. Devices on ${many ? "them" : "it"} usually keep working meanwhile.`, device: r.mac });
+      } else if (many) {
+        out.push({ id: `down-${c.items[0].mac}-${c.from}`, kind: "equipment", level: "warn", ts: c.from, title: `${names} were offline ${fmtGap(c.to - c.from)} at the same time`, text: `From ${clock(c.from)} to ${clock(c.to)}. Several at once points to what they share: the switch or gateway they hang off, or their power.` });
+      } else {
+        const o = c.items[0];
+        out.push({ id: `down-${o.mac}-${o.from}`, kind: "equipment", level: "warn", ts: o.from, title: `${o.name} was offline ${fmtGap(o.to - o.from)}`, text: `UniFi lost it at ${clock(o.from)}; back at ${clock(o.to)}.`, device: o.mac });
+      }
+    }
+    // The gateway's other restarts.
+    for (const r of gwRestarts.filter((g) => !usedRestarts.has(g) && !g.update)) {
+      out.push({ id: `restart-${r.mac}-${r.ts}`, kind: "equipment", level: "info", ts: r.ts, title: `${r.name} restarted`, text: `At ${clock(r.ts)}, from its own uptime. While it restarts the internet and UniFi Network are down for a few minutes; after a UniFi update that is normal.`, device: r.mac });
     }
   }
   // Equipment: offline, hot or with an update waiting.

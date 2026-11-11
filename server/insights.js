@@ -314,27 +314,66 @@ export function portOccupancy(apMac, from, to) {
   return out;
 }
 
-// Where one wired device was plugged in: steady stretches of switch / gateway and port.
+// The network (VLAN) an address belongs to, from UniFi's network list (setting `networks`, read
+// hourly); without it, the /24 the address is in.
+const ipNum = (ip) => String(ip).split(".").reduce((n, x) => n * 256 + Number(x), 0);
+export function networkOfIp(ip) {
+  if (!ip || !/^\d+\.\d+\.\d+\.\d+$/.test(ip)) return null;
+  let nets = [];
+  try {
+    nets = JSON.parse(db.getSetting("networks", "[]")) || [];
+  } catch {
+    nets = [];
+  }
+  for (const n of nets) {
+    const [base, bits] = String(n.subnet).split("/");
+    const mask = Number(bits) ? (0xffffffff << (32 - Number(bits))) >>> 0 : 0;
+    if (((ipNum(ip) & mask) >>> 0) === ((ipNum(base) & mask) >>> 0)) return { name: n.name, vlan: n.vlan };
+  }
+  return { name: `${ip.split(".").slice(0, 3).join(".")}.x`, vlan: null };
+}
+
+// A device's places from its readings [{ ts, apMac, port, ip }] in time order (UU-C-248): a port
+// change counts once it held 3 updates (a stale reading during a move is not one); within a port,
+// every change of network counts, however short (a port briefly on the wrong VLAN is the thing
+// to see). Each stretch: switch / gateway MAC, port, network, from, to, the address it last had.
+export function placeStretches(rows) {
+  const placed = rows.filter((r) => r.apMac && r.port != null);
+  if (!placed.length) return [];
+  const portKey = (r) => `${r.apMac}|${r.port}`;
+  const { changes } = steadyChanges(placed.map((r) => ({ ts: r.ts, key: portKey(r) })));
+  const first = changes.length ? changes[0].from : portKey(placed[0]);
+  const portRuns = [{ key: first, from: placed[0].ts }, ...changes.map((c) => ({ key: c.to, from: c.ts }))];
+  const out = [];
+  portRuns.forEach((run, i) => {
+    const until = portRuns[i + 1]?.from ?? Infinity;
+    const [apMac, port] = run.key.split("|");
+    // Readings on this port in the run; other ports' stray readings inside it are left out.
+    const mine = placed.filter((r) => r.ts >= run.from && r.ts < until && portKey(r) === run.key);
+    let cur = null;
+    for (const r of mine) {
+      const net = networkOfIp(r.ip)?.name || null;
+      if (!cur || (net && cur.network && net !== cur.network)) {
+        if (cur) cur.to = r.ts;
+        cur = { apMac, port: Number(port), network: net, from: cur ? r.ts : run.from, to: r.ts, ip: r.ip || null };
+        out.push(cur);
+      } else {
+        cur.to = r.ts;
+        if (r.ip) cur.ip = r.ip;
+        if (!cur.network && net) cur.network = net;
+      }
+    }
+    if (cur && Number.isFinite(until)) cur.to = until;
+  });
+  return out;
+}
+
+// Where one wired device was plugged in, newest first (the Device page, UU-C-248).
 export function wiredPlaces(mac, from, to) {
   const nameOf = names();
-  const rows = db.wiredPlacesOf(mac, from, to);
-  const seq = rows.map((r) => ({ ts: r.ts, key: r.apMac && r.port != null ? `${r.apMac}|${r.port}` : null }));
-  const { changes } = steadyChanges(seq);
-  // Stretches from the accepted changes: each runs from its start to the next change.
-  const starts = [{ ts: rows.find((r) => r.apMac && r.port != null)?.ts ?? null, key: null }, ...changes.map((c) => ({ ts: c.ts, key: c.to }))];
-  if (starts[0].ts == null) return [];
-  starts[0].key = changes.length ? changes[0].from : steadyChanges(seq).current;
-  const last = rows[rows.length - 1];
-  return starts
-    .map((s, i) => {
-      const [apMac, port] = String(s.key || "").split("|");
-      const until = starts[i + 1]?.ts ?? last.ts;
-      // Its own readings only: the one at the next stretch's start belongs to that stretch.
-      const isLast = i === starts.length - 1;
-      const ip = [...rows].reverse().find((r) => (isLast ? r.ts <= until : r.ts < until) && r.ts >= s.ts && r.ip)?.ip || null;
-      return { via: nameOf(apMac), apMac, port: Number(port), from: s.ts, to: until, current: i === starts.length - 1, ip };
-    })
-    .filter((p) => p.apMac)
+  const list = placeStretches(db.wiredPlacesOf(mac, from, to));
+  return list
+    .map((p, i) => ({ ...p, via: nameOf(p.apMac), vlan: networkOfIp(p.ip)?.vlan ?? null, current: i === list.length - 1 }))
     .reverse();
 }
 

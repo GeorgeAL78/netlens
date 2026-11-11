@@ -483,6 +483,12 @@ export const getNearbyNetworks = (hours = 24) => siteStat(`rogueap?within=${Numb
 // Each access point's last RF scan (UU-C-241): utilization of every channel per radio, as UniFi's
 // nightly scan (or one run by hand) left it. Reading it never starts a scan.
 export const getRfScans = () => siteStat("spectrum-scan");
+// The site's networks (UU-C-248): name, VLAN and subnet, to name the network a device was on.
+export async function getNetworks() {
+  const { site } = config();
+  const json = await request(`/proxy/network/api/s/${site}/rest/networkconf`);
+  return json?.data || [];
+}
 
 // Versions (UU-C-229). stat/sysinfo has the Network application's version, the one before it
 // and the console's UniFi OS version (console_display_version). The Integration API's device

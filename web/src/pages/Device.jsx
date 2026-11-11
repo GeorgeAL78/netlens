@@ -360,13 +360,14 @@ export default function Device({ route }) {
             <div className="card">
               <div className="card-head">
                 <h2>Where it connected</h2>
-                <span className="dim small">last 30 days · a move counts once it stayed 15 minutes</span>
+                <span className="dim small">last 30 days · port and network · a change counts once it stayed 15 minutes</span>
               </div>
               <div className="rows">
                 {places.data.places.map((p) => (
                   <div key={`${p.apMac}|${p.port}|${p.from}`} className="row" style={{ gridTemplateColumns: "minmax(0, 1fr) auto", cursor: "default" }}>
                     <span className="small">
                       <a href={href("network", null, { n: p.apMac })}>{p.via}</a> · port {p.port}
+                      {p.network ? <span> · {p.network}{p.vlan > 1 && !/vlan/i.test(p.network) ? <span className="dim"> (VLAN {p.vlan})</span> : null}</span> : null}
                       {p.ip ? <span className="dim mono"> · {p.ip}</span> : null}
                       {p.current ? <span className="ok"> · now</span> : null}
                     </span>

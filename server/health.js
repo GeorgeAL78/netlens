@@ -344,6 +344,9 @@ export async function refreshAir({ force = false } = {}) {
           lastSeen: num(r.last_seen) ? num(r.last_seen) * 1000 : null,
         }));
       db.setSetting("nearby_networks", JSON.stringify({ at: now, rows: keep }));
+      // The networks (VLANs) by subnet, to name the network a device was on (UU-C-248).
+      const nets = await unifi.getNetworks().catch(() => null);
+      if (nets) db.setSetting("networks", JSON.stringify(nets.filter((n) => n.ip_subnet && n.purpose !== "wan").map((n) => ({ name: n.name, vlan: num(n.vlan) || 1, subnet: n.ip_subnet }))));
       // The access points' last RF scans; a scan already kept is skipped (same time).
       const scans = await unifi.getRfScans().catch(() => []);
       db.saveRfScan(
