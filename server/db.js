@@ -207,6 +207,18 @@ db.exec(`
     latency_max REAL,
     availability REAL
   );
+  -- UniFi's RF scans (UU-C-241): how busy every channel was when an access point scanned. UniFi
+  -- keeps only the latest per access point; NetLens keeps each one it sees, for channel advice.
+  CREATE TABLE IF NOT EXISTS rf_scans (
+    ts INTEGER NOT NULL,
+    mac TEXT NOT NULL,
+    radio TEXT NOT NULL,
+    channel INTEGER NOT NULL,
+    width INTEGER,
+    util REAL,
+    interf REAL,
+    PRIMARY KEY (ts, mac, radio, channel)
+  );
 `);
 
 const upsertClient = db.prepare(`
@@ -689,7 +701,26 @@ export function saveLiveSamples({ clients = [], devices = [], wan = null }) {
 }
 
 export function pruneLiveSamples(before) {
-  for (const t of ["client_samples", "device_samples", "wan_samples", "wan_engine"]) db.prepare(`DELETE FROM ${t} WHERE ts < ?`).run(before);
+  for (const t of ["client_samples", "device_samples", "wan_samples", "wan_engine", "rf_scans"]) db.prepare(`DELETE FROM ${t} WHERE ts < ?`).run(before);
+}
+
+export function saveRfScan(rows) {
+  if (!rows.length) return 0;
+  const st = db.prepare(`INSERT OR IGNORE INTO rf_scans (ts, mac, radio, channel, width, util, interf) VALUES (?, ?, ?, ?, ?, ?, ?)`);
+  let n = 0;
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) n += st.run(r.ts, r.mac, r.radio, r.channel, r.width, r.util, r.interf).changes;
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return n;
+}
+
+export function rfScansSince(since) {
+  return db.prepare(`SELECT ts, mac, radio, channel, width, util, interf FROM rf_scans WHERE ts >= ? ORDER BY ts`).all(since);
 }
 
 export function saveWanEngine(rows) {

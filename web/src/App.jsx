@@ -224,7 +224,7 @@ export default function App() {
         </nav>
       )}
       {NETWORK.some(([id]) => id === route.page) && (
-        <nav className="subtabs" aria-label="Network">
+        <nav className="subtabs wide" aria-label="Network">
           {NETWORK.map(([id, label]) => (
             <a key={id} href={href(id)} className={route.page === id ? "on" : ""}>
               {label}

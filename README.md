@@ -51,9 +51,10 @@ which UniFi itself deletes after a day or a week.
 - **Network › Wi-Fi** — each access point's radios: channel, width, power, how busy the channel
   is and how much of that is other networks (on Network 11 also how often frames are sent again
   and the Wi-Fi experience). Nearby networks, sifted: of the hundreds your access points hear,
-  only the ones loud enough to share a channel you use, plus a count of loud networks per channel
-  so the quietest stands out; the rest stay searchable. Every Wi-Fi device's signal, band, roams
-  and failed joins, and devices stuck on 2.4 GHz that have used 5 or 6 GHz.
+  only the ones loud enough to share a channel you use; the rest stay searchable. Channel
+  suggestions from UniFi's nightly RF scans of every channel, which NetLens keeps over time. A
+  Devices tab: every Wi-Fi device's signal, band, roams and failed joins, and devices stuck on
+  2.4 GHz that have used 5 or 6 GHz.
 - **Network › Internet** — availability and every outage, latency to UniFi's test targets, the
   busiest download and upload against your line's speed (each 5 minutes' peak on Network 11),
   public-address history and UniFi's last speed test.

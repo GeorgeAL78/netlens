@@ -1317,7 +1317,7 @@ app.get("/api/wifi/summary", (req, res) => {
     const days = AIR_DAYS(req.query.days);
     const now = Date.now();
     const w = airview.wifiSummary(now - days * 24 * 3600e3, now + 1);
-    res.json({ tz, days, ...w, nearby: airview.nearbySummary(w.aps) });
+    res.json({ tz, days, ...w, nearby: airview.nearbySummary(w.aps), advice: airview.channelAdvice(w.aps, now) });
   } catch (err) {
     sendError(res, "GET /api/wifi/summary", err);
   }

@@ -336,6 +336,18 @@ export async function refreshAir({ force = false } = {}) {
           lastSeen: num(r.last_seen) ? num(r.last_seen) * 1000 : null,
         }));
       db.setSetting("nearby_networks", JSON.stringify({ at: now, rows: keep }));
+      // The access points' last RF scans; a scan already kept is skipped (same time).
+      const scans = await unifi.getRfScans().catch(() => []);
+      db.saveRfScan(
+        scans.flatMap((d) => {
+          const ts = num(d.spectrum_scan_timestamp);
+          if (!ts || d.spectrum_scanning) return [];
+          const at = ts > 1e12 ? ts : ts * 1000;
+          return (d.scans || []).flatMap((s) =>
+            (s.spectrum_table || []).filter((x) => num(x.channel)).map((x) => ({ ts: at, mac: lower(d.mac), radio: s.radio, channel: num(x.channel), width: num(x.width), util: num(x.utilization), interf: num(x.interference) }))
+          );
+        })
+      );
       air.nearbyAt = now;
       air.error = null;
     } catch (err) {

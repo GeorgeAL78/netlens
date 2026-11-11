@@ -402,3 +402,9 @@ table.t tr.wifi-mine td { background: #131c28; }
 .wifi-all summary { cursor: pointer; color: var(--muted); font-weight: 500; }
 .wifi-all[open] summary { margin-bottom: 4px; }
 .tag + .tag, td .tag { margin-left: 8px; }
+
+/* Network's pages run full width (the map); the tab bar starts where they start, and the Wi-Fi
+   and Internet pages stop at a readable width instead of spreading tables over a wide screen
+   (UU-C-241). */
+.subtabs.wide { max-width: none; }
+.page.wide.capped { max-width: 1480px; margin: 0; }

@@ -231,6 +231,13 @@ for (const { hq, label, dayBar } of hourChecks) {
     const keys = new Set(n.all.map((g) => `${g.name}|${g.band}`));
     if (n.competing.some((g) => !keys.has(`${g.name}|${g.band}`) || g.signal < n.threshold)) failures.push(`${label}: a competing network is not in the list or is too faint`);
     if (n.all.reduce((s, g) => s + g.radios, 0) > n.heard) failures.push(`${label}: more radios grouped than heard`);
+    if (n.all.some((g) => !g.name && g.channels.length > 1)) failures.push(`${label}: hidden radios on different channels grouped as one`);
+    // Channel advice (UU-C-241): only to a free, non-radar channel at least 10 points quieter.
+    for (const a of w.advice || []) {
+      if (!a.suggest) continue;
+      const to = a.options.find((o) => o.channel === a.suggest.channel);
+      if (!to || to.usedBy.length || to.dfs || to.current || !(a.current && a.current.util - to.util >= 10)) failures.push(`${label}: ${a.ap} ${a.band} told to move to ${a.suggest.channel} without reason`);
+    }
     const i = await get(`/api/internet?days=${days}`);
     stats.screens += 1;
     if (i.series.length !== Math.ceil((i.end - i.start) / i.step)) failures.push(`internet ${days}d: ${i.series.length} bars`);

@@ -17,7 +17,7 @@ export default function Internet() {
   const when = (t) => (days === 1 ? clock(t) : shortDate(t));
   const share = (p) => (p && d?.linkMbps ? ` · ${Math.round((p.mbps / d.linkMbps) * 100)}% of the line` : "");
   return (
-    <div className="page wide">
+    <div className="page wide capped">
       <div className="page-head">
         <div className="titles">
           <span className="dim small">Network · Internet</span>

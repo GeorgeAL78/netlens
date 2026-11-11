@@ -106,26 +106,38 @@ export function nearbySummary(aps) {
   }
   if (!stored?.rows) return { at: null, heard: 0, networks: 0, competing: [], channels: [], all: [] };
   const ours = aps.flatMap((a) => a.radios.filter((r) => r.channel).map((r) => ({ ap: a.name, radio: r.radio, band: BAND_OF[r.radio], channel: r.channel, width: r.width, span: channelSpan(r.radio, r.channel, r.width) })));
-  const groups = new Map();
-  for (const r of stored.rows) {
-    const band = BAND_OF[r.band];
-    if (!band) continue;
-    const key = `${r.essid || ""}|${band}`;
-    const g = groups.get(key) || { name: r.essid || null, band, channels: new Set(), width: null, signal: null, security: r.security, heardBy: new Set(), lastSeen: 0, radios: 0, hits: new Set() };
+  // Named networks by name + band; hidden ones (no name to go by) by band + channel, so unrelated
+  // hidden radios across the street are not one "network" on every channel (UU-C-241).
+  const add = (map, key, r, band) => {
+    const g = map.get(key) || { name: r.essid || null, band, channels: new Set(), width: null, signal: null, security: r.security, heardBy: new Set(), lastSeen: 0, radios: 0, hits: new Set() };
     g.radios += 1;
     if (r.channel) g.channels.add(r.channel);
     g.width = Math.max(g.width || 0, r.width || 0) || null;
     if (r.signal != null && (g.signal == null || r.signal > g.signal)) g.signal = r.signal;
     if (r.heardBy) g.heardBy.add(r.heardBy);
     g.lastSeen = Math.max(g.lastSeen, r.lastSeen || 0);
-    // Which of our radios this one shares air with, if it is loud enough to matter.
+    map.set(key, g);
+    return g;
+  };
+  const groups = new Map();
+  // Sharing our channels: one row per network and channel, with that channel's own signal (a
+  // network on 1, 6 and 11 is three rows, each as loud as it is there).
+  const sharing = new Map();
+  for (const r of stored.rows) {
+    const band = BAND_OF[r.band];
+    if (!band) continue;
+    add(groups, r.essid ? `${r.essid}|${band}` : `|${band}|${r.channel}`, r, band);
+    if (r.signal == null || r.signal < STRONG) continue;
     const span = channelSpan(r.band, r.channel, r.width);
-    if (r.signal != null && r.signal >= STRONG) for (const o of ours) if (o.band === band && overlaps(span, o.span)) g.hits.add(`${o.ap} ${bandName(o.radio)} ch ${o.channel}`);
-    groups.set(key, g);
+    const hits = ours.filter((o) => o.band === band && overlaps(span, o.span));
+    if (!hits.length) continue;
+    const g = add(sharing, `${r.essid || ""}|${band}|${r.channel}`, r, band);
+    for (const o of hits) g.hits.add(`${o.ap} ${bandName(o.radio)} ch ${o.channel}`);
   }
-  const all = [...groups.values()]
-    .map((g) => ({ name: g.name, band: g.band, channels: [...g.channels].sort((a, b) => a - b), width: g.width, signal: g.signal, security: g.security, heardBy: [...g.heardBy], lastSeen: g.lastSeen || null, radios: g.radios, competes: [...g.hits] }))
-    .sort((a, b) => (b.signal ?? -200) - (a.signal ?? -200));
+  const shape = (g) => ({ name: g.name, band: g.band, channels: [...g.channels].sort((a, b) => a - b), width: g.width, signal: g.signal, security: g.security, heardBy: [...g.heardBy], lastSeen: g.lastSeen || null, radios: g.radios, competes: [...g.hits] });
+  const bySignal = (a, b) => (b.signal ?? -200) - (a.signal ?? -200);
+  const all = [...groups.values()].map(shape).sort(bySignal);
+  const competing = [...sharing.values()].map(shape).sort(bySignal);
 
   // Strong neighbours per channel (2.4 GHz: 1, 6, 11) and per block of our 5 GHz width.
   const strong = stored.rows.filter((r) => r.signal != null && r.signal >= STRONG && BAND_OF[r.band]);
@@ -148,10 +160,64 @@ export function nearbySummary(aps) {
     networks: all.length,
     strong: all.filter((g) => g.signal != null && g.signal >= STRONG).length,
     threshold: STRONG,
-    competing: all.filter((g) => g.competes.length),
+    competing,
     channels,
     all,
   };
+}
+
+// ---- Channel advice from UniFi's RF scans (UU-C-241) -------------------------------------
+// An access point mostly hears networks on its own channel, so counting neighbours makes a
+// channel nobody here uses look empty. UniFi's RF scan measures every channel; NetLens keeps
+// each one (UniFi keeps only the latest) and averages the last 30 days per access point. A move
+// is suggested only when another channel was at least 10 points quieter on average, never onto
+// a channel another of our access points uses in that band, and on 5 GHz never onto radar (DFS)
+// channels. Scans run at night (UniFi's nightly scan) unless someone runs one, so daytime can
+// differ; the radio's own daytime busy share is shown beside it.
+const ADVISE_POINTS = 10;
+const isDfs5 = (ch) => ch >= 52 && ch <= 144;
+export function channelAdvice(aps, now) {
+  const scans = db.rfScansSince(now - 30 * 24 * HOUR);
+  const out = [];
+  // A suggested channel is claimed, so two access points are never sent to the same one.
+  const claimed = [];
+  for (const a of aps) {
+    for (const r of a.radios) {
+      const band = BAND_OF[r.radio];
+      if (band !== "2.4" && band !== "5") continue;
+      const rows = scans.filter((s) => s.mac === a.mac && s.radio === r.radio);
+      const base = { ap: a.name, mac: a.mac, band, radio: r.radio, channel: r.channel, width: r.width, daytime: r.avgUtil };
+      if (!rows.length) {
+        out.push({ ...base, scans: 0 });
+        continue;
+      }
+      const byCh = new Map();
+      for (const s of rows) {
+        const c = byCh.get(s.channel) || { channel: s.channel, width: s.width, utils: [] };
+        c.utils.push(s.util);
+        byCh.set(s.channel, c);
+      }
+      const times = [...new Set(rows.map((s) => s.ts))].sort((x, y) => x - y);
+      const spanOf = (c) => channelSpan(r.radio, c.channel, c.width);
+      const mine = channelSpan(r.radio, r.channel, r.width);
+      // Channels another of our access points uses in this band.
+      const taken = aps.filter((o) => o.mac !== a.mac).flatMap((o) => o.radios.filter((x) => BAND_OF[x.radio] === band && x.channel).map((x) => ({ ap: o.name, span: channelSpan(x.radio, x.channel, x.width) })));
+      const options = [...byCh.values()]
+        .filter((c) => (band === "2.4" ? [1, 6, 11].includes(c.channel) : true))
+        .map((c) => {
+          const usedBy = taken.filter((t) => overlaps(spanOf(c), t.span)).map((t) => t.ap);
+          return { channel: c.channel, width: c.width, util: avg(c.utils), dfs: band === "5" && isDfs5(c.channel), usedBy, current: overlaps(spanOf(c), mine) };
+        })
+        .sort((x, y) => x.channel - y.channel);
+      const current = options.find((o) => o.current) || null;
+      const pickable = options.filter((o) => !o.current && !o.dfs && !o.usedBy.length && o.util != null && !claimed.some((c) => c.band === band && overlaps(c.span, channelSpan(r.radio, o.channel, o.width))));
+      const best = pickable.sort((x, y) => x.util - y.util)[0] || null;
+      const suggest = current?.util != null && best && current.util - best.util >= ADVISE_POINTS ? { channel: best.channel, util: best.util } : null;
+      if (suggest) claimed.push({ band, span: channelSpan(r.radio, best.channel, best.width) });
+      out.push({ ...base, scans: times.length, firstAt: times[0], lastAt: times[times.length - 1], current: current ? { channel: current.channel, util: current.util } : null, options, suggest });
+    }
+  }
+  return out;
 }
 
 // ---- Internet ------------------------------------------------------------------------------
