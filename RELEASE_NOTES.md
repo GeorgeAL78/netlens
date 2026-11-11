@@ -1,3 +1,2 @@
-### Fixed
-- The internet port's traffic reads from your side: ↓ download, ↑ upload.
-- The internet line's "Up" is now "Reachable", with the period it covers: it is UniFi's own check (pings answered since the gateway started), which can differ from the figure on UniFi's dashboard.
+### Added
+- The internet line per day: download and upload, the busiest moments, average latency and time down, for the last 7 days in the Network map's internet panel and for the chosen period on the Internet tab.

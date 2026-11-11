@@ -271,3 +271,38 @@ export function Bytes({ n, text: given }) {
     </span>
   );
 }
+
+// The internet line per day (UU-C-254): traffic down and up, the busiest moments, average latency
+// and time down. Newest first; a day with no usage file reads "—" for its totals.
+export function WanDays({ days, linkMbps }) {
+  if (!days?.length) return null;
+  const today = days[0]?.day;
+  const label = (d) => (d.day === today ? "Today" : new Date(d.start).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }));
+  const mb = (v) => (v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(2)} G` : `${v >= 100 ? Math.round(v) : v} M`);
+  return (
+    <table className="t">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th className="num" title="Downloaded that day (UniFi's per-device totals)">↓</th>
+          <th className="num" title="Uploaded that day">↑</th>
+          <th className="num" title={`The busiest moment down / up, in bits per second${linkMbps ? ` (the line is ${linkMbps} Mbps)` : ""}`}>Busiest</th>
+          <th className="num" title="Average latency to UniFi's test target">Ping</th>
+          <th className="num" title="Minutes the line was down while NetLens watched">Down</th>
+        </tr>
+      </thead>
+      <tbody>
+        {days.map((d) => (
+          <tr key={d.day}>
+            <td className="small">{label(d)}</td>
+            <td className="num mono">{d.down == null ? "—" : <Bytes n={d.down} />}</td>
+            <td className="num mono dim">{d.up == null ? "—" : <Bytes n={d.up} />}</td>
+            <td className="num mono dim">{d.peakDown == null ? "—" : `${mb(d.peakDown)} / ${mb(d.peakUp)}`}</td>
+            <td className="num mono dim">{d.latency == null ? "—" : `${Math.round(d.latency)} ms`}</td>
+            <td className={`num mono ${d.downMinutes ? "bad" : "dim"}`}>{d.watchedHours ? (d.downMinutes ? `${d.downMinutes} min` : "0") : "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}

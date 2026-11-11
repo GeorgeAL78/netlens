@@ -220,6 +220,35 @@ export function channelAdvice(aps, now) {
   return out;
 }
 
+// One day of the internet line (UU-C-254): the busiest download and upload (the engine's 5-minute
+// peaks where it has them, else the busiest update), average latency, and minutes down out of the
+// minutes NetLens watched. The day's traffic totals come from the caller (the usage day files).
+export function wanDayStats(start, end) {
+  const wan = db.queryWanSamples(start, end);
+  const engine = db.wanEngineIn(start, end);
+  const mbps = (bps) => (bps == null ? null : Math.round(bps / 1e5) / 10);
+  const peak = (eKey, sKey) => {
+    const e = maxOf(engine.map((x) => x[eKey]));
+    const s = maxOf(wan.map((x) => (x[sKey] == null ? null : x[sKey] * 8)));
+    return mbps(maxOf([e, s]));
+  };
+  let watched = 0;
+  let down = 0;
+  for (let i = 1; i < wan.length; i += 1) {
+    const gap = wan[i].ts - wan[i - 1].ts;
+    if (gap > 20 * 60e3) continue;
+    watched += gap;
+    if (wan[i - 1].status && wan[i - 1].status !== "ok") down += gap;
+  }
+  return {
+    peakDown: peak("rxMax", "rx_rate"),
+    peakUp: peak("txMax", "tx_rate"),
+    latency: avg(wan.map((w) => w.latency)),
+    downMinutes: Math.round(down / 60e3),
+    watchedHours: Math.round((watched / 3600e3) * 10) / 10,
+  };
+}
+
 // ---- Internet ------------------------------------------------------------------------------
 // Did the line deliver? Availability and every outage, latency to UniFi's test targets, and how
 // much of the link the busiest moments used. NetLens's samples see each update's moment; Network

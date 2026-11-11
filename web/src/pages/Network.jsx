@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { ago, bytes, clock, duration, go, href, shortDate, speed, useApi, wanNow, splitTip } from "../lib.js";
-import { Bars, Failed, Loading, healthClass, Bytes, Split } from "../ui.jsx";
+import { Bars, Failed, Loading, healthClass, Bytes, Split, WanDays } from "../ui.jsx";
 
 // Network — the map (UU-C-087): Internet → gateway → switches / access points → devices.
 // Chip size is traffic in the last 15 minutes; the dot is health. Click anything for its panel.
@@ -129,6 +129,14 @@ function Panel({ data, route, closeHref }) {
           {link && <div><span>WAN link</span><span className="mono">{speed(link)}</span></div>}
           {w.ip && <div><span>Public IP</span><span className="mono">{w.ip}</span></div>}
         </div>
+        {/* Per day (UU-C-254); the Internet tab has more days and the outages. */}
+        {data.wanDays?.length > 0 && (
+          <>
+            <h2>Last 7 days</h2>
+            <WanDays days={data.wanDays} linkMbps={link} />
+            <a className="small" href={href("internet")}>More on the Internet tab</a>
+          </>
+        )}
         {w.ipHistory?.length > 0 && (
           <>
             <h2>Public IP history</h2>

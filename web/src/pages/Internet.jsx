@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { clock, shortDate, speed, useApi } from "../lib.js";
-import { Bars, Failed, Loading } from "../ui.jsx";
+import { Bars, Failed, Loading, WanDays } from "../ui.jsx";
 
 // Internet (UU-C-239): did the line deliver? Availability and every outage, latency to UniFi's
 // test targets, how much of the line the busiest moments used, the public address over time and
@@ -95,6 +95,11 @@ export default function Internet() {
                 tip: p.latency == null ? `${when(p.t)}: nothing recorded` : `${when(p.t)}: ${p.latency} ms${p.outage ? " · outage" : ""}`,
               }))} />
             </div>
+          </section>
+
+          <section className="card">
+            <h2>Per day</h2>
+            <WanDays days={d.daily} linkMbps={d.linkMbps} />
           </section>
 
           <section className="card">

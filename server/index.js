@@ -1293,7 +1293,7 @@ app.get("/api/network", (req, res) => {
     const atRaw = Number(req.query.at);
     const at = Number.isFinite(atRaw) && atRaw > 0 ? Math.min(now, Math.max(now - 90 * 86400e3, atRaw)) : null;
     const bundle = cache.readDays([zonedDateKey(at ?? now)]);
-    res.json({ tz, ts: now, unifi: unifiVersions(), ...views.networkMap({ bundle, now, at }) });
+    res.json({ tz, ts: now, unifi: unifiVersions(), ...views.networkMap({ bundle, now, at }), ...(at ? {} : { wanDays: wanDays(7, now) }) });
   } catch (err) {
     sendError(res, "GET /api/network", err);
   }
@@ -1312,6 +1312,30 @@ app.get("/api/network/timeline", (req, res) => {
 // The Wi-Fi page (UU-C-239): access points' radios, devices, and the nearby networks that share
 // their channels. The Internet page: availability, outages, latency and the busiest moments.
 const AIR_DAYS = (q) => ([1, 7, 30].includes(Number(q)) ? Number(q) : 1);
+// The internet line per day, newest first (UU-C-254): download and upload from the usage day files
+// (the totals Overview shows), with the line's busiest moments, latency and time down.
+function wanDays(n, now) {
+  const today = zonedDateKey(now);
+  const out = [];
+  for (let i = 0; i < n; i += 1) {
+    const key = addDays(today, -i);
+    const start = zonedMidnight(key);
+    const end = Math.min(now, zonedMidnight(addDays(key, 1)));
+    const day = cache.readDays([key]).perDay[0];
+    let down = null;
+    let up = null;
+    if (day) {
+      down = 0;
+      up = 0;
+      for (const c of day.traffic) for (const u of c.usage) {
+        down += u.bytesRx || 0;
+        up += u.bytesTx || 0;
+      }
+    }
+    out.push({ day: key, start, end, down, up, ...airview.wanDayStats(start, end) });
+  }
+  return out;
+}
 app.get("/api/wifi/summary", (req, res) => {
   try {
     const days = AIR_DAYS(req.query.days);
@@ -1324,7 +1348,9 @@ app.get("/api/wifi/summary", (req, res) => {
 });
 app.get("/api/internet", (req, res) => {
   try {
-    res.json({ tz, ...airview.internetSummary(AIR_DAYS(req.query.days), Date.now()) });
+    const days = AIR_DAYS(req.query.days);
+    const now = Date.now();
+    res.json({ tz, ...airview.internetSummary(days, now), daily: wanDays(Math.max(7, days), now) });
   } catch (err) {
     sendError(res, "GET /api/internet", err);
   }
