@@ -408,3 +408,13 @@ table.t tr.wifi-mine td { background: #131c28; }
    (UU-C-241). */
 .subtabs.wide { max-width: none; }
 .page.wide.capped { max-width: 1480px; margin: 0; }
+
+/* Number columns: the heading sits over its numbers, in the heading font (UU-C-243). */
+table.t th.num { text-align: right; font-family: inherit; }
+/* Wi-Fi tables: fixed columns, so both access points' tables line up, and a readable width. */
+.wifi-ap table.t { table-layout: fixed; max-width: 1000px; }
+.wifi-ap table.t th:first-child, .wifi-ap table.t td:first-child { width: 90px; }
+table.t.advice { max-width: 1100px; }
+.wifi-channels table.t { max-width: 560px; }
+.wifi-ap-head { max-width: 1000px; }
+table.t td.num + td:not(.num), table.t th.num + th:not(.num) { padding-left: 20px; }

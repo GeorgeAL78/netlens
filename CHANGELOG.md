@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.26.1 — 2026-11-10
+
+### Added
+- Channel suggestions for 6 GHz too.
+
+### Fixed
+- Number columns in tables line up with their headings, and the Wi-Fi tables keep a readable width.
+
 ## 2.26.0 — 2026-11-10
 
 ### Changed

@@ -184,7 +184,7 @@ export function channelAdvice(aps, now) {
   for (const a of aps) {
     for (const r of a.radios) {
       const band = BAND_OF[r.radio];
-      if (band !== "2.4" && band !== "5") continue;
+      if (!["2.4", "5", "6"].includes(band)) continue;
       const rows = scans.filter((s) => s.mac === a.mac && s.radio === r.radio);
       const base = { ap: a.name, mac: a.mac, band, radio: r.radio, channel: r.channel, width: r.width, daytime: r.avgUtil };
       if (!rows.length) {

@@ -133,7 +133,7 @@ function ChannelAdvice({ advice }) {
       {scanned.length > 0 && (
         <>
           <div className="scroll-x">
-            <table className="t">
+            <table className="t advice">
               <thead>
                 <tr>
                   <th>Access point</th>
