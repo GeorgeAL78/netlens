@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.28.2 — 2026-11-11
+
+### Fixed
+- The internet port's traffic reads from your side: ↓ download, ↑ upload.
+- The internet line's "Up" is now "Reachable", with the period it covers: it is UniFi's own check (pings answered since the gateway started), which can differ from the figure on UniFi's dashboard.
+
 ## 2.28.1 — 2026-11-11
 
 ### Fixed

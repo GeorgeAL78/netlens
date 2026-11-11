@@ -319,7 +319,7 @@ export function networkMap({ bundle, now, at = null }) {
   return {
     at,
     wan: wan
-      ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, rxRate: wan.rx_rate, txRate: wan.tx_rate, ip: wan.data?.ip || null, ts: wan.ts, ipHistory: ipRuns.slice(-12).reverse() }
+      ? { status: wan.status, isp: wan.isp, latency: wan.latency, availability: wan.availability, availabilityPeriod: wan.data?.period ?? null, rxRate: wan.rx_rate, txRate: wan.tx_rate, ip: wan.data?.ip || null, ts: wan.ts, ipHistory: ipRuns.slice(-12).reverse() }
       : null,
     gateway: gateway ? nodes.get(gateway.mac) : null,
     nodes: [...nodes.values()].filter((n) => !gateway || n.mac !== gateway.mac),

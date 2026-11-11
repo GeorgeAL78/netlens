@@ -141,6 +141,8 @@ function wanRow(health, ts) {
     data: {
       // The public address the ISP gave the gateway (UU-C-172).
       ip: wan.wan_ip || null,
+      // The window UniFi's availability covers, in seconds: since the gateway started (UU-C-252).
+      period: num(stats.time_period),
       monitors: (stats.monitors || stats.alerting_monitors || []).map((m) => ({
         target: m.target,
         type: m.type,

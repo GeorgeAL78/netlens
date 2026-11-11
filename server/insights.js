@@ -521,6 +521,7 @@ export function deviceHistory(mac, days, now) {
       if (was) p.errors += Math.max(0, (x.rxErrors || 0) + (x.txErrors || 0) - (was.rxErrors || 0) - (was.txErrors || 0));
       if (x.poe != null) p.poePeak = Math.max(p.poePeak ?? 0, x.poe);
       p.name = x.name || p.name;
+      if (x.wan) p.wan = true; // the internet port reads from your side in the table (UU-C-252)
       p.last = x;
       ports.set(x.idx, p);
     }

@@ -68,7 +68,7 @@ function History({ mac }) {
                 {data.ports.map((p) => (
                   <tr key={p.idx}>
                     <td>{p.name || `Port ${p.idx}`}</td>
-                    <td className="num mono">{p.toDevice != null ? <>{bytes(p.toDevice + (p.fromDevice || 0))}<Split down={p.toDevice} up={p.fromDevice} /></> : "—"}</td>
+                    <td className="num mono">{p.toDevice != null ? <>{bytes(p.toDevice + (p.fromDevice || 0))}<Split down={p.wan ? p.fromDevice : p.toDevice} up={p.wan ? p.toDevice : p.fromDevice} /></> : "—"}</td>
                     <td className="num mono dim">{p.peakBps ? (p.peakBps >= 1e6 ? speed(+(p.peakBps / 1e6).toFixed(p.peakBps >= 1e8 ? 0 : 1)) : `${Math.round(p.peakBps / 1e3)} kbps`) : "—"}</td>
                     <td className={`num mono ${p.dropShare >= 0.005 ? "warn" : "dim"}`} title={p.dropped != null ? `${dropTip(p.dropped, p.dropShare)} · ${p.droppedTo.toLocaleString()} on the way to the device · ${p.droppedFrom.toLocaleString()} coming from it` : undefined}>{dropText(p.dropped, p.dropShare)}</td>
                     <td className="num">{p.changes}</td>
@@ -117,7 +117,14 @@ function Panel({ data, route, closeHref }) {
         <h2 style={{ fontSize: 22 }}>{w.isp || "WAN"}</h2>
         <div className="kv">
           <div><span>Status</span><span className={w.status === "ok" ? "ok" : "warn"}>{w.status === "ok" ? "OK" : w.status || "unknown"}{w.latency != null ? ` · ${w.latency} ms` : ""}</span></div>
-          {w.availability != null && <div><span>Up</span><span className="mono">{+Number(w.availability).toFixed(2)}%</span></div>}
+          {/* UniFi's own check (UU-C-252): answered pings to its test target, over its window since the
+              gateway started, so it can differ from UniFi's rounded dashboard figure. */}
+          {w.availability != null && (
+            <div title="UniFi's internet check: the share of its pings (to ping.ui.com) answered, since the gateway last started. The Internet tab has the outages NetLens saw over any period.">
+              <span>Reachable</span>
+              <span className="mono">{+Number(w.availability).toFixed(2)}%{w.availabilityPeriod ? <span className="dim"> · last {w.availabilityPeriod >= 172800 ? `${Math.round(w.availabilityPeriod / 86400)} days` : `${Math.round(w.availabilityPeriod / 3600)} h`}</span> : null}</span>
+            </div>
+          )}
           {wanNow(w, link) && <div><span>Right now</span><span className="mono">{wanNow(w, link)}</span></div>}
           {link && <div><span>WAN link</span><span className="mono">{speed(link)}</span></div>}
           {w.ip && <div><span>Public IP</span><span className="mono">{w.ip}</span></div>}
@@ -216,14 +223,14 @@ function Panel({ data, route, closeHref }) {
           <>
             <h2>Ports <span className="dim small">· busiest and drops: last 24 hours</span></h2>
             <table className="t">
-              <thead><tr><th>Port</th><th className="num">Speed</th><th className="num" title="Last 15 minutes: to the device on the port ↓, from it ↑">15 min</th><th className="num" title="The busiest 5 minutes in the last 24 hours, as a share of the link's speed (the faster direction)">Busiest</th><th className="num" title="Packets the port threw away in the last 24 hours, and their share of its packets (the worse direction)">Drops</th>{hasPoe && <th className="num">PoE</th>}<th className="num">Errors</th></tr></thead>
+              <thead><tr><th>Port</th><th className="num">Speed</th><th className="num" title="Last 15 minutes: to the device on the port ↓, from it ↑ (the internet port: ↓ download, ↑ upload)">15 min</th><th className="num" title="The busiest 5 minutes in the last 24 hours, as a share of the link's speed (the faster direction)">Busiest</th><th className="num" title="Packets the port threw away in the last 24 hours, and their share of its packets (the worse direction)">Drops</th>{hasPoe && <th className="num">PoE</th>}<th className="num">Errors</th></tr></thead>
               <tbody>
                 {node.ports.map((p) => (
                   <tr key={p.idx}>
                     {/* One column for the port (UU-C-247): its own name only when someone gave it one. */}
                     <td className={`mono ${p.up ? "" : "dim"}`}>{p.idx}{p.name && p.name !== `Port ${p.idx}` ? <span className="dim small"> {p.name}</span> : null}</td>
                     <td className={`num ${p.up && p.speed && p.speed <= 100 && !p.usualSpeed ? "warn" : p.up ? "" : "dim"}`} title={p.usualSpeed ? "The usual speed of the device on it" : undefined}>{p.up ? speed(p.speed) : "down"}</td>
-                    <td className="num mono dim">{p.toDevice15m != null ? <>{bytes(p.toDevice15m + p.fromDevice15m)}<Split down={p.toDevice15m} up={p.fromDevice15m} /></> : "—"}</td>
+                    <td className="num mono dim">{p.toDevice15m != null ? <>{bytes(p.toDevice15m + p.fromDevice15m)}{/* The internet port reads from your side (UU-C-252): ↓ what came in from the ISP, ↑ what went out. */}<Split down={p.wan ? p.fromDevice15m : p.toDevice15m} up={p.wan ? p.toDevice15m : p.fromDevice15m} /></> : "—"}</td>
                     <td className={`num mono ${p.peak24h?.share >= 0.8 ? "warn" : "dim"}`} title={p.peak24h ? `${peakText(p.peak24h.bps)} at ${clock(p.peak24h.at)}` : undefined}>{p.peak24h?.share != null ? `${Math.max(1, Math.round(p.peak24h.share * 100))}%` : p.peak24h ? peakText(p.peak24h.bps) : "—"}</td>
                     <td className={`num mono ${p.drops24h?.share >= 0.005 ? "warn" : "dim"}`} title={p.drops24h ? `${dropTip(p.drops24h.toDevice + p.drops24h.fromDevice, p.drops24h.share)} · ${p.drops24h.toDevice.toLocaleString()} on the way to the device · ${p.drops24h.fromDevice.toLocaleString()} coming from it · flow control ${p.fcTx || p.fcRx ? "on" : p.fcTx === false ? "off" : "unknown"}` : undefined}>{p.drops24h ? dropText(p.drops24h.toDevice + p.drops24h.fromDevice, p.drops24h.share) : "—"}</td>
                     {hasPoe && <td className="num dim">{p.poe ? `${p.poe.toFixed ? p.poe.toFixed(1) : p.poe} W` : "—"}</td>}
@@ -442,8 +449,8 @@ function NetBar({ data, sel }) {
         </span>
       )}
       {w?.availability != null && (
-        <span className="netbar-item">
-          <span className="small dim">Up</span>
+        <span className="netbar-item" title="UniFi's internet check: the share of its pings answered since the gateway last started">
+          <span className="small dim">Reachable</span>
           <span className="mono">{+Number(w.availability).toFixed(2)}%</span>
         </span>
       )}
