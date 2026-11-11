@@ -11,6 +11,8 @@ import Settings from "./pages/Settings.jsx";
 import Alerts from "./pages/Alerts.jsx";
 import Devices from "./pages/Devices.jsx";
 import Sites from "./pages/Sites.jsx";
+import Wifi from "./pages/Wifi.jsx";
+import Internet from "./pages/Internet.jsx";
 
 // The shell of the redesigned interface (UU-C-087): one top bar — home, the three views,
 // search and settings — and the page the URL names.
@@ -20,13 +22,19 @@ const TABS = [
   ["home", "Overview", ["home"]], // what happened
   ["activity", "Activity", ["day", "usage", "sites"]], // what devices were doing
   ["devices", "Devices", ["devices", "device"]], // what is on the network (UU-C-118)
-  ["network", "Network", ["network"]], // is the equipment OK
+  ["network", "Network", ["network", "wifi", "internet"]], // is the equipment OK; Wi-Fi and the internet line (UU-C-239)
   ["security", "Protection", ["security"]], // what got stopped
 ];
 const ACTIVITY = [
   ["day", "Timeline"], // every device across the day's hours
   ["usage", "Apps"], // apps, categories and the app picker (UU-C-106)
   ["sites", "Sites"], // every site each device connected to (UU-C-135)
+];
+// Network's pages (UU-C-239): the map, the Wi-Fi around it, and the internet line.
+const NETWORK = [
+  ["network", "Map"],
+  ["wifi", "Wi-Fi"],
+  ["internet", "Internet"],
 ];
 const LAST_ACTIVITY = "netlens.activity";
 const lastActivity = () => {
@@ -151,6 +159,8 @@ export default function App() {
     alerts: Alerts,
     devices: Devices,
     sites: Sites,
+    wifi: Wifi,
+    internet: Internet,
   };
   const Page = pages[route.page] || Home;
   const fired = useFiredToday(route.page);
@@ -208,6 +218,15 @@ export default function App() {
         <nav className="subtabs" aria-label="Activity">
           {ACTIVITY.map(([id, label]) => (
             <a key={id} href={href(id, null, !route.query.d ? null : { d: route.query.d })} className={route.page === id ? "on" : ""}>
+              {label}
+            </a>
+          ))}
+        </nav>
+      )}
+      {NETWORK.some(([id]) => id === route.page) && (
+        <nav className="subtabs" aria-label="Network">
+          {NETWORK.map(([id, label]) => (
+            <a key={id} href={href(id)} className={route.page === id ? "on" : ""}>
               {label}
             </a>
           ))}

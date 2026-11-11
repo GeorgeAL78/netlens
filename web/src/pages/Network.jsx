@@ -24,6 +24,7 @@ const kindOf = (t) => (/uap/.test(t || "") ? "Access point" : /usw/.test(t || ""
 // A switch, access point or gateway over time (UU-C-198), from NetLens' own samples.
 const HISTORY_DAYS = [[1, "24 hours"], [7, "7 days"], [30, "30 days"], [90, "90 days"]];
 const EVENT_CLASS = { bad: "bad", warn: "warn", ok: "ok" };
+const peakText = (bps) => (bps >= 1e6 ? speed(+(bps / 1e6).toFixed(bps >= 1e8 ? 0 : 1)) : `${Math.round(bps / 1e3)} kbps`);
 
 function History({ mac }) {
   const [days, setDays] = useState(1);
@@ -209,7 +210,7 @@ function Panel({ data, route, closeHref }) {
           <>
             <h2>Ports</h2>
             <table className="t">
-              <thead><tr><th>#</th><th>Name</th><th className="num">Speed</th><th className="num" title="Last 15 minutes: to the device on the port ↓, from it ↑">15 min</th><th className="num">PoE</th><th className="num">Errors</th></tr></thead>
+              <thead><tr><th>#</th><th>Name</th><th className="num">Speed</th><th className="num" title="Last 15 minutes: to the device on the port ↓, from it ↑">15 min</th><th className="num" title="The busiest 5 minutes in the last 24 hours, as a share of the link's speed (the faster direction)">Busiest 24 h</th><th className="num">PoE</th><th className="num">Errors</th></tr></thead>
               <tbody>
                 {node.ports.map((p) => (
                   <tr key={p.idx}>
@@ -217,6 +218,7 @@ function Panel({ data, route, closeHref }) {
                     <td className={p.up ? "" : "dim"}>{p.name || `Port ${p.idx}`}</td>
                     <td className={`num ${p.up && p.speed && p.speed <= 100 && !p.usualSpeed ? "warn" : p.up ? "" : "dim"}`} title={p.usualSpeed ? "The usual speed of the device on it" : undefined}>{p.up ? speed(p.speed) : "down"}</td>
                     <td className="num mono dim">{p.toDevice15m != null ? <>{bytes(p.toDevice15m + p.fromDevice15m)}<Split down={p.toDevice15m} up={p.fromDevice15m} /></> : "—"}</td>
+                    <td className={`num mono ${p.peak24h?.share >= 0.8 ? "warn" : "dim"}`} title={p.peak24h ? `${peakText(p.peak24h.bps)} at ${clock(p.peak24h.at)}` : undefined}>{p.peak24h?.share != null ? `${Math.max(1, Math.round(p.peak24h.share * 100))}%` : p.peak24h ? peakText(p.peak24h.bps) : "—"}</td>
                     <td className="num dim">{p.poe ? `${p.poe.toFixed ? p.poe.toFixed(1) : p.poe} W` : "—"}</td>
                     <td className={`num ${(p.rxErrors || 0) + (p.txErrors || 0) > 0 ? "warn" : "dim"}`}>{(p.rxErrors || 0) + (p.txErrors || 0)}</td>
                   </tr>

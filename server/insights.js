@@ -236,6 +236,36 @@ export function portTrafficOf(mac, from, to) {
   return out;
 }
 
+// Each port's busiest stretch between two samples in (from, to] (UU-C-239): the faster of the two
+// directions (a link carries its full speed each way), as bits/s and as a share of the link.
+// Samples are 5 minutes apart, so this is the busiest 5 minutes, not the briefest burst. A gap
+// of over 20 minutes (NetLens was off) is left out: its average says nothing about a peak.
+export function portPeaks(mac, from, to) {
+  const rows = db.queryDeviceSamplesOf(mac, from - 30 * 60 * 1000, to + 1);
+  const out = new Map();
+  let prev = null;
+  for (const r of rows) {
+    const secs = prev ? (r.ts - prev.ts) / 1000 : 0;
+    if (prev && r.ts > from && secs > 0 && secs <= 1200) {
+      const before = new Map((prev.data.ports || []).map((x) => [x.idx, x]));
+      for (const x of r.data.ports || []) {
+        const d = portDelta(before.get(x.idx), x);
+        if (!d) continue;
+        const toBps = (d.toDevice * 8) / secs;
+        const fromBps = (d.fromDevice * 8) / secs;
+        const bps = Math.max(toBps, fromBps);
+        const share = x.speed ? bps / (x.speed * 1e6) : null;
+        const best = out.get(x.idx);
+        if (!best || (share ?? bps / 1e12) > (best.share ?? best.bps / 1e12)) {
+          out.set(x.idx, { bps: Math.round(bps), dir: toBps >= fromBps ? "toDevice" : "fromDevice", from: prev.ts, at: r.ts, speed: x.speed || null, share: share == null ? null : Math.min(1, share), wan: x.wan === true, uplink: x.uplink === true });
+        }
+      }
+    }
+    prev = r;
+  }
+  return out;
+}
+
 // The last 15 minutes per port, up to t (UU-C-233): from the newest sample back to the newest one
 // at least 15 minutes older, scaled to 15 minutes (the update interval can be longer than that).
 // Nothing when the newest sample is over an hour old.

@@ -476,6 +476,10 @@ async function siteStat(name) {
 export const getStations = () => siteStat("sta");
 export const getDevices = () => siteStat("device");
 export const getHealth = () => siteStat("health");
+// Wi-Fi networks the access points heard around them in the last `hours` (UU-C-239): UniFi's
+// neighbouring ("rogue") access point list, one row per radio and the access point that heard
+// it, with signal, band, channel, width and security.
+export const getNearbyNetworks = (hours = 24) => siteStat(`rogueap?within=${Number(hours)}`);
 
 // Versions (UU-C-229). stat/sysinfo has the Network application's version, the one before it
 // and the console's UniFi OS version (console_display_version). The Integration API's device

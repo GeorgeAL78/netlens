@@ -47,7 +47,18 @@ which UniFi itself deletes after a day or a week.
   model; the panel adds the model, address, Wi-Fi experience and PoE budget. Switch and gateway
   ports show what went through them in the last 15 minutes and, in the history, per period with
   the peak rate: local traffic included (a NAS, a media server), which UniFi's per-app counters
-  never see.
+  never see, and how much of its speed each port's busiest 5 minutes used.
+- **Network › Wi-Fi** — each access point's radios: channel, width, power, how busy the channel
+  is and how much of that is other networks (on Network 11 also how often frames are sent again
+  and the Wi-Fi experience). Nearby networks, sifted: of the hundreds your access points hear,
+  only the ones loud enough to share a channel you use, plus a count of loud networks per channel
+  so the quietest stands out; the rest stay searchable. Every Wi-Fi device's signal, band, roams
+  and failed joins, and devices stuck on 2.4 GHz that have used 5 or 6 GHz.
+- **Network › Internet** — availability and every outage, latency to UniFi's test targets, the
+  busiest download and upload against your line's speed (each 5 minutes' peak on Network 11),
+  public-address history and UniFi's last speed test.
+- **Links near their limit** — Overview says when a device's busiest 5 minutes used 80% or more
+  of its link (a TV on a 100 Mbps port playing a 4K film, for example); its page shows the figure.
 - **Device** — per device: traffic, Wi-Fi signal or wired link speed, apps, sessions, events,
   connection time, online history, CSV export, block / unblock.
 - **Devices** — every device UniFi knows, new ones first: maker, where it connected (switch port

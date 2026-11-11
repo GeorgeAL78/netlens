@@ -69,6 +69,9 @@ function deviceRow(d, ts) {
         // The width is in the radio's settings, not its statistics (UU-C-198).
         width: num((d.radio_table || []).find((x) => x.radio === r.radio)?.ht),
         util: num(r.cu_total),
+        // Airtime taken by other networks and noise (UU-C-239): busy, but not by this radio.
+        interf: num(r.cu_interf),
+        txPower: num(r.tx_power),
         clients: num(r.num_sta),
       })),
       ports: (d.port_table || []).map((p) => ({
@@ -83,6 +86,9 @@ function deviceRow(d, ts) {
         // it. They start over when the device restarts.
         rxBytes: num(p.rx_bytes),
         txBytes: num(p.tx_bytes),
+        // The gateway's internet port, and a device's link to the rest of the network (UU-C-239).
+        wan: /^wan/i.test(p.network_name || "") || undefined,
+        uplink: p.is_uplink === true || undefined,
       })),
       uplink: d.uplink
         ? { speed: num(d.uplink.speed), device: d.uplink.uplink_device_name || null, port: num(d.uplink.uplink_remote_port), wireless: d.uplink.type === "wireless" }
@@ -99,8 +105,16 @@ function deviceRow(d, ts) {
       satisfaction: num(d.satisfaction) >= 0 ? num(d.satisfaction) : null,
       poeMax: num(d.total_max_power),
       poeUsed: num(d.total_used_power),
+      // The gateway's last speed test (UU-C-239), when UniFi has run one.
+      speedtest: speedtestOf(d),
     },
   };
+}
+
+function speedtestOf(d) {
+  const s = d["speedtest-status"];
+  if (!s || !(num(s.rundate) > 0)) return undefined;
+  return { at: num(s.rundate) * 1000, down: num(s.xput_download), up: num(s.xput_upload), ping: num(s.latency), server: [s.server?.provider, s.server?.city].filter(Boolean).join(", ") || null };
 }
 
 function wanRow(health, ts) {
@@ -184,6 +198,9 @@ export async function pollHealth() {
     const clients = stations.map((c) => clientRow(c, ts)).filter((c) => c.mac);
     const devs = devices.map((d) => deviceRow(d, ts)).filter((d) => d.mac);
     siteObjectId = devices.find((d) => d.site_id)?.site_id || siteObjectId;
+    // Our own radios, so the nearby list leaves them out (UU-C-239).
+    ownBssids = new Set(devices.flatMap((d) => (d.vap_table || []).map((v) => lower(v.bssid))).filter(Boolean));
+    apNames = new Map(devices.map((d) => [lower(d.mac), d.name || modelNames.get(lower(d.mac)) || d.model]));
     db.saveLiveSamples({ clients, devices: devs, wan: wanRow(health, ts) });
     db.saveLocalNames("device", deviceNames(devices), ts);
     if (ts - lastPrune > 60 * 60 * 1000) {
@@ -293,6 +310,85 @@ export async function refreshLocalNames({ force = false } = {}) {
 // day keeps growing until midnight. Kept a year, so this history outgrows UniFi's own 90 days.
 const DAILY_REACH_MS = 92 * 24 * 60 * 60 * 1000;
 const DAILY_KEEP_DAYS = 366;
+// ---- Nearby networks and the internet line's history (UU-C-239) ---------------------------
+// Hourly. Nearby: UniFi's neighbouring access points (24 h), our own radios left out, kept as
+// setting `nearby_networks` (no BSSIDs: a network is known by name, band and channel). Internet:
+// Network 11's statistics engine has each 5 minutes' busiest rate and latency (wan_engine);
+// NetLens's own samples only see the rate at the moment of each update.
+let ownBssids = new Set();
+let apNames = new Map();
+export const air = { nearbyAt: 0, wanAt: 0, error: null };
+export async function refreshAir({ force = false } = {}) {
+  const now = Date.now();
+  if (force || now - air.nearbyAt > 3600e3) {
+    try {
+      const rows = await unifi.getNearbyNetworks(24);
+      const keep = rows
+        .filter((r) => !ownBssids.has(lower(r.bssid)))
+        .map((r) => ({
+          essid: r.essid || null,
+          band: r.band || r.radio || null,
+          channel: num(r.channel),
+          width: num(r.bw),
+          signal: num(r.signal),
+          security: r.security || null,
+          heardBy: apNames.get(lower(r.ap_mac)) || null,
+          lastSeen: num(r.last_seen) ? num(r.last_seen) * 1000 : null,
+        }));
+      db.setSetting("nearby_networks", JSON.stringify({ at: now, rows: keep }));
+      air.nearbyAt = now;
+      air.error = null;
+    } catch (err) {
+      air.error = err.message;
+    }
+  }
+  if (versions.stats === "MODERN" && (force || now - air.wanAt > 3600e3)) {
+    try {
+      const rows = await unifi.getStatsSeries("wanBySite", "DAY", now);
+      const mine = siteObjectId && rows.some((r) => r.siteId === siteObjectId) ? rows.filter((r) => r.siteId === siteObjectId) : rows.slice(0, 1);
+      // Whole 5-minute buckets only; the current one is still filling.
+      const points = mine.flatMap((r) => r.series || []).filter((p) => num(p.timestamp) && num(p.duration) >= 290e3);
+      db.saveWanEngine(
+        points.map((p) => ({
+          ts: num(p.timestamp),
+          duration: num(p.duration),
+          rxMax: num(p.maxRxRateBps),
+          txMax: num(p.maxTxRateBps),
+          rxBytes: num(p.rxBytes),
+          txBytes: num(p.txBytes),
+          latency: num(p.avgLatencyMs),
+          latencyMax: num(p.maxLatencyMs),
+          availability: num(p.avgAvailabilityPct),
+        }))
+      );
+      air.wanAt = now;
+    } catch (err) {
+      air.error = err.message;
+    }
+    // Per access point over the last day (newer firmware on Network 11): how often frames had to
+    // be sent again, client satisfaction and signal. Setting `wifi_engine`; older versions have
+    // none and the Wi-Fi page leaves the columns out.
+    try {
+      const rows = await unifi.getStatsSeries("wirelessBySiteByDevice", "DAY", now);
+      const out = {};
+      for (const r of rows) {
+        if (siteObjectId && r.siteId && r.siteId !== siteObjectId) continue;
+        const s = r.series || [];
+        const sum = (k) => s.reduce((n, p) => n + (num(p[k]) || 0), 0);
+        const mean = (k) => {
+          const v = s.map((p) => num(p[k])).filter((x) => x != null);
+          return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null;
+        };
+        const attempts = sum("wifiTxAttemptPackets");
+        out[lower(r.deviceMac)] = { retryPct: attempts > 0 ? Math.round((sum("wifiTxRetryPackets") / attempts) * 1000) / 10 : null, satisfaction: mean("avgClientSatisfactionScore"), signal: mean("avgClientSignalDbm"), interf: mean("avgInterfCuPct") };
+      }
+      db.setSetting("wifi_engine", JSON.stringify({ at: now, aps: out }));
+    } catch (err) {
+      air.error = err.message;
+    }
+  }
+}
+
 export const daily = { lastFetchedAt: 0, rows: 0, error: null };
 
 // Network 11 (UU-C-231): per-device internet traffic from the statistics engine's

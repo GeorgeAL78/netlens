@@ -195,6 +195,18 @@ db.exec(`
     data TEXT
   );
   CREATE INDEX IF NOT EXISTS siem_mac_ts ON siem_events (mac, ts);
+  -- Network 11's statistics engine per 5 minutes (UU-C-239): busiest rates in bits/s.
+  CREATE TABLE IF NOT EXISTS wan_engine (
+    ts INTEGER PRIMARY KEY,
+    duration INTEGER,
+    rx_max REAL,
+    tx_max REAL,
+    rx_bytes REAL,
+    tx_bytes REAL,
+    latency REAL,
+    latency_max REAL,
+    availability REAL
+  );
 `);
 
 const upsertClient = db.prepare(`
@@ -677,7 +689,35 @@ export function saveLiveSamples({ clients = [], devices = [], wan = null }) {
 }
 
 export function pruneLiveSamples(before) {
-  for (const t of ["client_samples", "device_samples", "wan_samples"]) db.prepare(`DELETE FROM ${t} WHERE ts < ?`).run(before);
+  for (const t of ["client_samples", "device_samples", "wan_samples", "wan_engine"]) db.prepare(`DELETE FROM ${t} WHERE ts < ?`).run(before);
+}
+
+export function saveWanEngine(rows) {
+  if (!rows.length) return;
+  const st = db.prepare(`INSERT OR REPLACE INTO wan_engine (ts, duration, rx_max, tx_max, rx_bytes, tx_bytes, latency, latency_max, availability) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) st.run(r.ts, r.duration, r.rxMax, r.txMax, r.rxBytes, r.txBytes, r.latency, r.latencyMax, r.availability);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+// Wi-Fi devices seen on 5 or 6 GHz since `since` (UU-C-239): one on 2.4 GHz now can use more.
+export function fasterBandSeen(macs, since) {
+  if (!macs.length) return new Map();
+  const rows = db
+    .prepare(`SELECT mac, MAX(ts) AS ts FROM client_samples WHERE mac IN (${macs.map(() => "?").join(", ")}) AND wired = 0 AND radio IN ('na', '6e', '11be') AND ts >= ? GROUP BY mac`)
+    .all(...macs, since);
+  return new Map(rows.map((r) => [r.mac, r.ts]));
+}
+
+export function wanEngineIn(start, end) {
+  return db
+    .prepare(`SELECT ts, duration, rx_max AS rxMax, tx_max AS txMax, rx_bytes AS rxBytes, tx_bytes AS txBytes, latency, latency_max AS latencyMax, availability FROM wan_engine WHERE ts >= ? AND ts < ? ORDER BY ts`)
+    .all(start, end);
 }
 
 export function queryClientSamples(start, end, mac) {

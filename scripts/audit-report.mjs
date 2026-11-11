@@ -219,6 +219,25 @@ for (const { hq, label, dayBar } of hourChecks) {
   stats.screens += 1;
   if (chips(atNow) !== chips(map)) failures.push("network map at now differs from the live map");
   if (atNow.wan?.ip !== map.wan?.ip) failures.push("network map at now shows another public IP");
+
+  // Wi-Fi and Internet (UU-C-239): sane shares, the nearby list's sifted parts drawn from the
+  // whole, every bar in place, outages inside the period.
+  for (const days of [1, 7, 30]) {
+    const w = await get(`/api/wifi/summary?days=${days}`);
+    const label = `wifi ${days}d`;
+    stats.screens += 1;
+    for (const a of w.aps) for (const r of a.radios) if ([r.util, r.interf, r.avgUtil].some((v) => v != null && (v < 0 || v > 100)) || (r.interf != null && r.util != null && r.interf > r.util + 1)) failures.push(`${label}: ${a.name} ${r.band} busy share out of range`);
+    const n = w.nearby;
+    const keys = new Set(n.all.map((g) => `${g.name}|${g.band}`));
+    if (n.competing.some((g) => !keys.has(`${g.name}|${g.band}`) || g.signal < n.threshold)) failures.push(`${label}: a competing network is not in the list or is too faint`);
+    if (n.all.reduce((s, g) => s + g.radios, 0) > n.heard) failures.push(`${label}: more radios grouped than heard`);
+    const i = await get(`/api/internet?days=${days}`);
+    stats.screens += 1;
+    if (i.series.length !== Math.ceil((i.end - i.start) / i.step)) failures.push(`internet ${days}d: ${i.series.length} bars`);
+    if (i.availability != null && (i.availability < 0 || i.availability > 100)) failures.push(`internet ${days}d: availability ${i.availability}`);
+    if (i.outages.some((o) => o.from < i.start - 1 || (o.to && o.to < o.from))) failures.push(`internet ${days}d: an outage outside the period`);
+    if (i.series.some((s) => s.down != null && s.downPeak != null && s.down > s.downPeak + 0.1)) failures.push(`internet ${days}d: an average above its peak`);
+  }
 }
 
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);

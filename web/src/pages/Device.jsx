@@ -214,6 +214,13 @@ export default function Device({ route }) {
                   <span className="label">Link speed</span>
                   <span className={`value ${link?.speed <= 100 && !row?.usualSpeed ? "warn" : ""}`} title={row?.usualSpeed ? "Its usual speed: it never linked faster in 30 days" : undefined}>{speed(link?.speed)}</span>
                   <span className="sub">{link?.via || "—"}{link?.port != null ? ` · port ${link.port}` : ""}</span>
+                  {/* The busiest 5 minutes that day on its port (UU-C-239). */}
+                  {row?.busiest && (
+                    <span className={`sub ${row.busiest.share >= 0.8 ? "warn" : ""}`} title={`${row.busiest.dir === "toDevice" ? "To the device" : "From the device"}, ${clock(row.busiest.from)}–${clock(row.busiest.at)}`}>
+                      busiest {Math.round((row.busiest.at - row.busiest.from) / 60e3)} min: {row.busiest.bps >= 1e6 ? `${Math.round(row.busiest.bps / 1e6)} Mbps` : `${Math.round(row.busiest.bps / 1e3)} kbps`}
+                      {row.busiest.share != null ? ` · ${Math.max(1, Math.round(row.busiest.share * 100))}% of the link` : ""}
+                    </span>
+                  )}
                 </div>
                 <div className="card tight stat">
                   <span className="label">Connected</span>

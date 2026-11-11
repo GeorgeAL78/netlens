@@ -101,6 +101,14 @@ export function dayGrid({ bundle, start, end, now, today }) {
   const storedIp = new Map(db.listStoredClients().filter((c) => c.ip).map((c) => [String(c.mac).toLowerCase(), c.ip]));
   const macs = new Set([...totals.keys(), ...hourly.keys(), ...marks.keys()]);
   const fastest = db.fastestWiredLinks([...macs].filter((m) => samples.get(m)?.wired), end - 30 * 86400e3);
+  // A wired device's busiest 5 minutes on its port that day (UU-C-239), once per switch.
+  const peaksOf = new Map();
+  const busiestOf = (s) => {
+    if (!s?.wired || !s.ap_mac || s.port == null) return undefined;
+    if (!peaksOf.has(s.ap_mac)) peaksOf.set(s.ap_mac, insights.portPeaks(s.ap_mac, start, end));
+    const p = peaksOf.get(s.ap_mac).get(s.port);
+    return p && !p.uplink && p.bps > 0 ? { bps: p.bps, share: p.share, speed: p.speed, from: p.from, at: p.at, dir: p.dir } : undefined;
+  };
   const rows = [...macs].map((mac) => {
     const sampled = linkOf(samples.get(mac), nameOf);
     // No samples that day: the System Log's last word on where it was attached, unless the
@@ -123,6 +131,7 @@ export function dayGrid({ bundle, start, end, now, today }) {
       // Past days with only the log: judged on the logged signal; today it needs a sample.
       usualSpeed: link?.wired && link.speed != null && link.speed <= 100 && usualSpeed(link.speed, fastest.get(mac)) ? true : undefined,
       health: sampled ? healthOf(sampled, now, today, fastest.get(mac)) : !today && link?.via ? healthOf(link, now, false, fastest.get(mac)) : "off",
+      busiest: busiestOf(samples.get(mac)),
       hourly: hourly.get(mac) || new Array(24).fill(0),
       marks: marks.get(mac) || null,
       total: totals.get(mac) || (hourly.get(mac) || []).reduce((n, v) => n + v, 0),
@@ -156,9 +165,12 @@ function portsWithTraffic(d, t) {
   const ports = d.data?.ports || [];
   if (!ports.length) return ports;
   const moved = insights.portRecentOf(d.mac, t);
+  // The busiest 5 minutes in the 24 hours before t, as a share of the link (UU-C-239).
+  const peaks = insights.portPeaks(d.mac, t - 24 * 3600e3, t);
   return ports.map(({ rxBytes, txBytes, ...p }) => {
     const m = moved.get(p.idx);
-    return m ? { ...p, toDevice15m: m.toDevice, fromDevice15m: m.fromDevice } : p;
+    const k = peaks.get(p.idx);
+    return { ...p, ...(m ? { toDevice15m: m.toDevice, fromDevice15m: m.fromDevice } : {}), ...(k && k.bps > 0 ? { peak24h: { bps: k.bps, share: k.share, at: k.at } } : {}) };
   });
 }
 
@@ -607,6 +619,50 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
   }
 
   lap("wired");
+  // Links near their limit (UU-C-239): a port whose busiest 5 minutes used 80% or more of its
+  // speed. Up to 7 days (a month of samples per switch is slow to read for an Overview).
+  if (nDays <= 7) {
+    const latest = db.latestDeviceSamples();
+    const equipment = latest.filter((d) => (d.data?.ports || []).length);
+    // What is on each port: equipment linked to it, else the wired device seen there most.
+    const onPort = new Map();
+    for (const r of clientSamples) {
+      if (!r.wired || !r.ap_mac || r.port == null) continue;
+      const k = `${r.ap_mac}|${r.port}`;
+      const m = onPort.get(k) || new Map();
+      m.set(r.mac, (m.get(r.mac) || 0) + 1);
+      onPort.set(k, m);
+    }
+    const linked = new Map();
+    for (const d of latest) {
+      const up = d.data?.uplink;
+      const parent = up?.device && latest.find((x) => x.name === up.device);
+      if (parent && up.port != null) linked.set(`${parent.mac}|${up.port}`, d.name || d.model);
+    }
+    const linkWord = (mbps) => (mbps >= 1000 ? `${+(mbps / 1000).toFixed(1)} Gbps` : `${mbps} Mbps`);
+    const rate = (bps) => (bps >= 1e9 ? `${(bps / 1e9).toFixed(2)} Gbps` : `${Math.round(bps / 1e6)} Mbps`);
+    for (const d of equipment) {
+      for (const [idx, p] of insights.portPeaks(d.mac, start, end)) {
+        if (!p.speed || p.share == null || p.share < 0.8) continue;
+        const counts = onPort.get(`${d.mac}|${idx}`);
+        const who = counts ? [...counts].sort((a, b) => b[1] - a[1])[0][0] : null;
+        const what = p.wan ? "Your internet link" : linked.get(`${d.mac}|${idx}`) ? `The link to ${linked.get(`${d.mac}|${idx}`)}` : who ? nameOf(who) : `${d.name || d.model} port ${idx}`;
+        const pctText = `${Math.round(p.share * 100)}%`;
+        const toward = p.wan ? (p.dir === "fromDevice" ? "downloading" : "uploading") : p.dir === "toDevice" ? `toward ${who ? "it" : "the device"}` : `from ${who ? "it" : "the device"}`;
+        out.push({
+          id: `headroom-${d.mac}-${idx}`,
+          kind: "wired",
+          level: "info",
+          ts: p.at,
+          title: `${what} used ${pctText} of its ${linkWord(p.speed)} ${p.wan ? "line" : "link"}`,
+          text: `Busiest ${Math.round((p.at - p.from) / 60e3)} minutes, ${clock(p.from)}–${clock(p.at)}: ${rate(p.bps)} ${toward}${p.wan ? "" : ` on ${d.name || d.model} port ${idx}`}. Short peaks are buffered; if it stutters or slows down then, ${p.wan ? "the line is the limit" : "a faster port, cable or Wi-Fi link would give it room"}.`,
+          mac: who && !p.wan && !linked.get(`${d.mac}|${idx}`) ? who : undefined,
+        });
+      }
+    }
+  }
+
+  lap("headroom");
   // Security: each IPS hit; firewall rules grouped; repeat offenders.
   const t = insights.threats(start, end);
   lastThreats = { start, end, total: t.total };

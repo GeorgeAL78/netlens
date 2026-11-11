@@ -25,6 +25,7 @@ import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
 import * as health from "./health.js";
 import * as insights from "./insights.js";
+import * as airview from "./airview.js";
 import {
   namesMatchApp,
   appMatchesFlow,
@@ -158,7 +159,7 @@ app.use(express.json());
 // rebuild the page from scratch — and Node answers one request at a time, so a 5-second
 // 7-day report also held up every other page. GET answers of the read-only views are kept per
 // URL; any snapshot, background refresh or non-GET request starts a new version.
-const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/network/history", "/api/network/timeline", "/api/wifi-joins"]);
+const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/network/history", "/api/network/timeline", "/api/wifi-joins", "/api/wifi/summary", "/api/internet"]);
 const memo = new Map();
 let memoVersion = 0;
 let prewarmTimer = null;
@@ -1305,6 +1306,27 @@ app.get("/api/network/timeline", (req, res) => {
     res.json({ tz, ...insights.networkTimeline(days, Date.now()) });
   } catch (err) {
     sendError(res, "GET /api/network/timeline", err);
+  }
+});
+
+// The Wi-Fi page (UU-C-239): access points' radios, devices, and the nearby networks that share
+// their channels. The Internet page: availability, outages, latency and the busiest moments.
+const AIR_DAYS = (q) => ([1, 7, 30].includes(Number(q)) ? Number(q) : 1);
+app.get("/api/wifi/summary", (req, res) => {
+  try {
+    const days = AIR_DAYS(req.query.days);
+    const now = Date.now();
+    const w = airview.wifiSummary(now - days * 24 * 3600e3, now + 1);
+    res.json({ tz, days, ...w, nearby: airview.nearbySummary(w.aps) });
+  } catch (err) {
+    sendError(res, "GET /api/wifi/summary", err);
+  }
+});
+app.get("/api/internet", (req, res) => {
+  try {
+    res.json({ tz, ...airview.internetSummary(AIR_DAYS(req.query.days), Date.now()) });
+  } catch (err) {
+    sendError(res, "GET /api/internet", err);
   }
 });
 
@@ -2730,6 +2752,8 @@ async function snapshot() {
     // UniFi's per-device daily totals: fills lost days, 90+ days of history (UU-C-057).
     await health.refreshDaily(zonedDateKey).catch((err) => logError("health refreshDaily", err));
     await health.refreshLocalNames().catch((err) => logError("health refreshLocalNames", err));
+    // Nearby Wi-Fi networks and the internet line's 5-minute history, hourly (UU-C-239).
+    await health.refreshAir().catch((err) => logError("health refreshAir", err));
     await health.refreshIpsDetails().catch((err) => logError("health refreshIpsDetails", err));
     // Known devices (new ones appear here) and network checks of the offline ones, in the
     // background — the snapshot does not wait, and an unfinished run skips the next (UU-C-124).

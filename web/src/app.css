@@ -387,3 +387,18 @@ table.t tr.click:hover td { background: #141b26; }
 .updown-up { margin-left: 6px; }
 .stat .sub .updown { display: inline; margin: 0; font-size: inherit; color: inherit; }
 .tot .updown { font-size: 10.5px; }
+
+/* ---- Wi-Fi and Internet (UU-C-239) ---- */
+.card h3 { margin: 6px 0 0; font-size: 14px; font-weight: 600; }
+.card-head { flex-wrap: wrap; }
+.wifi-ap { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.wifi-ap:first-of-type { border-top: 0; }
+.wifi-ap-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.wifi-ap-day { display: inline-flex; gap: 12px; flex-wrap: wrap; margin-left: auto; }
+.wifi-channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+@media (max-width: 900px) { .wifi-channel-grid { grid-template-columns: minmax(0, 1fr); } }
+.wifi-channels { min-width: 0; }
+table.t tr.wifi-mine td { background: #131c28; }
+.wifi-all summary { cursor: pointer; color: var(--muted); font-weight: 500; }
+.wifi-all[open] summary { margin-bottom: 4px; }
+.tag + .tag, td .tag { margin-left: 8px; }
