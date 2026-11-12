@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.31.1 — 2026-11-11
+
+### Changed
+- The live graph has axes: the rate on the left at round values, and the time along the bottom every 10 minutes.
+
 ## 2.31.0 — 2026-11-11
 
 ### Added

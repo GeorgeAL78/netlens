@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { href } from "./lib.js";
+import { clock, href } from "./lib.js";
 
 // Live traffic (UU-C-256, UU-C-258): one event stream from /api/live while the page is visible.
 // The server reads UniFi every few seconds only while someone watches; a hidden tab closes the
@@ -79,10 +79,22 @@ export function LiveChart({ points, coarse = [], overlay = null, windowMs = 60 *
   const y = (v) => H - (v / top) * H;
   const line = (list, key) => list.map((p) => `${x(p.ts).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" ");
   const area = (list) => (list.length ? `${x(list[0].ts).toFixed(1)},${H} ${line(list, "down")} ${x(list[list.length - 1].ts).toFixed(1)},${H}` : "");
-  const grid = [0.25, 0.5, 0.75].map((f) => top * f);
+  // Axes (UU-C-260): grid lines at round rates (1, 2 or 5 × 10^n bits/s), labelled on the left;
+  // clock times along the bottom every 10 minutes (every 2 on a short window).
+  const nice = (v) => {
+    const p = 10 ** Math.floor(Math.log10(v));
+    return [1, 2, 5, 10].map((m) => m * p).find((m) => m >= v);
+  };
+  const stepV = nice(top / 4);
+  const grid = [];
+  for (let g = stepV; g < top; g += stepV) grid.push(g);
   const mins = Math.round(windowMs / 60e3);
+  const tickMs = (windowMs > 20 * 60e3 ? 10 : 2) * 60e3;
+  const ticks = [];
+  for (let t = Math.ceil((now - windowMs) / tickMs) * tickMs; t <= now; t += tickMs) ticks.push(t);
   return (
-    <div className="live-chart">
+    <div className={`live-chart ${axis ? "with-axes" : ""}`}>
+      <div className="live-plot">
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`Internet traffic, last ${mins} minutes`} style={{ height: H }}>
         {grid.map((g) => <line key={g} x1="0" x2={W} y1={y(g)} y2={y(g)} className="live-grid" />)}
         {old.length > 1 && <polygon points={area(old)} className="live-down-area old" />}
@@ -94,14 +106,25 @@ export function LiveChart({ points, coarse = [], overlay = null, windowMs = 60 *
         {points.length > 1 && <polyline points={line(points, "up")} className="live-up" />}
         {overlay?.pts?.length > 1 && <polyline points={line(overlay.pts, "down")} className="live-overlay" />}
         {overlay?.pts?.length > 1 && <polyline points={line(overlay.pts, "up")} className="live-overlay up" />}
+        {axis && ticks.map((t) => <line key={t} x1={x(t)} x2={x(t)} y1={H - 4} y2={H} className="live-grid" />)}
       </svg>
+      {axis && grid.map((g) => <span key={g} className="live-y" style={{ top: `${(y(g) / H) * 100}%` }}>{bpsText(g)}</span>)}
+      {axis && <span className="live-y" style={{ top: "100%" }}>0</span>}
+      </div>
+      {axis && (
+        <div className="live-x">
+          {ticks.map((t) => {
+            const pct = (x(t) / W) * 100;
+            // Kept inside the card at the edges.
+            return <span key={t} style={{ left: `${pct}%`, transform: pct > 95 ? "translateX(-100%)" : pct < 5 ? "none" : undefined }}>{clock(t)}</span>;
+          })}
+        </div>
+      )}
       {axis && <div className="live-axis small dim">
-        <span>{mins} min ago</span>
         <span>
-          {old.length ? "before the line: NetLens's 5-minute record · " : ""}top of scale {bpsText(top)}
+          Last {mins} minutes{old.length ? "; before the dashed line: NetLens's 5-minute record, after it: live" : ""}
           {linkMbps ? ` · line ${linkMbps >= 1000 ? `${linkMbps / 1000} Gbps` : `${linkMbps} Mbps`}` : ""}
         </span>
-        <span>now</span>
       </div>}
     </div>
   );
