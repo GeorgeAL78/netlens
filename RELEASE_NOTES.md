@@ -1,2 +1,2 @@
-### Fixed
-- Wi-Fi › Nearby, Channels around you: each channel shows how busy it was in UniFi's RF scans (which cover every channel), and a channel where your access points heard nothing at all reads "not listened" instead of 0 (UniFi reports networks mostly on the channels your access points use, so 0 looked like a quiet channel). A line for 6 GHz says whether anything else is heard there. The tables fill the card.
+### Changed
+- Channels around you: a channel UniFi names no network on reads "not reported" (was "not listened"): its RF scan did measure it, which is the Busy column; UniFi just gives no list of networks there.

@@ -161,7 +161,7 @@ export function nearbySummary(aps) {
   const last24 = Math.max(11, ...strong.filter((r) => BAND_OF[r.band] === "2.4").map((r) => Number(r.channel) || 0).filter((c) => c <= 14));
   // UniFi lists only the networks your access points hear on the channels they use (on the
   // owner's console: 748 radios, all on 2.4 GHz 6 / 11 and their own 5 GHz blocks). A channel
-  // none of them uses is "not listened", never 0; how busy it is comes from UniFi's RF scans,
+  // none of them uses is "not reported", never 0; how busy it is comes from UniFi's RF scans,
   // which cover every channel (UU-C-276).
   const scans = db.rfScansSince(Date.now() - 30 * 24 * 3600e3);
   const busyOf = (band, lo, hi) => {
