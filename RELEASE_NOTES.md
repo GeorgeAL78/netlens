@@ -1,5 +1,2 @@
-### Added
-- Firewall rules: Recent changes, the rules, filters, speed rules, Objects, DNS records and port forwards added, removed, turned on or off or renamed in the last 30 days, as NetLens notices them on its hourly read.
-
 ### Fixed
-- Firewall rules: a rule that is off now still shows what it blocked in the last 7 days while it was on (it read only "off"), and content filters show what they blocked too.
+- Layout on wide screens: every page and its tab bar now sit in one centred column, so content and tabs no longer jump between the middle (Overview, Protection) and the left edge (Network, Wi-Fi, Internet, Live, Firewall rules); the Network map's internet bar centres its numbers beside the live graph; the column no longer shifts with the scrollbar. On a phone, Blocked and Devices no longer scroll sideways (a long rule name in a filter, the device rows).

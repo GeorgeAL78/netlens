@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.32.2 — 2026-11-12
+
+### Fixed
+- Layout on wide screens: every page and its tab bar now sit in one centred column, so content and tabs no longer jump between the middle (Overview, Protection) and the left edge (Network, Wi-Fi, Internet, Live, Firewall rules); the Network map's internet bar centres its numbers beside the live graph; the column no longer shifts with the scrollbar. On a phone, Blocked and Devices no longer scroll sideways (a long rule name in a filter, the device rows).
+
 ## 2.32.1 — 2026-11-12
 
 ### Added

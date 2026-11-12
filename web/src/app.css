@@ -305,8 +305,8 @@ table.t tr.click:hover td { background: #141b26; }
 .dimmed { opacity: 0.5; transition: opacity 0.15s; }
 .dimmed:hover, .dimmed:focus-within { opacity: 1; }
 
-/* Network map (UU-C-165): full width; hosts with their VMs / containers. */
-.page.wide { max-width: none; }
+/* Network map (UU-C-165): hosts with their VMs / containers. Every page, the map included, sits
+   in one centred column (UU-C-274), so pages and their tab bars line up on a wide screen. */
 .host { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .pill.guests { cursor: pointer; border-style: dashed; color: var(--muted); font-size: 12.5px; }
 .pill.guests.on { color: var(--text); }
@@ -403,11 +403,9 @@ table.t tr.wifi-mine td { background: #131c28; }
 .wifi-all[open] summary { margin-bottom: 4px; }
 .tag + .tag, td .tag { margin-left: 8px; }
 
-/* Network's pages run full width (the map); the tab bar starts where they start, and the Wi-Fi
-   and Internet pages stop at a readable width instead of spreading tables over a wide screen
-   (UU-C-241). */
-.subtabs.wide { max-width: none; }
-.page.wide.capped { max-width: 1480px; margin: 0; }
+/* One column for every page and tab bar (UU-C-274): centred, at most 1480 px. Before, Network's
+   pages ran from the left edge while Overview and Protection were centred, so content and tabs
+   jumped sideways between pages on a wide screen. */
 
 /* Number columns: the heading sits over its numbers, in the heading font (UU-C-243). */
 table.t th.num { text-align: right; font-family: inherit; }
@@ -448,6 +446,8 @@ table.t tr.live-sel td { background: #1a2433; }
 .live-mini:hover { border-color: var(--accent-strong); color: var(--text); }
 .netbar-row { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: stretch; }
 .netbar-row .live-mini { padding: 10px 14px; }
+/* The bar is as tall as the live tile beside it: its numbers sit in the middle, not at the top. */
+.netbar-row > .netbar { align-content: center; }
 @media (max-width: 1100px) { .netbar-row { grid-template-columns: minmax(0, 1fr); } }
 
 /* Live graph axes (UU-C-260) */
@@ -473,3 +473,17 @@ details.card > summary { cursor: pointer; list-style: revert; }
 .fw-other { margin: 0; padding-left: 18px; line-height: 1.7; }
 .fw-other ul { margin: 2px 0 6px; padding-left: 18px; }
 li.fw-off { opacity: 0.55; }
+
+/* The scrollbar's room is always kept, so the column does not shift 7 px between a short page and a long one (UU-C-274). */
+html { scrollbar-gutter: stable; }
+/* A drop-down is as wide as its longest option (a long rule name): never wider than its row (UU-C-274). */
+select.field { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+/* Devices on a phone: the columns stack under the name instead of running off the screen (UU-C-274). */
+@media (max-width: 700px) {
+  .dev-row { grid-template-columns: 14px minmax(0, 1fr) !important; row-gap: 4px; }
+  .dev-row > :nth-child(n+3) { grid-column: 2; justify-self: start !important; }
+}
+@media (max-width: 700px) {
+  .dev-stack { grid-template-columns: minmax(0, 1fr) !important; row-gap: 4px; }
+  .dev-stack > * { justify-self: start !important; }
+}
