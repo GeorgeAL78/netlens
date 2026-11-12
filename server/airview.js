@@ -148,13 +148,28 @@ export function nearbySummary(aps) {
   const count = (band, radio, ch, width) => {
     const span = channelSpan(radio, ch, width);
     const hit = strong.filter((r) => BAND_OF[r.band] === band && overlaps(span, channelSpan(r.band, r.channel, r.width)));
-    return { channel: ch, width, networks: new Set(hit.map((r) => r.essid || `hidden-${r.channel}`)).size, loudest: maxOf(hit.map((r) => r.signal)), ours: ours.filter((o) => o.band === band && overlaps(span, o.span)).map((o) => o.ap) };
+    const mine = ours.filter((o) => o.band === band && overlaps(span, o.span)).map((o) => o.ap);
+    const listened = mine.length > 0 || (span ? heardOn(band, span[0], span[1]) : false);
+    return { channel: ch, width, listened, networks: listened ? new Set(hit.map((r) => r.essid || `hidden-${r.channel}`)).size : null, loudest: maxOf(hit.map((r) => r.signal)), ours: mine, busy: span ? busyOf(band, span[0], span[1]) : null };
   };
   const on24 = (ch) => {
     const hit = strong.filter((r) => BAND_OF[r.band] === "2.4" && Number(r.channel) === ch);
-    return { channel: ch, width: 20, clean: CLEAN24.includes(ch), networks: new Set(hit.map((r) => r.essid || `hidden-${r.channel}`)).size, loudest: maxOf(hit.map((r) => r.signal)), ours: ours.filter((o) => o.band === "2.4" && o.channel === ch).map((o) => o.ap) };
+    const mine = ours.filter((o) => o.band === "2.4" && o.channel === ch).map((o) => o.ap);
+    const listened = mine.length > 0 || heardOn("2.4", ch, ch);
+    return { channel: ch, width: 20, clean: CLEAN24.includes(ch), listened, networks: listened ? new Set(hit.map((r) => r.essid || `hidden-${r.channel}`)).size : null, loudest: maxOf(hit.map((r) => r.signal)), ours: mine, busy: busyOf("2.4", ch, ch) };
   };
   const last24 = Math.max(11, ...strong.filter((r) => BAND_OF[r.band] === "2.4").map((r) => Number(r.channel) || 0).filter((c) => c <= 14));
+  // UniFi lists only the networks your access points hear on the channels they use (on the
+  // owner's console: 748 radios, all on 2.4 GHz 6 / 11 and their own 5 GHz blocks). A channel
+  // none of them uses is "not listened", never 0; how busy it is comes from UniFi's RF scans,
+  // which cover every channel (UU-C-276).
+  const scans = db.rfScansSince(Date.now() - 30 * 24 * 3600e3);
+  const busyOf = (band, lo, hi) => {
+    const u = scans.filter((x) => BAND_OF[x.radio] === band && x.channel >= lo && x.channel <= hi && x.util != null).map((x) => x.util);
+    return u.length ? Math.round(u.reduce((a, b) => a + b, 0) / u.length) : null;
+  };
+  // Listened = one of our radios is on it, or UniFi reported anything at all heard there.
+  const heardOn = (band, lo, hi) => stored.rows.some((r) => BAND_OF[r.band] === band && Number(r.channel) >= lo && Number(r.channel) <= hi);
   const width5 = maxOf(ours.filter((o) => o.band === "5").map((o) => o.width)) || 80;
   // The first channel of each block of our width (80 MHz: 36, 52, 100, 116, 132, 149).
   const CH5 = [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165];
@@ -163,8 +178,12 @@ export function nearbySummary(aps) {
     ...(ours.some((o) => o.band === "2.4") ? [{ band: "2.4", width: 20, rows: Array.from({ length: last24 }, (_, i) => on24(i + 1)) }] : []),
     ...(ours.some((o) => o.band === "5") ? [{ band: "5", width: width5, rows: [...new Set(blocks5)].map((c) => count("5", "na", c, width5)) }] : []),
   ];
+  // 6 GHz: one line, as there is nothing to list unless a neighbour is heard there.
+  const ours6 = ours.filter((o) => o.band === "6");
+  const six = ours6.length ? { radios: ours6.map((o) => `${o.ap} ch ${o.channel}`), heard: strong.filter((r) => BAND_OF[r.band] === "6").length, anyHeard: stored.rows.filter((r) => BAND_OF[r.band] === "6").length } : null;
   return {
     at: stored.at,
+    six,
     heard: stored.rows.length,
     networks: all.length,
     strong: all.filter((g) => g.signal != null && g.signal >= STRONG).length,

@@ -92,7 +92,8 @@ function Channels({ band }) {
           <thead>
             <tr>
               <th className="num">Channel</th>
-              <th className="num">Loud networks</th>
+              <th className="num" title="How busy the channel was in UniFi's RF scans (last 30 days, every access point): covers every channel">Busy in scans</th>
+              <th className="num" title="Networks above -80 dBm your access points heard there: UniFi lists only the channels they use">Loud networks</th>
               <th className="num">Loudest</th>
               <th>Yours</th>
             </tr>
@@ -101,7 +102,8 @@ function Channels({ band }) {
             {band.rows.map((r) => (
               <tr key={r.channel} className={`${r.ours.length ? "wifi-mine" : ""} ${r.clean === false ? "wifi-between" : ""}`}>
                 <td className="num mono">{band.band === "2.4" ? r.channel : `${r.channel}${band.width > 20 ? `–${r.channel + (band.width / 5 - 4)}` : ""}`}{isDfs(band.band, r.channel) ? <span className="dim small" title="Radar channels (DFS): an access point must leave them when it hears radar"> DFS</span> : null}</td>
-                <td className={`num mono ${r.ours.length ? "" : "dim"}`}>{r.networks}</td>
+                <td className={`num mono ${r.busy == null ? "dim" : r.busy >= 50 ? "warn" : ""}`}>{r.busy == null ? "—" : `${r.busy}%`}</td>
+                <td className={`num mono ${r.ours.length ? "" : "dim"}`}>{r.networks == null ? <span className="small" title="None of your access points uses this channel, so UniFi lists no networks heard on it">not listened</span> : r.networks}</td>
                 <td className={`num mono ${sigClass(r.loudest)}`}>{r.loudest != null ? `${r.loudest} dBm` : "—"}</td>
                 <td className="small">{r.ours.join(", ") || <span className="dim">—</span>}</td>
               </tr>
@@ -259,8 +261,13 @@ function Nearby({ n }) {
       {n.channels.length > 0 && (
         <>
           <h3>Channels around you</h3>
-          <p className="small muted" style={{ margin: 0 }}>Loud networks heard on each channel. Your access points hear their own channels best, so a channel none of them uses can look emptier than it is: use the channel suggestions on Access points, which come from UniFi's scans of every channel.</p>
+          <p className="small muted" style={{ margin: 0 }}>How busy each channel is, from UniFi's RF scans of every channel, and the loud networks your access points heard. UniFi reports what your access points heard, mostly on the channels they use; a channel where nothing at all was heard reads "not listened", not empty. Channel suggestions are on Access points.</p>
           <div className="wifi-channel-grid">{n.channels.map((b) => <Channels key={b.band} band={b} />)}</div>
+          {n.six && (
+            <p className="small muted" style={{ margin: 0 }}>
+              <strong>6 GHz</strong> ({n.six.radios.join(", ")}): {n.six.anyHeard ? `${n.six.anyHeard} radio${n.six.anyHeard === 1 ? "" : "s"} heard nearby, ${n.six.heard} loud.` : "no other network heard: the band is yours."}
+            </p>
+          )}
         </>
       )}
       <details className="wifi-all">
