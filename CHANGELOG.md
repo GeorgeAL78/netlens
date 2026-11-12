@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.32.7 — 2026-11-12
+
+### Fixed
+- Overview on a wide screen: the findings and the side column now end where the header's period and date controls end (the findings were capped at 820 px).
+
 ## 2.32.6 — 2026-11-12
 
 ### Changed

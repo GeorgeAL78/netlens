@@ -91,7 +91,7 @@ export default function Home({ route }) {
       {!data && loading && <Loading />}
       {data && (
         <div className="split" style={{ gap: 28 }}>
-          <div className="main" style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 820 }}>
+          <div className="main" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="finding-filters">
               <button className={`btn look ${onlyLook ? "on" : ""}`} aria-pressed={onlyLook} onClick={() => setOnlyLook((v) => !v)}>
                 Needs attention{look ? ` · ${look}` : ""}
