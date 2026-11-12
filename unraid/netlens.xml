@@ -9,14 +9,14 @@
   <Project>https://github.com/GeorgeAL78/netlens</Project>
   <Overview>NetLens — a self-hosted dashboard for UniFi networks.
 
-• Usage per device and app, with time charts
-• Sites each device visited, by category
-• Devices: presence, rename, block
-• Wi-Fi signal, roaming and failed joins
-• Blocked traffic and intrusions, ads apart
-• Daily alerts per app and device
+• Usage per device and app, and the sites each device visited
+• Live traffic: the internet line, busiest devices and every port
+• Network map: gateway, switches and APs, each port's traffic and drops
+• Wi-Fi: signal, roaming, channel suggestions from UniFi's RF scans
+• Internet: availability, outages, latency, daily totals
+• Blocked traffic and intrusions, ads apart; daily limits per app and device
 
-Keeps 30 days of detail and 90 days of events, well beyond UniFi's own.
+Keeps 90 days of history (daily totals a year), well beyond UniFi's own.
 Needs a UniFi OS console and a local API key. Not affiliated with Ubiquiti.</Overview>
   <Category>Network:Management Tools:</Category>
   <WebUI>http://[IP]:[PORT:3780]/</WebUI>
@@ -24,6 +24,12 @@ Needs a UniFi OS console and a local API key. Not affiliated with Ubiquiti.</Ove
   <Icon>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/icon.png</Icon>
   <ExtraParams>--restart=unless-stopped</ExtraParams>
   <Requires>A UniFi OS console reachable from this server, and a local API key (UniFi Network &gt; Settings &gt; Control Plane &gt; Integrations &gt; Create API Key).</Requires>
+  <Screenshot>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/home.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/live.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/network.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/device.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/wifi.png</Screenshot>
+  <Screenshot>https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/internet.png</Screenshot>
 
   <Config Name="Web UI port" Target="3780" Default="3780" Mode="tcp" Description="Port for the dashboard in your browser." Type="Port" Display="always" Required="true" Mask="false">3780</Config>
   <Config Name="Data" Target="/data" Default="/mnt/user/appdata/netlens" Mode="rw" Description="Cache, settings and logs. Keep it on appdata so updates never lose history." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/netlens</Config>
