@@ -14,6 +14,7 @@ import Sites from "./pages/Sites.jsx";
 import Wifi from "./pages/Wifi.jsx";
 import Internet from "./pages/Internet.jsx";
 import Live from "./pages/Live.jsx";
+import Firewall from "./pages/Firewall.jsx";
 
 // The shell of the redesigned interface (UU-C-087): one top bar — home, the three views,
 // search and settings — and the page the URL names.
@@ -24,7 +25,7 @@ const TABS = [
   ["activity", "Activity", ["day", "usage", "sites"]], // what devices were doing
   ["devices", "Devices", ["devices", "device"]], // what is on the network (UU-C-118)
   ["network", "Network", ["network", "wifi", "internet", "live"]], // is the equipment OK; Wi-Fi and the internet line (UU-C-239)
-  ["security", "Protection", ["security"]], // what got stopped
+  ["security", "Protection", ["security", "firewall"]], // what got stopped, and the rules that stop it (UU-C-270)
 ];
 const ACTIVITY = [
   ["day", "Timeline"], // every device across the day's hours
@@ -37,6 +38,11 @@ const NETWORK = [
   ["wifi", "Wi-Fi"],
   ["internet", "Internet"],
   ["live", "Live"],
+];
+// Protection's pages (UU-C-270): what was blocked, and the firewall rules.
+const PROTECTION = [
+  ["security", "Blocked"],
+  ["firewall", "Firewall rules"],
 ];
 const LAST_ACTIVITY = "netlens.activity";
 const lastActivity = () => {
@@ -164,6 +170,7 @@ export default function App() {
     wifi: Wifi,
     internet: Internet,
     live: Live,
+    firewall: Firewall,
   };
   const Page = pages[route.page] || Home;
   const fired = useFiredToday(route.page);
@@ -229,6 +236,15 @@ export default function App() {
       {NETWORK.some(([id]) => id === route.page) && (
         <nav className="subtabs wide" aria-label="Network">
           {NETWORK.map(([id, label]) => (
+            <a key={id} href={href(id)} className={route.page === id ? "on" : ""}>
+              {label}
+            </a>
+          ))}
+        </nav>
+      )}
+      {PROTECTION.some(([id]) => id === route.page) && (
+        <nav className="subtabs" aria-label="Protection">
+          {PROTECTION.map(([id, label]) => (
             <a key={id} href={href(id)} className={route.page === id ? "on" : ""}>
               {label}
             </a>

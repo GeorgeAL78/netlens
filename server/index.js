@@ -19,6 +19,7 @@ import * as presence from "./presence.js";
 import * as watchlist from "./watchlist.js";
 import * as wifijoins from "./wifijoins.js";
 import * as blockedrules from "./blockedrules.js";
+import * as firewall from "./firewall.js";
 import * as guests from "./guests.js";
 import { siteCategory } from "./sitecats.js";
 import { BUCKET_MS } from "./buckets.js";
@@ -160,7 +161,7 @@ app.use(express.json());
 // rebuild the page from scratch — and Node answers one request at a time, so a 5-second
 // 7-day report also held up every other page. GET answers of the read-only views are kept per
 // URL; any snapshot, background refresh or non-GET request starts a new version.
-const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/network/history", "/api/network/timeline", "/api/wifi-joins", "/api/wifi/summary", "/api/internet"]);
+const MEMO_PATHS = new Set(["/api/report", "/api/sites", "/api/findings", "/api/day", "/api/threats", "/api/wifi", "/api/network", "/api/network/history", "/api/network/timeline", "/api/wifi-joins", "/api/wifi/summary", "/api/internet", "/api/firewall"]);
 const memo = new Map();
 let memoVersion = 0;
 let prewarmTimer = null;
@@ -1337,6 +1338,32 @@ function wanDays(n, now) {
   }
   return out;
 }
+// Firewall rules in plain words (UU-C-270), with how often each blocked something in 7 days.
+app.get("/api/firewall", (req, res) => {
+  try {
+    const now = Date.now();
+    const blocks = new Map();
+    try {
+      // The same 7 days as Protection's "7 days", so a rule's count matches what a click opens.
+      const { start, end } = rangeFor({ period: "7d" });
+      const { list } = buildIncidents(start, end);
+      for (const x of list) {
+        if (x.kind !== "rule" || !x.rule) continue;
+        const b = blocks.get(x.rule) || { connections: 0, incidents: 0, devices: new Set() };
+        b.connections += x.n || 0;
+        b.incidents += 1;
+        if (x.mac || x.device) b.devices.add(x.mac || x.device);
+        blocks.set(x.rule, b);
+      }
+    } catch {
+      /* the rules still show, without counts */
+    }
+    for (const b of blocks.values()) b.devices = b.devices.size;
+    res.json({ tz, ...firewall.firewallSummary({ blocks, now }) });
+  } catch (err) {
+    sendError(res, "GET /api/firewall", err);
+  }
+});
 app.get("/api/wifi/summary", (req, res) => {
   try {
     const days = AIR_DAYS(req.query.days);

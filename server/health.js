@@ -1,5 +1,6 @@
 import * as db from "./db.js";
 import * as unifi from "./unifi.js";
+import { refreshFirewall } from "./firewall.js";
 
 // Live samples every 5 minutes (UU-C-056): Wi-Fi quality per client, equipment health and
 // the WAN. UniFi only reports these as "right now", so history exists only because this
@@ -349,6 +350,8 @@ export async function refreshAir({ force = false } = {}) {
       // The networks (VLANs) by subnet, to name the network a device was on (UU-C-248).
       const nets = await unifi.getNetworks().catch(() => null);
       if (nets) db.setSetting("networks", JSON.stringify(nets.filter((n) => n.ip_subnet && n.purpose !== "wan").map((n) => ({ name: n.name, vlan: num(n.vlan) || 1, subnet: n.ip_subnet }))));
+      // The firewall rules and zones (UU-C-270), for Protection › Firewall rules.
+      await refreshFirewall().catch(() => null);
       // The access points' last RF scans; a scan already kept is skipped (same time).
       const scans = await unifi.getRfScans().catch(() => []);
       db.saveRfScan(

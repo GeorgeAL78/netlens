@@ -483,6 +483,43 @@ export const getNearbyNetworks = (hours = 24) => siteStat(`rogueap?within=${Numb
 // Each access point's last RF scan (UU-C-241): utilization of every channel per radio, as UniFi's
 // nightly scan (or one run by hand) left it. Reading it never starts a scan.
 export const getRfScans = () => siteStat("spectrum-scan");
+// Zone-based firewall (UU-C-270): every policy (yours and UniFi's built-in ones) and the zones.
+// Read only; the Integration API's list is paged and leaves out details, so the v2 one is used.
+export async function getFirewallPolicies() {
+  const { site } = config();
+  return request(`/proxy/network/v2/api/site/${site}/firewall-policies`);
+}
+export async function getFirewallZones() {
+  const { site } = config();
+  return request(`/proxy/network/v2/api/site/${site}/firewall/zone`);
+}
+// The rest of the Policy Engine (UU-C-270), read only, for Protection › Firewall rules: speed
+// rules (QoS), Objects, port forwards, NAT, traffic routes (policy routing), the older traffic
+// rules and switch ACLs. Each is a plain list; an answer UniFi does not have reads as null.
+export async function getPolicyList(kind) {
+  const { site, siteId } = config();
+  const path = {
+    qos: `/proxy/network/v2/api/site/${site}/qos-rules`,
+    objects: `/proxy/network/v2/api/site/${site}/object-oriented-network-configs`,
+    nat: `/proxy/network/v2/api/site/${site}/nat`,
+    routes: `/proxy/network/v2/api/site/${site}/trafficroutes`,
+    trafficRules: `/proxy/network/v2/api/site/${site}/trafficrules`,
+    portForwards: `/proxy/network/api/s/${site}/rest/portforward`,
+    acl: siteId ? `/proxy/network/integration/v1/sites/${siteId}/acl-rules` : null,
+  }[kind];
+  if (!path) return null;
+  const json = await request(path);
+  return Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : null;
+}
+// Local DNS records and content filters (UU-C-270), shown with the firewall rules.
+export async function getDnsRecords() {
+  const { site } = config();
+  return request(`/proxy/network/v2/api/site/${site}/static-dns`);
+}
+export async function getContentFilters() {
+  const { site } = config();
+  return request(`/proxy/network/v2/api/site/${site}/content-filtering`);
+}
 // The site's networks (UU-C-248): name, VLAN and subnet, to name the network a device was on.
 export async function getNetworks() {
   const { site } = config();

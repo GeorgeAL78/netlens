@@ -460,3 +460,16 @@ table.t tr.live-sel td { background: #1a2433; }
 
 /* 2.4 GHz channels between 1, 6 and 11 (UU-C-268) */
 .wifi-between td:first-child { opacity: 0.6; }
+
+/* Firewall rules (UU-C-270) */
+.fw-rules td { vertical-align: top; }
+.fw-rules td:nth-child(3) { min-width: 320px; }
+.fw-off td { opacity: 0.55; }
+.fw-matrix th, .fw-matrix td { text-align: left; white-space: nowrap; }
+.fw-matrix td.fw-allow { color: var(--ok); }
+.fw-matrix td.fw-block { color: var(--bad); }
+.fw-zones { margin: 12px 0 0; padding-left: 18px; }
+details.card > summary { cursor: pointer; list-style: revert; }
+.fw-other { margin: 0; padding-left: 18px; line-height: 1.7; }
+.fw-other ul { margin: 2px 0 6px; padding-left: 18px; }
+li.fw-off { opacity: 0.55; }

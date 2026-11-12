@@ -27,8 +27,8 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 | **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — new devices, maker, switch port or access point, rename |
 | ![Live — the line, busiest devices and every port](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/live.png) | ![Sites — every site each device connected to, by category](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/sites.png) |
 | **Network › Live** — the last hour of the line, then live every few seconds; the busiest devices and every port with their own graphs | **Activity › Sites** — every site each device connected to, filtered by category |
-| ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) | |
-| **Limits** — daily limits per app and device | |
+| ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) | ![Firewall rules — your rules in plain words](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/firewall.png) |
+| **Limits** — daily limits per app and device | **Protection › Firewall rules** — your UniFi firewall rules in plain words, in order, with how often each blocked something; what the zones do when no rule matches |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
@@ -50,6 +50,7 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
   by secure DNS named when they belong to a watched site.
 - **Limits** — daily limits on time or data for an app on a device, flagged on Overview.
 - **Protection** — every block as one incident (intrusions, your firewall rules and app blocks), with filters; ads and trackers on their own tab.
+- **Protection › Firewall rules** — your UniFi firewall rules in plain words, in order, with each rule's blocks in the last 7 days; what the zones do when no rule matches; Objects, speed rules, content filters, local DNS records, port forwards and the rest of the Policy Engine. Read only.
 - **Activity › Apps** — apps, categories and devices for a day, an hour or 90 days, one search box for all
   three; every number adds up.
 - Local-network traffic shown separately; missing data marked, never shown as a quiet hour.

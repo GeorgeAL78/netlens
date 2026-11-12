@@ -27,8 +27,8 @@ which UniFi itself deletes after a day or a week.
 | **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — new devices, maker, switch port or access point, rename |
 | ![Live — the line, busiest devices and every port](assets/screenshots/live.png) | ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) |
 | **Network › Live** — the last hour of the line, then live every few seconds; the busiest devices and every port with their own graphs | **Activity › Sites** — every site each device connected to, filtered by category |
-| ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) | |
-| **Limits** — daily limits per app and device | |
+| ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) | ![Firewall rules — your rules in plain words](assets/screenshots/firewall.png) |
+| **Limits** — daily limits per app and device | **Protection › Firewall rules** — your UniFi firewall rules in plain words, in order, with how often each blocked something; what the zones do when no rule matches |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
@@ -92,6 +92,12 @@ which UniFi itself deletes after a day or a week.
   and devices stopped by your firewall rules or app blocks, with the rule's name, merged with
   UniFi's log entry; filters by type, device, site and rule; investigate an outside address;
   ads and trackers on their own tab.
+- **Protection › Firewall rules** — UniFi's zone-based firewall rules read hourly and written out
+  in plain words ("Block the Kids network → the apps YouTube, FaceTime", schedules, ports, known
+  DNS services by name), in the order UniFi checks them, with each rule's blocks in the last 7
+  days; what the zones do when no rule matches; UniFi's built-in rules explained. Also the rest of
+  the Policy Engine: Objects, speed rules (QoS), content filters, local DNS records, port forwards,
+  traffic routes, older traffic rules, NAT and switch ACLs. Read only.
 - **Activity › Apps** — apps, categories and devices for a day, an hour or up to 90 days; one search box
   for an app, category or device, and the top apps one click away. **Every number on
   a screen comes from one source and adds up**; a built-in audit (`npm run audit`) checks every

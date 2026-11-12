@@ -245,7 +245,7 @@ for (const { hq, label, dayBar } of hourChecks) {
     for (const a of w.advice || []) {
       if (!a.suggest) continue;
       const to = a.options.find((o) => o.channel === a.suggest.channel);
-      if (!to || to.usedBy.length || to.dfs || to.current || !(a.current && a.current.util - to.util >= 10)) failures.push(`${label}: ${a.ap} ${a.band} told to move to ${a.suggest.channel} without reason`);
+      if (!to || to.usedBy.length || to.dfs || to.current || to.clean === false || !(a.current && a.current.util - to.util >= 10)) failures.push(`${label}: ${a.ap} ${a.band} told to move to ${a.suggest.channel} without reason`);
     }
     const i = await get(`/api/internet?days=${days}`);
     stats.screens += 1;
@@ -254,6 +254,25 @@ for (const { hq, label, dayBar } of hourChecks) {
     if (i.outages.some((o) => o.from < i.start - 1 || (o.to && o.to < o.from))) failures.push(`internet ${days}d: an outage outside the period`);
     if (i.series.some((s) => s.down != null && s.downPeak != null && s.down > s.downPeak + 0.1)) failures.push(`internet ${days}d: an average above its peak`);
   }
+}
+
+// Firewall rules (UU-C-270): in UniFi's order, each a full sentence, the zone table square,
+// and each rule's 7-day block count the same as the Protection page's for that rule.
+{
+  const f = await get(`/api/firewall`);
+  stats.screens += 1;
+  if (f.at) {
+    if (f.rules.some((r, i) => i && r.index < f.rules[i - 1].index)) failures.push("firewall: rules out of UniFi's order");
+    if (f.rules.concat(f.builtin).some((r) => !r.from.text || !r.to.text || !["allow", "block", "reject"].includes(r.action))) failures.push("firewall: a rule without a full description");
+    if (f.matrix.some((z) => z.cells.length !== f.matrix.length)) failures.push("firewall: the zone table is not square");
+    // The rest of the Policy Engine: every item read is described.
+    if ([...(f.qos || []), ...(f.objects || []), ...f.other.flatMap((g) => g.items)].some((x) => !x.text || /undefined|null/.test(x.text))) failures.push("firewall: a policy without a description");
+    if ((f.filters || []).some((x) => !x.blocks.length && !x.block.length)) failures.push("firewall: a content filter that blocks nothing");
+    const t = await get(`/api/threats?period=7d`);
+    const seen = new Map();
+    for (const x of t.incidents || []) if (x.kind === "rule" && x.rule) seen.set(x.rule, (seen.get(x.rule) || 0) + x.n);
+    for (const r of f.rules) if (r.enabled && r.action !== "allow" && (r.blocks?.connections || 0) !== (seen.get(r.name) || 0)) failures.push(`firewall: "${r.name}" shows ${r.blocks?.connections || 0} blocks, Protection ${seen.get(r.name) || 0}`);
+  } else failures.push("firewall: no rules in the demo");
 }
 
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);
