@@ -25,8 +25,10 @@ which UniFi itself deletes after a day or a week.
 | **Network › Wi-Fi** — each radio's channel, load and interference; channel suggestions from UniFi's RF scans | **Network › Wi-Fi › Nearby** — of the hundreds of networks around, the loud ones on your channels |
 | ![Internet — availability, outages, latency and busiest moments](assets/screenshots/internet.png) | ![Devices — new devices, maker and where they connect](assets/screenshots/devices.png) |
 | **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — new devices, maker, switch port or access point, rename |
-| ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) | ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) |
-| **Activity › Sites** — every site each device connected to, filtered by category | **Limits** — daily limits per app and device |
+| ![Live — the line, busiest devices and every port](assets/screenshots/live.png) | ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) |
+| **Network › Live** — the last hour of the line, then live every few seconds; the busiest devices and every port with their own graphs | **Activity › Sites** — every site each device connected to, filtered by category |
+| ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) | |
+| **Limits** — daily limits per app and device | |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
@@ -58,7 +60,8 @@ which UniFi itself deletes after a day or a week.
   suggestions from UniFi's nightly RF scans of every channel, which NetLens keeps over time. A
   Devices tab: every Wi-Fi device's signal, band, roams and failed joins, and devices stuck on
   2.4 GHz that have used 5 or 6 GHz.
-- **Network › Internet** — a live graph of the line (updated every few seconds while the page is open, with the busiest devices and every port live), availability and every outage, latency to UniFi's test targets, the
+- **Network › Live** — the internet line over the last hour, then live every few seconds while the page is open; below it the busiest devices and every port, each with its own graph (click one to draw it over the line). A small live graph on Overview and beside the Network map opens it. UniFi is read for it only while someone is watching.
+- **Network › Internet** — availability and every outage, latency to UniFi's test targets, the
   busiest download and upload against your line's speed (each 5 minutes' peak on Network 11),
   public-address history and UniFi's last speed test.
 - **Links near their limit** — Overview says when a device's busiest 5 minutes used 80% or more

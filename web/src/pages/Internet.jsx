@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { clock, shortDate, speed, useApi } from "../lib.js";
 import { Bars, Failed, Loading, WanDays } from "../ui.jsx";
-import { LiveChart, LiveDevices, LivePorts, bpsText, useLive } from "../live.jsx";
+import { LiveMini } from "../live.jsx";
 
 // Internet (UU-C-239): did the line deliver? Availability and every outage, latency to UniFi's
 // test targets, how much of the line the busiest moments used, the public address over time and
@@ -11,37 +11,6 @@ import { LiveChart, LiveDevices, LivePorts, bpsText, useLive } from "../live.jsx
 const DAYS = [[1, "24 hours"], [7, "7 days"], [30, "30 days"]];
 const mbps = (v) => (v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(2)} Gbps` : `${v >= 100 ? Math.round(v) : v} Mbps`);
 const dur = (m) => (m >= 120 ? `${Math.round(m / 6) / 10} h` : `${m} min`);
-
-// Live (UU-C-256): the line right now, the busiest devices and every port, updated every few
-// seconds while this page is open.
-function Live({ linkMbps }) {
-  const { points, latest, error, connected, tickMs } = useLive();
-  const share = latest && linkMbps ? Math.round((Math.max(latest.down, latest.up) / (linkMbps * 1e6)) * 100) : null;
-  return (
-    <>
-      <section className="card">
-        <div className="card-head">
-          <h2>Live</h2>
-          <span className="hint">
-            {latest ? <>↓ <strong className="mono">{bpsText(latest.down)}</strong> · ↑ <strong className="mono">{bpsText(latest.up)}</strong>{share != null ? ` · ${share}% of the line` : ""}</> : "Connecting…"}
-            {latest?.demo ? " · demo data" : ""}
-          </span>
-          <span className={`small end ${error || !connected ? "warn" : "dim"}`}>{error ? `UniFi: ${error}` : connected ? `updates every ${Math.round(tickMs / 100) / 10} s while open` : "reconnecting…"}</span>
-        </div>
-        <LiveChart points={points} linkMbps={linkMbps} />
-        <h3>Busiest devices right now</h3>
-        <LiveDevices devices={latest?.devices} />
-      </section>
-      <section className="card">
-        <div className="card-head">
-          <h2>Ports, live</h2>
-          <span className="hint">↓ to the device on the port, ↑ from it; the internet port: ↓ download, ↑ upload.</span>
-        </div>
-        <LivePorts groups={latest?.ports} />
-      </section>
-    </>
-  );
-}
 
 export default function Internet() {
   const [days, setDays] = useState(1);
@@ -68,7 +37,8 @@ export default function Internet() {
           ))}
         </div>
       </div>
-      <Live linkMbps={d?.linkMbps} />
+      {/* The full live view is its own page (UU-C-258). */}
+      <LiveMini title="Live · open the live view" />
       {error && <Failed error={error} reload={reload} />}
       {!d && loading && <Loading />}
       {d && !d.samples && <div className="card empty">Nothing recorded in this period.</div>}

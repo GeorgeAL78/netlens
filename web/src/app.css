@@ -429,3 +429,23 @@ table.t td.num + td:not(.num), table.t th.num + th:not(.num) { padding-left: 20p
 .live-down-area { fill: var(--accent); opacity: 0.12; }
 .live-up { fill: none; stroke: var(--ok); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .live-axis { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+
+/* Live page and tiles (UU-C-258) */
+.live-down.old { opacity: 0.45; }
+.live-up.old { opacity: 0.45; }
+.live-down-area.old { opacity: 0.06; }
+.live-mark { stroke: var(--line-2); stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.live-overlay { fill: none; stroke: var(--warn); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.live-overlay.up { stroke-dasharray: 4 3; stroke-width: 1.5; }
+.live-key { display: inline-block; width: 12px; height: 3px; border-radius: 2px; vertical-align: middle; margin: 0 2px 0 8px; background: var(--accent); }
+.live-key.up { background: var(--ok); }
+.live-key.overlay { background: var(--warn); }
+.live-spark polyline { vector-effect: non-scaling-stroke; }
+.live-lists { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+@media (max-width: 1000px) { .live-lists { grid-template-columns: minmax(0, 1fr); } }
+table.t tr.live-sel td { background: #1a2433; }
+.live-mini { gap: 6px; color: var(--text); }
+.live-mini:hover { border-color: var(--accent-strong); color: var(--text); }
+.netbar-row { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 14px; align-items: stretch; }
+.netbar-row .live-mini { padding: 10px 14px; }
+@media (max-width: 1100px) { .netbar-row { grid-template-columns: minmax(0, 1fr); } }

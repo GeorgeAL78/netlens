@@ -1,13 +1,18 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { href } from "./lib.js";
 
-// Live traffic (UU-C-256): one event stream from /api/live while the page is visible. The server
-// reads UniFi every few seconds only while someone watches; a hidden tab closes the stream.
+// Live traffic (UU-C-256, UU-C-258): one event stream from /api/live while the page is visible.
+// The server reads UniFi every few seconds only while someone watches; a hidden tab closes the
+// stream. History: the line's last hour from NetLens's 5-minute records ("coarse"), then the
+// live readings, and per device and port the last 15 minutes.
 
-const WINDOW_MS = 10 * 60 * 1000;
+export const LIVE_KEEP_MS = 15 * 60 * 1000;
 export const bpsText = (bps) => (bps == null ? "—" : bps >= 1e9 ? `${(bps / 1e9).toFixed(2)} Gbps` : bps >= 1e6 ? `${(bps / 1e6).toFixed(bps >= 1e8 ? 0 : 1)} Mbps` : `${Math.round(bps / 1e3)} kbps`);
 
+const trim = (pts, now) => pts.filter((p) => p[0] >= now - LIVE_KEEP_MS);
+
 export function useLive() {
-  const [state, setState] = useState({ points: [], latest: null, error: null, connected: false, tickMs: 2500 });
+  const [state, setState] = useState({ points: [], coarse: [], devices: {}, ports: {}, latest: null, error: null, connected: false, tickMs: 2500 });
   useEffect(() => {
     let es = null;
     const open = () => {
@@ -15,14 +20,29 @@ export function useLive() {
       es = new EventSource("/api/live");
       es.addEventListener("history", (e) => {
         const h = JSON.parse(e.data);
-        setState({ points: h.points || [], latest: h.latest, error: h.error, connected: true, tickMs: h.tickMs || 2500 });
+        setState({ points: h.points || [], coarse: h.coarse || [], devices: h.devices || {}, ports: h.ports || {}, latest: h.latest, error: h.error, connected: true, tickMs: h.tickMs || 2500 });
       });
       es.onmessage = (e) => {
         const f = JSON.parse(e.data);
         setState((s) => {
           if (f.error) return { ...s, error: f.error };
-          const points = [...s.points, { ts: f.ts, down: f.down, up: f.up }].filter((p) => p.ts >= f.ts - WINDOW_MS);
-          return { ...s, points, latest: f, error: null, connected: true };
+          const now = f.ts;
+          const points = [...s.points, { ts: now, down: f.down, up: f.up }].filter((p) => p.ts >= now - LIVE_KEEP_MS);
+          const devices = { ...s.devices };
+          for (const d of f.devices || []) {
+            const prev = devices[d.mac];
+            devices[d.mac] = { name: d.name, via: d.via, port: d.port ?? null, wired: d.wired, pts: trim([...(prev?.pts || []), [now, d.down, d.up]], now) };
+          }
+          const ports = { ...s.ports };
+          for (const g of f.ports || []) {
+            for (const p of g.ports) {
+              const k = `${g.mac}|${p.idx}`;
+              const prev = ports[k];
+              ports[k] = { device: g.device, mac: g.mac, idx: p.idx, on: p.on, speed: p.speed, wan: Boolean(p.wan), pts: trim([...(prev?.pts || []), [now, p.toDevice, p.fromDevice]], now) };
+            }
+          }
+          for (const m of [devices, ports]) for (const k of Object.keys(m)) if (!m[k].pts.length) delete m[k];
+          return { ...s, points, devices, ports, latest: f, error: null, connected: true };
         });
       };
       es.onerror = () => setState((s) => ({ ...s, connected: false }));
@@ -42,99 +62,82 @@ export function useLive() {
   return state;
 }
 
-// Download and upload over the last 10 minutes; the scale follows the busiest moment shown.
-export function LiveChart({ points, linkMbps }) {
-  const W = 720;
-  const H = 150;
+// A port's reading from your side: the internet port ↓ download (from the ISP), ↑ upload.
+export const portDir = (p, to, from) => (p.wan ? { down: from, up: to } : { down: to, up: from });
+
+// The main graph: the last `windowMs` (default an hour). NetLens's 5-minute records fill the
+// part before the live readings (dimmer); `overlay` is one device's or port's live line.
+export function LiveChart({ points, coarse = [], overlay = null, windowMs = 60 * 60e3, height = 170, linkMbps, axis = true }) {
+  const W = 900;
+  const H = height;
   const now = points.length ? points[points.length - 1].ts : Date.now();
-  const top = Math.max(10e6, ...points.map((p) => Math.max(p.down, p.up))) * 1.15;
-  const x = (ts) => W - ((now - ts) / WINDOW_MS) * W;
+  const liveFrom = points.length ? points[0].ts : now;
+  const old = coarse.filter((p) => p.ts >= now - windowMs && p.ts < liveFrom);
+  const vals = [...old, ...points].flatMap((p) => [p.down, p.up]).concat(overlay ? overlay.pts.flatMap((p) => [p.down, p.up]) : []);
+  const top = Math.max(10e6, ...vals) * 1.15;
+  const x = (ts) => W - ((now - ts) / windowMs) * W;
   const y = (v) => H - (v / top) * H;
-  const line = (key) => points.map((p) => `${x(p.ts).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" ");
-  const area = points.length ? `${x(points[0].ts).toFixed(1)},${H} ${line("down")} ${x(now).toFixed(1)},${H}` : "";
+  const line = (list, key) => list.map((p) => `${x(p.ts).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" ");
+  const area = (list) => (list.length ? `${x(list[0].ts).toFixed(1)},${H} ${line(list, "down")} ${x(list[list.length - 1].ts).toFixed(1)},${H}` : "");
   const grid = [0.25, 0.5, 0.75].map((f) => top * f);
+  const mins = Math.round(windowMs / 60e3);
   return (
     <div className="live-chart">
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Internet traffic, last 10 minutes">
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={`Internet traffic, last ${mins} minutes`} style={{ height: H }}>
         {grid.map((g) => <line key={g} x1="0" x2={W} y1={y(g)} y2={y(g)} className="live-grid" />)}
-        {area && <polygon points={area} className="live-down-area" />}
-        {points.length > 1 && <polyline points={line("down")} className="live-down" />}
-        {points.length > 1 && <polyline points={line("up")} className="live-up" />}
+        {old.length > 1 && <polygon points={area(old)} className="live-down-area old" />}
+        {old.length > 1 && <polyline points={line(old, "down")} className="live-down old" />}
+        {old.length > 1 && <polyline points={line(old, "up")} className="live-up old" />}
+        {points.length > 0 && old.length > 0 && <line x1={x(liveFrom)} x2={x(liveFrom)} y1="0" y2={H} className="live-mark" />}
+        {points.length > 1 && <polygon points={area(points)} className="live-down-area" />}
+        {points.length > 1 && <polyline points={line(points, "down")} className="live-down" />}
+        {points.length > 1 && <polyline points={line(points, "up")} className="live-up" />}
+        {overlay?.pts?.length > 1 && <polyline points={line(overlay.pts, "down")} className="live-overlay" />}
+        {overlay?.pts?.length > 1 && <polyline points={line(overlay.pts, "up")} className="live-overlay up" />}
       </svg>
-      <div className="live-axis small dim">
-        <span>10 min ago</span>
-        <span>top of scale {bpsText(top)}{linkMbps ? ` · line ${linkMbps >= 1000 ? `${linkMbps / 1000} Gbps` : `${linkMbps} Mbps`}` : ""}</span>
+      {axis && <div className="live-axis small dim">
+        <span>{mins} min ago</span>
+        <span>
+          {old.length ? "before the line: NetLens's 5-minute record · " : ""}top of scale {bpsText(top)}
+          {linkMbps ? ` · line ${linkMbps >= 1000 ? `${linkMbps / 1000} Gbps` : `${linkMbps} Mbps`}` : ""}
+        </span>
         <span>now</span>
+      </div>}
+    </div>
+  );
+}
+
+// A small graph of one series' last minutes, both directions.
+export function Spark({ pts, width = 90, height = 22, windowMs = LIVE_KEEP_MS }) {
+  if (!pts?.length) return <svg width={width} height={height} aria-hidden="true" />;
+  const now = pts[pts.length - 1][0];
+  const top = Math.max(1e5, ...pts.flatMap((p) => [p[1], p[2]]));
+  // Stretch over what there is until the window is full, so a fresh view is not a sliver.
+  const span = Math.min(windowMs, Math.max(60e3, now - pts[0][0]));
+  const x = (ts) => width - ((now - ts) / span) * width;
+  const y = (v) => height - 1 - (v / top) * (height - 2);
+  const line = (i) => pts.map((p) => `${x(p[0]).toFixed(1)},${y(p[i]).toFixed(1)}`).join(" ");
+  return (
+    <svg width={width} height={height} className="live-spark" aria-hidden="true">
+      <polyline points={line(1)} className="live-down" />
+      <polyline points={line(2)} className="live-up" />
+    </svg>
+  );
+}
+
+// The small card for Overview and the Network map: the last 10 minutes, now, the busiest device.
+export function LiveMini({ title = "Live" }) {
+  const { points, coarse, latest, connected, error } = useLive();
+  const top = latest?.devices?.[0];
+  return (
+    <a className="card live-mini" href={href("live")} title="Open the live view">
+      <div className="card-head">
+        <span className="dim small">{title}</span>
+        <span className={`small end ${error || !connected ? "warn" : "dim"}`}>{error ? "UniFi unreachable" : connected ? "live" : "connecting…"}</span>
       </div>
-    </div>
-  );
-}
-
-export function LiveDevices({ devices }) {
-  if (!devices?.length) return <p className="small dim" style={{ margin: 0 }}>Nothing moving right now.</p>;
-  return (
-    <table className="t">
-      <thead>
-        <tr>
-          <th>Device</th>
-          <th>Where</th>
-          <th className="num">↓</th>
-          <th className="num">↑</th>
-        </tr>
-      </thead>
-      <tbody>
-        {devices.map((d) => (
-          <tr key={d.mac}>
-            <td>{d.name}</td>
-            <td className="small dim">{d.via || "—"}{d.port != null ? ` · port ${d.port}` : ""}</td>
-            <td className="num mono">{bpsText(d.down)}</td>
-            <td className="num mono dim">{bpsText(d.up)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-// Every port of the gateway and switches, live: ↓ to the device on it, ↑ from it; the internet
-// port from your side (↓ download, ↑ upload), as everywhere else (UU-C-252).
-export function LivePorts({ groups }) {
-  if (!groups?.length) return null;
-  return (
-    <div className="wifi-channel-grid">
-      {groups.map((g) => (
-        <div key={g.mac} className="wifi-channels">
-          <h3>{g.device}</h3>
-          <table className="t">
-            <thead>
-              <tr>
-                <th>Port</th>
-                <th className="num">↓</th>
-                <th className="num">↑</th>
-                <th className="num" title="The faster direction as a share of the port's speed">Load</th>
-              </tr>
-            </thead>
-            <tbody>
-              {g.ports.map((p) => {
-                const down = p.wan ? p.fromDevice : p.toDevice;
-                const up = p.wan ? p.toDevice : p.fromDevice;
-                const load = p.speed ? Math.max(down, up) / (p.speed * 1e6) : null;
-                return (
-                  <tr key={p.idx}>
-                    <td>
-                      <span className="mono">{p.idx}</span>
-                      {p.on ? <span className="small dim"> {p.on}</span> : null}
-                    </td>
-                    <td className="num mono">{bpsText(down)}</td>
-                    <td className="num mono dim">{bpsText(up)}</td>
-                    <td className={`num mono ${load >= 0.8 ? "warn" : "dim"}`}>{load == null ? "—" : `${Math.round(load * 100)}%`}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ))}
-    </div>
+      <LiveChart points={points} coarse={coarse} windowMs={10 * 60e3} height={60} axis={false} />
+      <span className="mono small">{latest ? <>↓ {bpsText(latest.down)} · ↑ {bpsText(latest.up)}</> : "—"}</span>
+      {top && <span className="small dim">Busiest: {top.name} · ↓ {bpsText(top.down)} ↑ {bpsText(top.up)}</span>}
+    </a>
   );
 }

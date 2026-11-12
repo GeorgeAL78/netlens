@@ -280,6 +280,7 @@ export function WanDays({ days, linkMbps }) {
   const label = (d) => (d.day === today ? "Today" : new Date(d.start).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }));
   const mb = (v) => (v == null ? "—" : v >= 1000 ? `${(v / 1000).toFixed(2)} G` : `${v >= 100 ? Math.round(v) : v} M`);
   return (
+    <div className="scroll-x">
     <table className="t">
       <thead>
         <tr>
@@ -304,5 +305,6 @@ export function WanDays({ days, linkMbps }) {
         ))}
       </tbody>
     </table>
+    </div>
   );
 }

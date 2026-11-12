@@ -25,8 +25,10 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 | **Network › Wi-Fi** — each radio's channel, load and interference; channel suggestions from UniFi's RF scans | **Network › Wi-Fi › Nearby** — of the hundreds of networks around, the loud ones on your channels |
 | ![Internet — availability, outages, latency and busiest moments](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/internet.png) | ![Devices — new devices, maker and where they connect](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/devices.png) |
 | **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — new devices, maker, switch port or access point, rename |
-| ![Sites — every site each device connected to, by category](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/sites.png) | ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) |
-| **Activity › Sites** — every site each device connected to, filtered by category | **Limits** — daily limits per app and device |
+| ![Live — the line, busiest devices and every port](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/live.png) | ![Sites — every site each device connected to, by category](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/sites.png) |
+| **Network › Live** — the last hour of the line, then live every few seconds; the busiest devices and every port with their own graphs | **Activity › Sites** — every site each device connected to, filtered by category |
+| ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) | |
+| **Limits** — daily limits per app and device | |
 
 <sub>Screenshots use a made-up demo network, not real data.</sub>
 
@@ -37,7 +39,8 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 - **Activity › Timeline** — devices × hours: when each device was busy, roamed or got blocked.
 - **Network › Map** — a card per gateway, switch and access point with ports, Wi-Fi band and signal, VMs and containers under their host; each port's traffic, busiest 5 minutes and dropped packets; the network at any time in the last 90 days, and its history.
 - **Network › Wi-Fi** — each radio's channel, load and interference, channel suggestions from UniFi's RF scans, the nearby networks loud enough to share your channels (sifted from hundreds), and every Wi-Fi device's signal, band, roams and failed joins.
-- **Network › Internet** — a live graph with the busiest devices and every port, availability, every outage, latency per test target, the busiest download and upload against your line, public-address history and speed tests.
+- **Network › Live** — the line over the last hour then live every few seconds, the busiest devices and every port with their own graphs; small live graphs on Overview and the Network map.
+- **Network › Internet** — availability, every outage, latency per test target, the busiest download and upload against your line, public-address history and speed tests.
 - **Moves and equipment** — a device moving to another port or network is noted and listed on its page; restarts, outages and firmware updates of your UniFi equipment over any period.
 - **Device** — traffic, signal or link speed, where it connected (port and network), apps, sessions, events, online history, block / unblock.
 - **Devices** — new devices first, with maker and switch port or access point; rename (saved in UniFi);

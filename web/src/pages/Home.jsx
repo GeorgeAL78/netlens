@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, bytes, clock, go, href, shortDate, speed, todayKey, useApi, wanNow, splitTip } from "../lib.js";
 import { Bars, DayStep, Failed, Loading, levelColor, Bytes, Split } from "../ui.jsx";
+import { LiveMini } from "../live.jsx";
 
 // Home — the feed (UU-C-087): what happened today, in plain language, each finding linking
 // to the place that shows it in full.
@@ -168,6 +169,8 @@ export default function Home({ route }) {
             )}
           </div>
           <aside style={{ flex: "1 1 260px", maxWidth: 320, display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Live (UU-C-258): only while looking at today. */}
+            {data.today && !days && <LiveMini />}
             <div className="card">
               <span className="dim small">{data.today ? "Right now" : days ? `Last ${days} days` : "That day"}</span>
               <div className="kv">

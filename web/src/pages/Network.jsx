@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { ago, bytes, clock, duration, go, href, shortDate, speed, useApi, wanNow, splitTip } from "../lib.js";
 import { Bars, Failed, Loading, healthClass, Bytes, Split, WanDays } from "../ui.jsx";
+import { LiveMini } from "../live.jsx";
 
 // Network — the map (UU-C-087): Internet → gateway → switches / access points → devices.
 // Chip size is traffic in the last 15 minutes; the dot is health. Click anything for its panel.
@@ -467,6 +468,7 @@ function NetBar({ data, sel }) {
 }
 
 function NetMap({ data, sel, selC }) {
+  const at = useContext(AtCtx);
   const gateway = data.gateway;
   if (!gateway) return <div className="card empty">No gateway data yet.</div>;
   const all = [gateway, ...data.nodes];
@@ -486,7 +488,11 @@ function NetMap({ data, sel, selC }) {
   for (const n of all) walk(n);
   return (
     <div className="netmap">
-      <NetBar data={data} sel={sel} />
+      {/* The live tile beside the internet bar (UU-C-258), on the live map only. */}
+      <div className="netbar-row">
+        <NetBar data={data} sel={sel} />
+        {!at && <LiveMini />}
+      </div>
       <div className="eq-grid">
         {order.map((n) => <NodeCard key={n.mac} node={n} parent={parentOf(n)} kids={kidsOf(n)} sel={sel} selC={selC} />)}
         {data.loose.length > 0 && (

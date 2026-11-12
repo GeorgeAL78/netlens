@@ -13,6 +13,7 @@ import Devices from "./pages/Devices.jsx";
 import Sites from "./pages/Sites.jsx";
 import Wifi from "./pages/Wifi.jsx";
 import Internet from "./pages/Internet.jsx";
+import Live from "./pages/Live.jsx";
 
 // The shell of the redesigned interface (UU-C-087): one top bar — home, the three views,
 // search and settings — and the page the URL names.
@@ -22,7 +23,7 @@ const TABS = [
   ["home", "Overview", ["home"]], // what happened
   ["activity", "Activity", ["day", "usage", "sites"]], // what devices were doing
   ["devices", "Devices", ["devices", "device"]], // what is on the network (UU-C-118)
-  ["network", "Network", ["network", "wifi", "internet"]], // is the equipment OK; Wi-Fi and the internet line (UU-C-239)
+  ["network", "Network", ["network", "wifi", "internet", "live"]], // is the equipment OK; Wi-Fi and the internet line (UU-C-239)
   ["security", "Protection", ["security"]], // what got stopped
 ];
 const ACTIVITY = [
@@ -35,6 +36,7 @@ const NETWORK = [
   ["network", "Map"],
   ["wifi", "Wi-Fi"],
   ["internet", "Internet"],
+  ["live", "Live"],
 ];
 const LAST_ACTIVITY = "netlens.activity";
 const lastActivity = () => {
@@ -161,6 +163,7 @@ export default function App() {
     sites: Sites,
     wifi: Wifi,
     internet: Internet,
+    live: Live,
   };
   const Page = pages[route.page] || Home;
   const fired = useFiredToday(route.page);
