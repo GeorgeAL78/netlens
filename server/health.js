@@ -346,7 +346,30 @@ export async function refreshAir({ force = false } = {}) {
           heardBy: apNames.get(lower(r.ap_mac)) || null,
           lastSeen: num(r.last_seen) ? num(r.last_seen) * 1000 : null,
         }));
-      db.setSetting("nearby_networks", JSON.stringify({ at: now, rows: keep }));
+      // UniFi names networks only on the channels the access points use, and remembers them for
+      // about 30 days: per channel, what was heard there in that time (UU-C-280), so a channel
+      // used before (2.4 GHz 1 until the owner moved to 6) still shows its neighbours. Only a
+      // summary per band and channel is kept, never the networks themselves.
+      const month = await unifi.getNearbyNetworks(720).catch(() => []);
+      const hist = new Map();
+      for (const r of month) {
+        if (ownBssids.has(lower(r.bssid))) continue;
+        const band = r.band || r.radio || null;
+        const ch = num(r.channel);
+        if (!band || !ch) continue;
+        const k = `${band}|${ch}`;
+        const h = hist.get(k) || { band, channel: ch, loud: new Set(), radios: 0, loudest: null, lastSeen: 0 };
+        h.radios += 1;
+        const sig = num(r.signal);
+        if (sig != null && sig >= -80) {
+          h.loud.add(r.essid || `hidden-${ch}-${lower(r.bssid)}`);
+          h.loudest = h.loudest == null ? sig : Math.max(h.loudest, sig);
+        }
+        h.lastSeen = Math.max(h.lastSeen, num(r.last_seen) ? num(r.last_seen) * 1000 : 0);
+        hist.set(k, h);
+      }
+      const history = [...hist.values()].map((h) => ({ band: h.band, channel: h.channel, radios: h.radios, loud: h.loud.size, loudest: h.loudest, lastSeen: h.lastSeen || null }));
+      db.setSetting("nearby_networks", JSON.stringify({ at: now, rows: keep, history }));
       // The networks (VLANs) by subnet, to name the network a device was on (UU-C-248).
       const nets = await unifi.getNetworks().catch(() => null);
       if (nets) db.setSetting("networks", JSON.stringify(nets.filter((n) => n.ip_subnet && n.purpose !== "wan").map((n) => ({ name: n.name, vlan: num(n.vlan) || 1, subnet: n.ip_subnet }))));

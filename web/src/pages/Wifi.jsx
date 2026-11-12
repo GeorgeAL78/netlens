@@ -93,8 +93,9 @@ function Channels({ band }) {
             <tr>
               <th className="num">Channel</th>
               <th className="num" title="How busy the channel was in UniFi's RF scans (last 30 days, every access point): covers every channel">Busy in scans</th>
+              <th className="num" title="The strongest signal UniFi's RF scans measured on the channel (dBm, the loudest of your access points, averaged over 30 days). Covers every channel, but does not say what it is.">Loudest in scan</th>
               <th className="num" title="Networks above -80 dBm your access points heard there: UniFi lists only the channels they use">Loud networks</th>
-              <th className="num">Loudest</th>
+              <th className="num" title="The loudest network UniFi named on the channel">Loudest named</th>
               <th>Yours</th>
             </tr>
           </thead>
@@ -103,7 +104,8 @@ function Channels({ band }) {
               <tr key={r.channel} className={`${r.ours.length ? "wifi-mine" : ""} ${r.clean === false ? "wifi-between" : ""}`}>
                 <td className="num mono">{band.band === "2.4" ? r.channel : `${r.channel}${band.width > 20 ? `–${r.channel + (band.width / 5 - 4)}` : ""}`}{isDfs(band.band, r.channel) ? <span className="dim small" title="Radar channels (DFS): an access point must leave them when it hears radar"> DFS</span> : null}</td>
                 <td className={`num mono ${r.busy == null ? "dim" : r.busy >= 50 ? "warn" : ""}`}>{r.busy == null ? "—" : `${r.busy}%`}</td>
-                <td className={`num mono ${r.ours.length ? "" : "dim"}`}>{r.networks == null ? <span className="small" title="UniFi gives no list of networks for this channel: it names only what your access points hear on the channels they use. How full the channel is shows under Busy in scans.">not reported</span> : r.networks}</td>
+                <td className={`num mono ${r.scanLoudest == null || r.scanLoudest <= -90 ? "dim" : ""}`}>{r.scanLoudest != null ? `${r.scanLoudest} dBm` : "—"}</td>
+                <td className={`num mono ${r.ours.length ? "" : "dim"}`}>{r.networks != null ? r.networks : r.earlier ? <span title={`Heard when one of your access points last used this channel (UniFi keeps about 30 days): ${r.earlier.radios} radios, the loudest ${r.earlier.loudest ?? "below -80"} dBm`}>{r.earlier.loud} <span className="small dim">· {ago(r.earlier.lastSeen)}</span></span> : <span className="small" title="UniFi names networks only on the channels your access points use, and none of them used this one in the last 30 days. How full it is shows under Busy in scans and Loudest in scan.">not reported</span>}</td>
                 <td className={`num mono ${sigClass(r.loudest)}`}>{r.loudest != null ? `${r.loudest} dBm` : "—"}</td>
                 <td className="small">{r.ours.join(", ") || <span className="dim">—</span>}</td>
               </tr>
@@ -261,7 +263,7 @@ function Nearby({ n }) {
       {n.channels.length > 0 && (
         <>
           <h3>Channels around you</h3>
-          <p className="small muted" style={{ margin: 0 }}>How busy each channel is, from UniFi's RF scans of every channel, and the loud networks your access points heard. UniFi reports what your access points heard, mostly on the channels they use; where UniFi names no network at all a channel reads "not reported" (its scan still measured how busy it is), not 0. Channel suggestions are on Access points.</p>
+          <p className="small muted" style={{ margin: 0 }}>How busy each channel is and the strongest signal on it, from UniFi's RF scans of every channel, and the loud networks your access points heard by name. UniFi reports what your access points heard, mostly on the channels they use; a channel none of them used lately shows what was heard when one last did (UniFi keeps about 30 days), else "not reported". Channel suggestions are on Access points.</p>
           <div className="wifi-channel-grid">{n.channels.map((b) => <Channels key={b.band} band={b} />)}</div>
           {n.six && (
             <p className="small muted" style={{ margin: 0 }}>

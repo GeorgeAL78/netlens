@@ -396,7 +396,7 @@ table.t tr.click:hover td { background: #141b26; }
 .wifi-ap-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 .wifi-ap-day { display: inline-flex; gap: 12px; flex-wrap: wrap; margin-left: auto; }
 .wifi-channel-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-@media (max-width: 900px) { .wifi-channel-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1250px) { .wifi-channel-grid { grid-template-columns: minmax(0, 1fr); } }
 .wifi-channels { min-width: 0; }
 table.t tr.wifi-mine td { background: #131c28; }
 .wifi-all summary { cursor: pointer; color: var(--muted); font-weight: 500; }
