@@ -318,10 +318,12 @@ function PortStrip({ node, onPort }) {
       {node.ports.map((p) => {
         const on = onPort.get(p.idx);
         const what = on ? [...on.kids.map((k) => k.name), ...on.clients.map((c) => c.name)] : [];
-        const isUp = node.uplink?.port === p.idx && !isGw(node);
+        // This device's own uplink port (UniFi's is_uplink, or the uplink's local port), not
+        // node.uplink.port, which is the port at the other end, on the parent (UU-C-266).
+        const isUp = !isGw(node) && (p.uplink || (node.uplink?.localPort != null && node.uplink.localPort === p.idx));
         const cls = !p.up ? "down" : p.speed && p.speed <= 100 && !p.usualSpeed ? "slow" : "up";
         return (
-          <span key={p.idx} role="listitem" className={`port-tile ${cls} ${on?.kids.length ? "link" : ""}`} title={`Port ${p.idx}${p.name && p.name !== `Port ${p.idx}` ? ` (${p.name})` : ""} · ${p.up ? speed(p.speed) : "down"}${isUp ? " · uplink" : ""}${what.length ? ` · ${what.join(", ")}` : ""}`}>
+          <span key={p.idx} role="listitem" className={`port-tile ${cls} ${on?.kids.length ? "link" : ""}`} title={`Port ${p.idx}${p.name && p.name !== `Port ${p.idx}` ? ` (${p.name})` : ""} · ${p.up ? speed(p.speed) : "down"}${isUp ? ` · uplink${node.uplink?.device ? ` to ${node.uplink.device}` : ""}` : ""}${what.length ? ` · ${what.join(", ")}` : ""}`}>
             {p.idx}
             {isUp && <i aria-hidden="true">↑</i>}
           </span>

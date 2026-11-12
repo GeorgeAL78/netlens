@@ -99,7 +99,7 @@ function deviceRow(d, ts) {
         uplink: p.is_uplink === true || undefined,
       })),
       uplink: d.uplink
-        ? { speed: num(d.uplink.speed), device: d.uplink.uplink_device_name || null, port: num(d.uplink.uplink_remote_port), wireless: d.uplink.type === "wireless" }
+        ? { speed: num(d.uplink.speed), device: d.uplink.uplink_device_name || null, port: num(d.uplink.uplink_remote_port), localPort: d.uplink.port_idx != null ? num(d.uplink.port_idx) : undefined, wireless: d.uplink.type === "wireless" }
         : null,
       firmware: d.version || null,
       upgradable: Boolean(d.upgradable),

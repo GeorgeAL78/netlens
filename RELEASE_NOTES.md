@@ -1,2 +1,2 @@
 ### Fixed
-- On the Live page, a switch's uplink port says so ("uplink to Cloud Gateway Fiber") and reads ↓ coming in, ↑ going out; a server's port is named after the server, not one of its containers.
+- The Network map marked the wrong port as a switch's uplink: it used the port number at the other end (the gateway's port 4) instead of the switch's own uplink port (5). The ↑ now sits on the right port, and its tooltip names what it connects to.
