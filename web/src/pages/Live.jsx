@@ -106,7 +106,7 @@ export default function Live() {
         <section className="card">
           <div className="card-head">
             <h2>Ports</h2>
-            <span className="hint">↓ to the device on it, ↑ from it; the internet port from your side</span>
+            <span className="hint">↓ to the device on it, ↑ from it; the internet port and uplinks: ↓ coming in, ↑ going out</span>
           </div>
           {[...groups.values()].map((g) => (
             <div key={g.mac}>

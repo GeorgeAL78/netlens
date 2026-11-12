@@ -8,6 +8,7 @@
 // read is three small requests (stat/health, stat/sta, stat/device; ~50 ms each there).
 import * as unifi from "./unifi.js";
 import * as db from "./db.js";
+import { guestKind, overrides } from "./guests.js";
 
 const TICK_MS = 2500;
 const KEEP_MS = 15 * 60 * 1000;
@@ -40,7 +41,7 @@ function demoFrame(ts) {
   ];
   const ports = [
     { device: "Gateway", mac: "demo-gw", ports: [{ idx: 1, on: "Living room TV", speed: 100, toDevice: devices[2].down, fromDevice: devices[2].up }, { idx: 4, on: "internet", wan: true, speed: 1000, toDevice: up, fromDevice: down }] },
-    { device: "Office switch", mac: "demo-sw", ports: [{ idx: 2, on: "Media server", speed: 2500, toDevice: devices[0].down, fromDevice: devices[0].up }, { idx: 3, on: "Office PC", speed: 2500, toDevice: 1e5, fromDevice: 5e4 }] },
+    { device: "Office switch", mac: "demo-sw", ports: [{ idx: 1, on: "uplink to Gateway", uplink: true, speed: 2500, toDevice: devices[0].up + 5e4, fromDevice: devices[0].down + 1e5 }, { idx: 2, on: "Media server", speed: 2500, toDevice: devices[0].down, fromDevice: devices[0].up }, { idx: 3, on: "Office PC", speed: 2500, toDevice: 1e5, fromDevice: 5e4 }] },
   ];
   return { ts, down, up, devices, ports, demo: true };
 }
@@ -63,10 +64,21 @@ async function readFrame(ts) {
     .sort((a, b) => b.down + b.up - (a.down + a.up))
     .slice(0, 12);
   // What is on each port: equipment linked there, else the wired devices UniFi lists on it.
-  const onPort = new Map();
+  // A server's containers and VMs share its port (each with its own MAC), so the port is named
+  // after the one physical device, as on the Network map (UU-C-264); "+N" when there are more.
+  const own = overrides();
+  const byPort = new Map();
   for (const c of stations) if (c.is_wired && c.sw_mac && c.sw_port != null) {
     const k = `${lower(c.sw_mac)}|${c.sw_port}`;
-    if (!onPort.has(k)) onPort.set(k, nameOf(c));
+    if (!byPort.has(k)) byPort.set(k, []);
+    byPort.get(k).push(c);
+  }
+  const onPort = new Map();
+  for (const [k, list] of byPort) {
+    const virtual = (c) => (own[lower(c.mac)] && own[lower(c.mac)] !== "none") || (own[lower(c.mac)] !== "none" && guestKind(lower(c.mac), c.oui, true));
+    const physical = list.filter((c) => !virtual(c));
+    const pick = physical.length ? physical : list;
+    onPort.set(k, pick.length > 1 ? `${nameOf(pick[0])} +${pick.length - 1}` : nameOf(pick[0]));
   }
   for (const d of devices) if (d.uplink?.uplink_mac && d.uplink.uplink_remote_port != null) onPort.set(`${lower(d.uplink.uplink_mac)}|${d.uplink.uplink_remote_port}`, d.name || d.model);
   const ports = devices
@@ -74,10 +86,16 @@ async function readFrame(ts) {
     .map((d) => ({
       device: d.name || d.model,
       mac: lower(d.mac),
-      // rx = into the port from the device on it, tx = out of the port to it.
+      // rx = into the port from the device on it, tx = out of the port to it. The uplink (this
+      // device's own link toward the gateway) is named after the device at its other end.
       ports: d.port_table
         .filter((p) => p.up)
-        .map((p) => ({ idx: n(p.port_idx), on: /^wan/i.test(p.network_name || "") ? "internet" : onPort.get(`${lower(d.mac)}|${p.port_idx}`) || null, wan: /^wan/i.test(p.network_name || "") || undefined, speed: n(p.speed) || null, toDevice: n(p["tx_bytes-r"]) * 8, fromDevice: n(p["rx_bytes-r"]) * 8 })),
+        .map((p) => {
+          const wan = /^wan/i.test(p.network_name || "");
+          const uplink = !wan && (Boolean(p.is_uplink) || (d.uplink?.port_idx != null && n(d.uplink.port_idx) === n(p.port_idx)));
+          const up = uplink ? `uplink to ${names.get(lower(d.uplink?.uplink_mac)) || "the network"}` : null;
+          return { idx: n(p.port_idx), on: wan ? "internet" : up || onPort.get(`${lower(d.mac)}|${p.port_idx}`) || null, wan: wan || undefined, uplink: uplink || undefined, speed: n(p.speed) || null, toDevice: n(p["tx_bytes-r"]) * 8, fromDevice: n(p["rx_bytes-r"]) * 8 };
+        }),
     }));
   return { ts, down: n(wan["rx_bytes-r"]) * 8, up: n(wan["tx_bytes-r"]) * 8, devices: devs, ports };
 }
@@ -95,7 +113,7 @@ function remember(frame) {
     for (const p of g.ports) {
       const k = `${g.mac}|${p.idx}`;
       const e = portSeries.get(k) || { pts: [] };
-      Object.assign(e, { device: g.device, mac: g.mac, idx: p.idx, on: p.on, speed: p.speed, wan: Boolean(p.wan) });
+      Object.assign(e, { device: g.device, mac: g.mac, idx: p.idx, on: p.on, speed: p.speed, wan: Boolean(p.wan), uplink: Boolean(p.uplink) });
       e.pts.push([ts, r(p.toDevice), r(p.fromDevice)]);
       portSeries.set(k, e);
     }

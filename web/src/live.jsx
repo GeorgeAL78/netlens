@@ -38,7 +38,7 @@ export function useLive() {
             for (const p of g.ports) {
               const k = `${g.mac}|${p.idx}`;
               const prev = ports[k];
-              ports[k] = { device: g.device, mac: g.mac, idx: p.idx, on: p.on, speed: p.speed, wan: Boolean(p.wan), pts: trim([...(prev?.pts || []), [now, p.toDevice, p.fromDevice]], now) };
+              ports[k] = { device: g.device, mac: g.mac, idx: p.idx, on: p.on, speed: p.speed, wan: Boolean(p.wan), uplink: Boolean(p.uplink), pts: trim([...(prev?.pts || []), [now, p.toDevice, p.fromDevice]], now) };
             }
           }
           for (const m of [devices, ports]) for (const k of Object.keys(m)) if (!m[k].pts.length) delete m[k];
@@ -62,8 +62,9 @@ export function useLive() {
   return state;
 }
 
-// A port's reading from your side: the internet port ↓ download (from the ISP), ↑ upload.
-export const portDir = (p, to, from) => (p.wan ? { down: from, up: to } : { down: to, up: from });
+// A port's reading from your side: the internet port ↓ download (from the ISP), ↑ upload; an
+// uplink likewise ↓ coming in from the gateway's side, ↑ going out toward it (UU-C-264).
+export const portDir = (p, to, from) => (p.wan || p.uplink ? { down: from, up: to } : { down: to, up: from });
 
 // The main graph: the last `windowMs` (default an hour). NetLens's 5-minute records fill the
 // part before the live readings (dimmer); `overlay` is one device's or port's live line.
