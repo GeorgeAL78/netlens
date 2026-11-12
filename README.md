@@ -58,7 +58,7 @@ which UniFi itself deletes after a day or a week.
   suggestions from UniFi's nightly RF scans of every channel, which NetLens keeps over time. A
   Devices tab: every Wi-Fi device's signal, band, roams and failed joins, and devices stuck on
   2.4 GHz that have used 5 or 6 GHz.
-- **Network › Internet** — availability and every outage, latency to UniFi's test targets, the
+- **Network › Internet** — a live graph of the line (updated every few seconds while the page is open, with the busiest devices and every port live), availability and every outage, latency to UniFi's test targets, the
   busiest download and upload against your line's speed (each 5 minutes' peak on Network 11),
   public-address history and UniFi's last speed test.
 - **Links near their limit** — Overview says when a device's busiest 5 minutes used 80% or more

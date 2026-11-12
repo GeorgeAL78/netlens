@@ -26,6 +26,7 @@ import * as siem from "./siem.js";
 import * as health from "./health.js";
 import * as insights from "./insights.js";
 import * as airview from "./airview.js";
+import * as live from "./live.js";
 import {
   namesMatchApp,
   appMatchesFlow,
@@ -1345,6 +1346,11 @@ app.get("/api/wifi/summary", (req, res) => {
   } catch (err) {
     sendError(res, "GET /api/wifi/summary", err);
   }
+});
+// Live traffic (UU-C-256): an event stream, read from UniFi every few seconds only while open.
+app.get("/api/live", (req, res) => {
+  if (VIEW_WORKER) return res.status(404).end();
+  live.stream(req, res);
 });
 app.get("/api/internet", (req, res) => {
   try {

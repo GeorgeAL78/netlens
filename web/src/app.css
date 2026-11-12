@@ -421,3 +421,11 @@ table.t td.num + td:not(.num), table.t th.num + th:not(.num) { padding-left: 20p
 
 /* The panel's tables keep every column in view (UU-C-247): a little tighter than page tables. */
 .panel table.t td, .panel table.t th { padding-left: 5px; padding-right: 5px; }
+
+/* Live traffic (UU-C-256) */
+.live-chart svg { width: 100%; height: 150px; display: block; }
+.live-grid { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.live-down { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.live-down-area { fill: var(--accent); opacity: 0.12; }
+.live-up { fill: none; stroke: var(--ok); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.live-axis { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
