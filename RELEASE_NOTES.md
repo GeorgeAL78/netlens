@@ -1,2 +1,2 @@
-### Fixed
-- The Network map marked the wrong port as a switch's uplink: it used the port number at the other end (the gateway's port 4) instead of the switch's own uplink port (5). The ↑ now sits on the right port, and its tooltip names what it connects to.
+### Changed
+- Wi-Fi shows every 2.4 GHz channel, not only 1, 6 and 11: how busy each was in UniFi's scans (Access points) and the loud networks on each (Nearby). Channels 2–5 and 7–10 are dimmed and marked as overlapping their neighbours; only 1, 6 and 11 are ever suggested.

@@ -86,7 +86,7 @@ const isDfs = (band, ch) => band === "5" && ch >= 52 && ch <= 144;
 function Channels({ band }) {
   return (
     <div className="wifi-channels">
-      <h3>{BAND_LABEL[band.band]} {band.band !== "2.4" ? <span className="dim small">· {band.width} MHz blocks</span> : null}</h3>
+      <h3>{BAND_LABEL[band.band]} {band.band !== "2.4" ? <span className="dim small">· {band.width} MHz blocks</span> : <span className="dim small">· networks on each channel; only 1, 6 and 11 don't overlap</span>}</h3>
       <div className="scroll-x">
         <table className="t">
           <thead>
@@ -99,7 +99,7 @@ function Channels({ band }) {
           </thead>
           <tbody>
             {band.rows.map((r) => (
-              <tr key={r.channel} className={r.ours.length ? "wifi-mine" : ""}>
+              <tr key={r.channel} className={`${r.ours.length ? "wifi-mine" : ""} ${r.clean === false ? "wifi-between" : ""}`}>
                 <td className="num mono">{band.band === "2.4" ? r.channel : `${r.channel}${band.width > 20 ? `–${r.channel + (band.width / 5 - 4)}` : ""}`}{isDfs(band.band, r.channel) ? <span className="dim small" title="Radar channels (DFS): an access point must leave them when it hears radar"> DFS</span> : null}</td>
                 <td className={`num mono ${r.ours.length ? "" : "dim"}`}>{r.networks}</td>
                 <td className={`num mono ${sigClass(r.loudest)}`}>{r.loudest != null ? `${r.loudest} dBm` : "—"}</td>
@@ -174,10 +174,10 @@ function ChannelAdvice({ advice }) {
                     <thead><tr><th className="num">Channel</th><th className="num">Busy in scans</th><th>Note</th></tr></thead>
                     <tbody>
                       {a.options.map((o) => (
-                        <tr key={o.channel} className={o.current ? "wifi-mine" : ""}>
+                        <tr key={o.channel} className={`${o.current ? "wifi-mine" : ""} ${o.clean === false ? "wifi-between" : ""}`}>
                           <td className="num mono">{o.channel}{o.width > 20 ? <span className="dim small"> · {o.width} MHz</span> : null}</td>
                           <td className={`num mono ${busyClass(o.util)}`}>{pct(o.util)}</td>
-                          <td className="small dim">{[o.current ? "this radio" : null, o.usedBy.length ? `used by ${o.usedBy.join(", ")}` : null, o.dfs ? "radar (DFS)" : null].filter(Boolean).join(" · ") || "—"}</td>
+                          <td className="small dim">{[o.current ? "this radio" : null, o.usedBy.length ? `used by ${o.usedBy.join(", ")}` : null, o.dfs ? "radar (DFS)" : null, o.clean === false && !o.current ? "overlaps its neighbours" : null].filter(Boolean).join(" · ") || "—"}</td>
                         </tr>
                       ))}
                     </tbody>

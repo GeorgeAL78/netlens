@@ -457,3 +457,6 @@ table.t tr.live-sel td { background: #1a2433; }
 .live-x { position: relative; height: 18px; margin-top: 2px; }
 .live-x span { position: absolute; transform: translateX(-50%); font-size: 11px; color: var(--dim); font-family: var(--mono); white-space: nowrap; }
 .live-axis { justify-content: center; }
+
+/* 2.4 GHz channels between 1, 6 and 11 (UU-C-268) */
+.wifi-between td:first-child { opacity: 0.6; }

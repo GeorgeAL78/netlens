@@ -16,6 +16,9 @@ const maxOf = (xs) => {
 const overlaps = (a, b) => Boolean(a && b && a[0] <= b[1] && b[0] <= a[1]);
 const BAND_OF = { ng: "2.4", na: "5", "6e": "6", "11be": "6" };
 
+// 2.4 GHz channels that do not overlap one another (20 MHz wide, 5 MHz apart).
+const CLEAN24 = [1, 6, 11];
+
 // ---- Wi-Fi ---------------------------------------------------------------------------------
 // Each access point's radios over the period: channel, width, power, how busy the channel was
 // and how much of that was other networks. Then the devices (signal, band, roams, failed joins),
@@ -139,19 +142,25 @@ export function nearbySummary(aps) {
   const all = [...groups.values()].map(shape).sort(bySignal);
   const competing = [...sharing.values()].map(shape).sort(bySignal);
 
-  // Strong neighbours per channel (2.4 GHz: 1, 6, 11) and per block of our 5 GHz width.
+  // Strong neighbours per channel (2.4 GHz: every channel, counting the networks ON it; the
+  // non-overlapping 1, 6 and 11 are marked, UU-C-268) and per block of our 5 GHz width.
   const strong = stored.rows.filter((r) => r.signal != null && r.signal >= STRONG && BAND_OF[r.band]);
   const count = (band, radio, ch, width) => {
     const span = channelSpan(radio, ch, width);
     const hit = strong.filter((r) => BAND_OF[r.band] === band && overlaps(span, channelSpan(r.band, r.channel, r.width)));
     return { channel: ch, width, networks: new Set(hit.map((r) => r.essid || `hidden-${r.channel}`)).size, loudest: maxOf(hit.map((r) => r.signal)), ours: ours.filter((o) => o.band === band && overlaps(span, o.span)).map((o) => o.ap) };
   };
+  const on24 = (ch) => {
+    const hit = strong.filter((r) => BAND_OF[r.band] === "2.4" && Number(r.channel) === ch);
+    return { channel: ch, width: 20, clean: CLEAN24.includes(ch), networks: new Set(hit.map((r) => r.essid || `hidden-${r.channel}`)).size, loudest: maxOf(hit.map((r) => r.signal)), ours: ours.filter((o) => o.band === "2.4" && o.channel === ch).map((o) => o.ap) };
+  };
+  const last24 = Math.max(11, ...strong.filter((r) => BAND_OF[r.band] === "2.4").map((r) => Number(r.channel) || 0).filter((c) => c <= 14));
   const width5 = maxOf(ours.filter((o) => o.band === "5").map((o) => o.width)) || 80;
   // The first channel of each block of our width (80 MHz: 36, 52, 100, 116, 132, 149).
   const CH5 = [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165];
   const blocks5 = CH5.filter((c) => channelSpan("na", c, width5)?.[0] === c && (width5 <= 20 || c !== 165) && (width5 < 160 || c !== 149));
   const channels = [
-    ...(ours.some((o) => o.band === "2.4") ? [{ band: "2.4", width: 20, rows: [1, 6, 11].map((c) => count("2.4", "ng", c, 20)) }] : []),
+    ...(ours.some((o) => o.band === "2.4") ? [{ band: "2.4", width: 20, rows: Array.from({ length: last24 }, (_, i) => on24(i + 1)) }] : []),
     ...(ours.some((o) => o.band === "5") ? [{ band: "5", width: width5, rows: [...new Set(blocks5)].map((c) => count("5", "na", c, width5)) }] : []),
   ];
   return {
@@ -201,16 +210,20 @@ export function channelAdvice(aps, now) {
       const spanOf = (c) => channelSpan(r.radio, c.channel, c.width);
       const mine = channelSpan(r.radio, r.channel, r.width);
       // Channels another of our access points uses in this band.
-      const taken = aps.filter((o) => o.mac !== a.mac).flatMap((o) => o.radios.filter((x) => BAND_OF[x.radio] === band && x.channel).map((x) => ({ ap: o.name, span: channelSpan(x.radio, x.channel, x.width) })));
+      const taken = aps.filter((o) => o.mac !== a.mac).flatMap((o) => o.radios.filter((x) => BAND_OF[x.radio] === band && x.channel).map((x) => ({ ap: o.name, channel: x.channel, span: channelSpan(x.radio, x.channel, x.width) })));
+      // 2.4 GHz: every scanned channel is shown, but only 1, 6 and 11 (which do not overlap one
+      // another) are ever suggested; there "this radio" and "used by" mean that exact channel
+      // (UU-C-268).
+      const is24 = band === "2.4";
       const options = [...byCh.values()]
-        .filter((c) => (band === "2.4" ? [1, 6, 11].includes(c.channel) : true))
         .map((c) => {
-          const usedBy = taken.filter((t) => overlaps(spanOf(c), t.span)).map((t) => t.ap);
-          return { channel: c.channel, width: c.width, util: avg(c.utils), dfs: band === "5" && isDfs5(c.channel), usedBy, current: overlaps(spanOf(c), mine) };
+          const blockedBy = taken.filter((t) => overlaps(spanOf(c), t.span)).map((t) => t.ap);
+          const usedBy = is24 ? taken.filter((t) => t.channel === c.channel).map((t) => t.ap) : blockedBy;
+          return { channel: c.channel, width: c.width, util: avg(c.utils), dfs: band === "5" && isDfs5(c.channel), usedBy, blockedBy, clean: is24 ? CLEAN24.includes(c.channel) : undefined, current: is24 ? c.channel === r.channel : overlaps(spanOf(c), mine) };
         })
         .sort((x, y) => x.channel - y.channel);
       const current = options.find((o) => o.current) || null;
-      const pickable = options.filter((o) => !o.current && !o.dfs && !o.usedBy.length && o.util != null && !claimed.some((c) => c.band === band && overlaps(c.span, channelSpan(r.radio, o.channel, o.width))));
+      const pickable = options.filter((o) => !o.current && !o.dfs && !o.blockedBy.length && o.clean !== false && o.util != null && !claimed.some((c) => c.band === band && overlaps(c.span, channelSpan(r.radio, o.channel, o.width))));
       const best = pickable.sort((x, y) => x.util - y.util)[0] || null;
       const suggest = current?.util != null && best && current.util - best.util >= ADVISE_POINTS ? { channel: best.channel, util: best.util } : null;
       if (suggest) claimed.push({ band, span: channelSpan(r.radio, best.channel, best.width) });
