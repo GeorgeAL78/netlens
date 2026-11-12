@@ -271,7 +271,7 @@ for (const { hq, label, dayBar } of hourChecks) {
     const t = await get(`/api/threats?period=7d`);
     const seen = new Map();
     for (const x of t.incidents || []) if (x.kind === "rule" && x.rule) seen.set(x.rule, (seen.get(x.rule) || 0) + x.n);
-    for (const r of f.rules) if (r.enabled && r.action !== "allow" && (r.blocks?.connections || 0) !== (seen.get(r.name) || 0)) failures.push(`firewall: "${r.name}" shows ${r.blocks?.connections || 0} blocks, Protection ${seen.get(r.name) || 0}`);
+    for (const r of f.rules) if (r.action !== "allow" && (r.blocks?.connections || 0) !== (seen.get(r.name) || 0)) failures.push(`firewall: "${r.name}" shows ${r.blocks?.connections || 0} blocks, Protection ${seen.get(r.name) || 0}`);
   } else failures.push("firewall: no rules in the demo");
 }
 

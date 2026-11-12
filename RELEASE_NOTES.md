@@ -1,2 +1,5 @@
 ### Added
-- Protection › Firewall rules: UniFi's firewall rules in plain words, in the order UniFi checks them ("Block the Kids network → the apps YouTube, FaceTime", with schedules, ports and well-known DNS services by name), how often each blocked something in the last 7 days (a click opens those blocks), what the zones do when no rule matches, UniFi's built-in rules explained, and the rest of UniFi's Policy Engine on the same page: Objects, speed rules (QoS), content filters (ads, family filter, safe search), your local DNS records (with the device each address belongs to), and port forwards, traffic routes, older traffic rules, NAT and switch ACLs ("none" when there are none). Read hourly from UniFi Network 9 or later; NetLens never changes them. Also for scripts and assistants as `get_firewall_rules`.
+- Firewall rules: Recent changes, the rules, filters, speed rules, Objects, DNS records and port forwards added, removed, turned on or off or renamed in the last 30 days, as NetLens notices them on its hourly read.
+
+### Fixed
+- Firewall rules: a rule that is off now still shows what it blocked in the last 7 days while it was on (it read only "off"), and content filters show what they blocked too.

@@ -65,8 +65,52 @@ export async function refreshFirewall() {
     acl: more.acl && more.acl.map((a) => ({ id: a.id || a._id, name: a.name || "", enabled: a.enabled !== false, action: a.action || "" })),
     filters: Array.isArray(filters) ? filters.map((f) => ({ id: f._id, name: f.name || "", enabled: f.enabled !== false, categories: f.categories || [], networks: f.network_ids || [], macs: f.client_macs || [], allow: f.allow_list || [], block: f.block_list || [], safeSearch: f.safe_search || [], schedule: f.schedule || { mode: "ALWAYS" } })) : null,
   };
+  recordChanges(keep);
   db.setSetting("firewall", JSON.stringify(keep));
   return keep;
+}
+
+// What changed since the last read (UU-C-272): a rule, filter, speed rule, Object, DNS record or
+// port forward added, removed, turned on or off, or renamed. Kept 90 days in setting
+// `firewall_changes`, so the page can say when a rule was switched. Times are when NetLens
+// noticed (it reads hourly), not when it was clicked.
+const CHANGE_KEEP_MS = 90 * 24 * 3600e3;
+const TRACKED = { policies: "Firewall rule", filters: "Content filter", qos: "Speed rule", objects: "Object", dns: "DNS record", portForwards: "Port forward", routes: "Traffic route", trafficRules: "Traffic rule" };
+function recordChanges(next) {
+  let prev = null;
+  try {
+    prev = JSON.parse(db.getSetting("firewall", "null"));
+  } catch {
+    prev = null;
+  }
+  if (!prev) return;
+  let log = [];
+  try {
+    log = JSON.parse(db.getSetting("firewall_changes", "[]")) || [];
+  } catch {
+    log = [];
+  }
+  const at = next.at;
+  const label = (x) => x.name || (x.type ? `${x.name}` : "") || "unnamed";
+  for (const [key, kind] of Object.entries(TRACKED)) {
+    // A list UniFi did not answer this time is not "everything removed".
+    if (!Array.isArray(prev[key]) || !Array.isArray(next[key])) continue;
+    const before = new Map(prev[key].map((x) => [x.id, x]));
+    const after = new Map(next[key].map((x) => [x.id, x]));
+    for (const [id, x] of after) {
+      const o = before.get(id);
+      if (x.predefined && !o) continue;
+      if (!o) log.push({ at, kind, name: label(x), what: "added", enabled: x.enabled });
+      else {
+        if (o.enabled !== x.enabled) log.push({ at, kind, name: label(x), what: x.enabled ? "turned on" : "turned off" });
+        if ((o.name || "") !== (x.name || "")) log.push({ at, kind, name: label(x), what: `renamed from "${o.name}"` });
+        if (key === "dns" && o.value !== x.value) log.push({ at, kind, name: label(x), what: `now points to ${x.value}` });
+      }
+    }
+    for (const [id, o] of before) if (!after.has(id) && !o.predefined) log.push({ at, kind, name: label(o), what: "removed" });
+  }
+  log = log.filter((c) => c.at >= at - CHANGE_KEEP_MS).slice(-500);
+  db.setSetting("firewall_changes", JSON.stringify(log));
 }
 
 // An Object's "{ enabled, values }" list, or nothing.
@@ -260,6 +304,8 @@ export function firewallSummary({ blocks = new Map(), now = Date.now() } = {}) {
         block: f.block,
         safeSearch: Array.isArray(f.safeSearch) ? f.safeSearch.map((x) => String(x).toLowerCase().replace(/^./, (c) => c.toUpperCase())) : f.safeSearch ? ["on"] : [],
         schedule: scheduleText(f.schedule),
+        // What it stopped in the last 7 days: Protection names a filter's blocks after it.
+        stopped: blocks.get(f.name) ? { connections: blocks.get(f.name).connections, incidents: blocks.get(f.name).incidents, devices: blocks.get(f.name).devices } : null,
       }))
     : null;
   // Speed rules, Objects and the rest of the Policy Engine, in words.
@@ -323,8 +369,15 @@ export function firewallSummary({ blocks = new Map(), now = Date.now() } = {}) {
   const objectNames = new Set((fw.objects || []).map((o) => o.name));
   for (const r of builtin) if (objectNames.has(r.name)) r.fromObject = r.name;
   const fromObjects = builtin.filter((r) => r.fromObject);
+  let changes = [];
+  try {
+    changes = (JSON.parse(db.getSetting("firewall_changes", "[]")) || []).filter((c) => c.at >= now - 30 * 24 * 3600e3).reverse();
+  } catch {
+    changes = [];
+  }
   return {
     at: fw.at,
+    changes,
     dns,
     filters,
     qos,

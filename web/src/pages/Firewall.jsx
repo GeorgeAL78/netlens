@@ -27,16 +27,23 @@ function Sentence({ r }) {
   );
 }
 
-function Blocks({ r }) {
+// What a rule (or filter) blocked in the last 7 days. A rule that is off now still shows what
+// it blocked while it was on (UU-C-272).
+function Blocks({ r, b = r.blocks, enabled = r.enabled }) {
   if (r.action === "allow") return <span className="dim">—</span>;
-  if (!r.blocks) return <span className="dim">none seen</span>;
+  if (!b) return <span className="dim">{enabled ? "none seen" : "off"}</span>;
   return (
     <a href={href("security", null, { r: "7d", rule: r.name })} title="Open these blocks on Protection">
-      <span className="mono">{r.blocks.connections.toLocaleString()}</span> blocked
-      <div className="small dim">{r.blocks.devices} device{r.blocks.devices === 1 ? "" : "s"}, {r.blocks.incidents} time{r.blocks.incidents === 1 ? "" : "s"}</div>
+      <span className="mono">{b.connections.toLocaleString()}</span> blocked{enabled ? "" : " while on"}
+      <div className="small dim">{b.devices} device{b.devices === 1 ? "" : "s"}, {b.incidents} time{b.incidents === 1 ? "" : "s"}{enabled ? "" : " · off now"}</div>
     </a>
   );
 }
+
+const ago = (t) => {
+  const m = Math.round((Date.now() - t) / 60e3);
+  return m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+};
 
 export default function Firewall() {
   const { data: d, error, loading, reload } = useApi("/api/firewall", 5 * 60 * 1000);
@@ -88,13 +95,13 @@ export default function Firewall() {
                           <strong>{r.name || "Unnamed rule"}</strong>
                           <div className="small">{r.enabled ? <span className="ok">on</span> : <span className="dim">off</span>}{r.logging ? <span className="dim"> · logged</span> : null}</div>
                           {r.description && <div className="small dim">{r.description}</div>}
-                          {r.fromObject && <div className="small dim">made by UniFi from your Object "{r.fromObject}"</div>}
+                          {r.fromObject && !/object/i.test(r.description || "") && <div className="small dim">made by UniFi from your Object "{r.fromObject}"</div>}
                         </td>
                         <td>
                           <Action a={r.action} /> <Sentence r={r} />
                           <div className="small dim">{r.from.zone} → {r.to.zone}</div>
                         </td>
-                        <td>{r.enabled ? <Blocks r={r} /> : <span className="dim">off</span>}</td>
+                        <td><Blocks r={r} /></td>
                       </tr>
                     ))}
                   </tbody>
@@ -102,6 +109,25 @@ export default function Firewall() {
               </div>
             ) : (
               <p className="small dim" style={{ margin: 0 }}>You have no rules of your own: only UniFi's defaults below apply.</p>
+            )}
+          </section>
+
+          <section className="card">
+            <div className="card-head">
+              <h2>Recent changes</h2>
+              <span className="hint">What changed in the last 30 days, as NetLens saw it on its hourly read (so up to an hour after it was clicked).</span>
+            </div>
+            {d.changes?.length ? (
+              <ul className="fw-other">
+                {d.changes.slice(0, 30).map((c, i) => (
+                  <li key={i}>
+                    <span className="dim small">{shortDate(c.at)} ({ago(c.at)}) · </span>
+                    {c.kind} <strong>{c.name}</strong> {c.what}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="small dim" style={{ margin: 0 }}>No changes seen yet. NetLens notes them from the first read after this update on; earlier changes show only through the blocks they caused.</p>
             )}
           </section>
 
@@ -202,6 +228,7 @@ export default function Firewall() {
                         <th>Blocks</th>
                         <th>For</th>
                         <th>Exceptions</th>
+                        <th>Last 7 days</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -218,6 +245,7 @@ export default function Firewall() {
                           </td>
                           <td className="small">{f.who.join(", ") || <span className="dim">everyone</span>}</td>
                           <td className="small dim">{f.allow.length ? `allowed anyway: ${f.allow.join(", ")}` : "—"}</td>
+                          <td><Blocks r={{ name: f.name, action: "block" }} b={f.stopped} enabled={f.enabled} /></td>
                         </tr>
                       ))}
                     </tbody>
