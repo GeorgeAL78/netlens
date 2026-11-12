@@ -249,8 +249,10 @@ export function channelAdvice(aps, now) {
       }
       const byCh = new Map();
       for (const s of rows) {
-        const c = byCh.get(s.channel) || { channel: s.channel, width: s.width, utils: [] };
+        const c = byCh.get(s.channel) || { channel: s.channel, width: s.width, utils: [], interfs: [] };
         c.utils.push(s.util);
+        // The strongest signal the scan measured there (dBm, UU-C-282).
+        if (s.interf != null && s.interf < 0) c.interfs.push(s.interf);
         byCh.set(s.channel, c);
       }
       const times = [...new Set(rows.map((s) => s.ts))].sort((x, y) => x - y);
@@ -266,15 +268,18 @@ export function channelAdvice(aps, now) {
         .map((c) => {
           const blockedBy = taken.filter((t) => overlaps(spanOf(c), t.span)).map((t) => t.ap);
           const usedBy = is24 ? taken.filter((t) => t.channel === c.channel).map((t) => t.ap) : blockedBy;
-          return { channel: c.channel, width: c.width, util: avg(c.utils), dfs: band === "5" && isDfs5(c.channel), usedBy, blockedBy, clean: is24 ? CLEAN24.includes(c.channel) : undefined, current: is24 ? c.channel === r.channel : overlaps(spanOf(c), mine) };
+          return { channel: c.channel, width: c.width, util: avg(c.utils), loud: c.interfs.length ? Math.round(avg(c.interfs)) : null, dfs: band === "5" && isDfs5(c.channel), usedBy, blockedBy, clean: is24 ? CLEAN24.includes(c.channel) : undefined, current: is24 ? c.channel === r.channel : overlaps(spanOf(c), mine) };
         })
         .sort((x, y) => x.channel - y.channel);
       const current = options.find((o) => o.current) || null;
-      const pickable = options.filter((o) => !o.current && !o.dfs && !o.blockedBy.length && o.clean !== false && o.util != null && !claimed.some((c) => c.band === band && overlaps(c.span, channelSpan(r.radio, o.channel, o.width))));
+      const pickable = options.filter((o) => !o.current && !o.dfs && !o.blockedBy.length && o.clean !== false && o.util != null && !claimed.some((c) => c.band === band && overlaps(c.span, channelSpan(r.radio, o.channel, o.width))))
+        // Not somewhere clearly louder: a channel can be idle in the scan yet hold one strong
+        // neighbour (6 dB = four times the signal) (UU-C-282).
+        .filter((o) => !(o.loud != null && current?.loud != null && o.loud > current.loud + 6));
       const best = pickable.sort((x, y) => x.util - y.util)[0] || null;
       const suggest = current?.util != null && best && current.util - best.util >= ADVISE_POINTS ? { channel: best.channel, util: best.util } : null;
       if (suggest) claimed.push({ band, span: channelSpan(r.radio, best.channel, best.width) });
-      out.push({ ...base, scans: times.length, firstAt: times[0], lastAt: times[times.length - 1], current: current ? { channel: current.channel, util: current.util } : null, options, suggest });
+      out.push({ ...base, scans: times.length, firstAt: times[0], lastAt: times[times.length - 1], current: current ? { channel: current.channel, util: current.util, loud: current.loud } : null, options, suggest });
     }
   }
   return out;

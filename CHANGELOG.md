@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.32.6 — 2026-11-12
+
+### Changed
+- Channel suggestions also weigh how loud a channel is: never a channel whose strongest signal in UniFi's scans is more than 6 dB louder than yours, even if it looks idle. The channel list under the suggestions shows that loudness.
+
 ## 2.32.5 — 2026-11-12
 
 ### Added

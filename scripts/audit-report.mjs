@@ -245,7 +245,7 @@ for (const { hq, label, dayBar } of hourChecks) {
     for (const a of w.advice || []) {
       if (!a.suggest) continue;
       const to = a.options.find((o) => o.channel === a.suggest.channel);
-      if (!to || to.usedBy.length || to.dfs || to.current || to.clean === false || !(a.current && a.current.util - to.util >= 10)) failures.push(`${label}: ${a.ap} ${a.band} told to move to ${a.suggest.channel} without reason`);
+      if (!to || to.usedBy.length || to.dfs || to.current || to.clean === false || (to.loud != null && a.current?.loud != null && to.loud > a.current.loud + 6) || !(a.current && a.current.util - to.util >= 10)) failures.push(`${label}: ${a.ap} ${a.band} told to move to ${a.suggest.channel} without reason`);
     }
     const i = await get(`/api/internet?days=${days}`);
     stats.screens += 1;

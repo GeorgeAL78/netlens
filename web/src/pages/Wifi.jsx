@@ -175,12 +175,13 @@ function ChannelAdvice({ advice }) {
                 <div key={`${a.mac}|${a.radio}`} className="wifi-channels">
                   <h3>{a.ap} <span className="dim small">· {BAND_LABEL[a.band]}</span></h3>
                   <table className="t">
-                    <thead><tr><th className="num">Channel</th><th className="num">Busy in scans</th><th>Note</th></tr></thead>
+                    <thead><tr><th className="num">Channel</th><th className="num">Busy in scans</th><th className="num" title="The strongest signal the scans measured there. A channel more than 6 dB louder than yours is never suggested.">Loudest</th><th>Note</th></tr></thead>
                     <tbody>
                       {a.options.map((o) => (
                         <tr key={o.channel} className={`${o.current ? "wifi-mine" : ""} ${o.clean === false ? "wifi-between" : ""}`}>
                           <td className="num mono">{o.channel}{o.width > 20 ? <span className="dim small"> · {o.width} MHz</span> : null}</td>
                           <td className={`num mono ${busyClass(o.util)}`}>{pct(o.util)}</td>
+                          <td className={`num mono ${o.loud == null || o.loud <= -90 ? "dim" : ""}`}>{o.loud != null ? `${o.loud} dBm` : "—"}</td>
                           <td className="small dim">{[o.current ? "this radio" : null, o.usedBy.length ? `used by ${o.usedBy.join(", ")}` : null, o.dfs ? "radar (DFS)" : null, o.clean === false && !o.current ? "overlaps its neighbours" : null].filter(Boolean).join(" · ") || "—"}</td>
                         </tr>
                       ))}
