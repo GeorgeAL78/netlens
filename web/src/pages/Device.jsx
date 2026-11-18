@@ -55,6 +55,90 @@ function RunsOn({ mac }) {
   );
 }
 
+// Where traffic UniFi could not name went (UU-C-287), from the connection records: the owners
+// of the addresses. Named only when one owner has most of it (REVIEW rule 24).
+const topOwner = (u) => {
+  const t = u?.owners?.[0];
+  return t && t.owner && t.share >= 70 ? t.owner : null;
+};
+function UnnamedTo({ u }) {
+  const shown = u.owners.filter((o) => o.share >= 1).slice(0, 3);
+  return (
+    <span className="dim small" title="UniFi's counters cannot tell what this was; its connection records say where it went, by who owns the addresses">
+      Went to {shown.map((o, i) => <span key={i}>{i ? " · " : ""}{o.owner || "unknown addresses"} {o.share}%</span>)} (connection records)
+    </span>
+  );
+}
+
+// A Wi-Fi device's connects, roams and disconnects (UU-C-286): UniFi's log, plus moves NetLens's
+// 5-minute samples saw that the log did not. Newest first, by day.
+const HISTORY_DAYS = [[1, "24 hours"], [7, "7 days"], [30, "30 days"]];
+const dur = (ms) => (ms >= 86400e3 ? `${Math.floor(ms / 86400e3)}d ${Math.round((ms % 86400e3) / 3600e3)}h` : ms >= 3600e3 ? `${Math.floor(ms / 3600e3)}h ${Math.round((ms % 3600e3) / 60e3)}m` : `${Math.max(1, Math.round(ms / 60e3))}m`);
+const sig = (v) => (v == null ? "" : `${v} dBm`);
+function WifiHistory({ mac }) {
+  const [days, setDays] = useState(7);
+  const [only, setOnly] = useState("all");
+  const { data: h } = useApi(`/api/devices/${encodeURIComponent(mac)}/wifi-history?days=${days}`);
+  if (!h) return null;
+  const list = h.events.filter((e) => only === "all" || (only === "roams" ? e.kind === "roam" || e.kind === "band" : e.kind === "connect" || e.kind === "disconnect"));
+  const byDay = [];
+  for (const e of list) {
+    const k = new Date(e.ts).toDateString();
+    if (!byDay.length || byDay[byDay.length - 1].k !== k) byDay.push({ k, ts: e.ts, items: [] });
+    byDay[byDay.length - 1].items.push(e);
+  }
+  const where = (ap, band, ch, s) => [ap, band, ch ? `ch ${ch}` : null, sig(s)].filter(Boolean).join(" · ");
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Wi-Fi history</h2>
+        <span className="dim small">
+          {h.counts.roams} roam{h.counts.roams === 1 ? "" : "s"}{h.counts.bandChanges ? ` · ${h.counts.bandChanges} band change${h.counts.bandChanges === 1 ? "" : "s"}` : ""} · {h.counts.connects} connect{h.counts.connects === 1 ? "" : "s"} · {h.counts.disconnects} disconnect{h.counts.disconnects === 1 ? "" : "s"}
+        </span>
+        <div className="seg end" role="group" aria-label="Period">
+          {HISTORY_DAYS.map(([n, label]) => <button key={n} className={days === n ? "on" : ""} aria-pressed={days === n} onClick={() => setDays(n)}>{label}</button>)}
+        </div>
+      </div>
+      {h.where.length > 0 && (
+        <p className="small" style={{ margin: 0 }}>
+          <span className="dim">Time on each access point: </span>
+          {h.where.slice(0, 4).map((x, i) => <span key={i}>{i ? " · " : ""}{x.ap}{x.band ? <span className="dim"> {x.band}</span> : null} {x.share}%</span>)}
+        </p>
+      )}
+      <div className="seg" role="group" aria-label="Show" style={{ alignSelf: "flex-start" }}>
+        {[["all", "Everything"], ["roams", "Roams"], ["connects", "Connects"]].map(([id, label]) => <button key={id} className={only === id ? "on" : ""} aria-pressed={only === id} onClick={() => setOnly(id)}>{label}</button>)}
+      </div>
+      {!list.length && <span className="dim small">{only === "roams" ? "No roams: it stayed on one access point and band." : "Nothing recorded."}</span>}
+      {byDay.map((d) => (
+        <div key={d.k}>
+          <h3 className="small dim" style={{ margin: "6px 0 2px" }}>{shortDate(d.ts).replace(/,? \d{1,2}:\d{2}.*$/, "")}</h3>
+          <div className="rows">
+            {d.items.map((e, i) => (
+              <div key={i} className="row wh-row" style={{ gridTemplateColumns: "72px 110px minmax(0, 1fr)", cursor: "default" }}>
+                <span className="mono small dim">{clock(e.ts)}</span>
+                <span className={`small ${e.kind === "disconnect" ? "dim" : e.kind === "roam" || e.kind === "band" ? "" : "ok"}`}>
+                  {{ connect: "Connected", disconnect: "Disconnected", roam: "Roamed", band: "Changed band" }[e.kind]}
+                </span>
+                <span className="small">
+                  {e.kind === "roam" || e.kind === "band" ? (
+                    <>{where(e.from, e.fromBand, e.fromChannel, e.fromSignal)} <span className="dim">→</span> {where(e.ap, e.band, e.channel, e.signal)}</>
+                  ) : e.kind === "disconnect" ? (
+                    <>from {where(e.ap, e.band, null, e.signal)}{e.connectedMs ? <span className="dim"> · after {dur(e.connectedMs)}</span> : null}</>
+                  ) : (
+                    <>to {where(e.ap, e.band, e.channel, e.signal)}</>
+                  )}
+                  {e.source === "samples" ? <span className="dim" title="Not in UniFi's log: NetLens's 5-minute samples saw the move"> · seen in samples</span> : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+      {h.more > 0 && <span className="dim small">and {h.more} older</span>}
+    </div>
+  );
+}
+
 export default function Device({ route }) {
   const mac = String(route.arg || "").toLowerCase();
   const date = route.query.d || todayKey();
@@ -96,7 +180,8 @@ export default function Device({ route }) {
   const appsMax = Math.max(1, ...(r?.apps || []).map((a) => a.totalBytes));
   const items = useMemo(() => {
     const list = [];
-    for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.site ? `${s.site} (${s.app})` : s.app, detail: sessionDetail(s), v: bytes(s.bytes), n: s.bytes, down: s.down, up: s.up, kind: "session" });
+    const likely = topOwner(r?.unnamedTo);
+    for (const s of r?.sessions || []) list.push({ ts: s.start, at: `${clock(s.start)} – ${clock(s.end)}`, what: s.site ? `${s.site} (${s.app})` : s.app === "Unidentified" && likely ? `Unidentified · likely ${likely}` : s.app, detail: sessionDetail(s), v: bytes(s.bytes), n: s.bytes, down: s.down, up: s.up, kind: "session" });
     for (const e of r?.siem?.events || []) list.push({ ts: e.ts, at: clock(e.ts), what: e.name, detail: [e.via, e.duration, e.usageDown && `↓ ${e.usageDown}`].filter(Boolean).join(" · "), v: "", kind: "event" });
     for (const x of w?.roams || []) if (!list.some((i) => i.kind === "event" && Math.abs(i.ts - x.ts) < 2000)) list.push({ ts: x.ts, at: clock(x.ts), what: "Roamed", detail: x.msg || x.via || "", v: "", kind: "event" });
     // Failed Wi-Fi joins of this day, one line per hour and problem (UU-C-146).
@@ -355,6 +440,9 @@ export default function Device({ route }) {
             </div>
           )}
 
+          {/* Connects, roams and disconnects over 1-30 days (UU-C-286). */}
+          {w && !wired && <WifiHistory mac={mac} />}
+
           {/* Where it was plugged in, newest first (UU-C-248): its record follows it from port to port. */}
           {places.data?.places?.length > 0 && (
             <div className="card">
@@ -420,6 +508,7 @@ export default function Device({ route }) {
                     <span className="mono" style={{ textAlign: "right", flexShrink: 0 }}><Bytes n={a.totalBytes} /><Split down={a.bytesRx} up={a.bytesTx} /></span>
                   </span>
                   <Meter share={a.totalBytes / appsMax} />
+                  {a.app === "Unidentified" && r.unnamedTo ? <UnnamedTo u={r.unnamedTo} /> : null}
                 </a>
               ))}
               {r.localBytes > 0 && (

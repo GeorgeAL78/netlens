@@ -42,7 +42,7 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 - **Network › Live** — the line over the last hour then live every few seconds, the busiest devices and every port with their own graphs; small live graphs on Overview and the Network map.
 - **Network › Internet** — availability, every outage, latency per test target, the busiest download and upload against your line, public-address history and speed tests.
 - **Moves and equipment** — a device moving to another port or network is noted and listed on its page; restarts, outages and firmware updates of your UniFi equipment over any period.
-- **Device** — traffic, signal or link speed, where it connected (port and network), apps, sessions, events, online history, block / unblock.
+- **Device** — traffic, signal or link speed, where it connected (port and network), Wi-Fi history (connects and roams between access points), apps and where unidentified traffic went, sessions, events, online history, block / unblock.
 - **Devices** — new devices first, with maker and switch port or access point; rename (saved in UniFi);
   offline devices checked on the network every 5 minutes; blocked devices listed with Unblock;
   failed Wi-Fi joins per device with the usual cause.

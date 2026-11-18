@@ -488,3 +488,8 @@ select.field { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
   .dev-stack { grid-template-columns: minmax(0, 1fr) !important; row-gap: 4px; }
   .dev-stack > * { justify-self: start !important; }
 }
+/* Wi-Fi history on a phone: the details under the time and what happened (UU-C-286). */
+@media (max-width: 700px) {
+  .wh-row { grid-template-columns: 72px minmax(0, 1fr) !important; row-gap: 2px; }
+  .wh-row > :nth-child(3) { grid-column: 1 / -1; }
+}

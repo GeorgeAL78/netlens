@@ -706,6 +706,100 @@ function parseLinkEvent(e) {
     ip: d.clientIp || null,
     essid: essid ? essid[1] : null, //  keeps "disconnected from" out
     connectedMs,
+    // A roam's other end (UU-C-286): where it came from, on which channel and band, at what signal.
+    ...(kind === "roam"
+      ? {
+          from: p.DEVICE_FROM?.n || ((d.via || "").includes(" → ") ? d.via.split(" → ")[0] : null),
+          fromChannel: p.PREVIOUS_CHANNEL?.n ? Number(p.PREVIOUS_CHANNEL.n) : null,
+          fromBand: bandName(p.PREVIOUS_RADIO_BAND?.n) || null,
+          fromSignal: Number.isFinite(Number(p.PREVIOUS_SIGNAL_STRENGTH?.n)) ? Number(p.PREVIOUS_SIGNAL_STRENGTH.n) : null,
+          toBand: bandName(p.RADIO_BAND?.n) || null,
+        }
+      : {}),
+  };
+}
+
+// One Wi-Fi device's connects, roams and disconnects over a stretch (UU-C-286), newest first:
+// UniFi's System Log, plus what NetLens's 5-minute samples saw that the log did not (a move
+// to another access point or band with no roam logged near it). Where it spent its time, by
+// access point and band, from the samples.
+export function wifiHistory(mac, start, end) {
+  const m = String(mac || "").toLowerCase();
+  const nameOf = names();
+  const log = db
+    .linkEvents(start, end, m)
+    .map(parseLinkEvent)
+    .filter((e) => !e.wired);
+  const events = log.map((e) => ({
+    ts: e.ts,
+    kind: e.kind,
+    source: "log",
+    ap: e.via,
+    band: e.toBand || e.band || null,
+    channel: e.channel,
+    signal: e.signal,
+    from: e.from || null,
+    fromBand: e.fromBand || null,
+    fromChannel: e.fromChannel || null,
+    fromSignal: e.fromSignal ?? null,
+    connectedMs: e.connectedMs,
+  }));
+  const samples = db.queryClientSamples(start, end, m).filter((r) => !r.wired && r.ap_mac);
+  const nearLog = (ts) => log.some((e) => Math.abs(e.ts - ts) <= 10 * 60e3);
+  const time = new Map();
+  for (let i = 0; i < samples.length; i += 1) {
+    const r = samples[i];
+    const k = `${nameOf(r.ap_mac)}|${bandName(r.radio) || ""}`;
+    time.set(k, (time.get(k) || 0) + SAMPLE_MIN);
+    const prev = samples[i - 1];
+    // Consecutive samples (no gap of more than 15 minutes) on a different access point or band.
+    if (!prev || r.ts - prev.ts > 15 * 60e3) continue;
+    if (prev.ap_mac === r.ap_mac && prev.radio === r.radio) continue;
+    if (nearLog(r.ts)) continue;
+    events.push({
+      ts: r.ts,
+      kind: prev.ap_mac === r.ap_mac ? "band" : "roam",
+      source: "samples",
+      ap: nameOf(r.ap_mac),
+      band: bandName(r.radio),
+      channel: r.channel ?? null,
+      signal: r.signal ?? null,
+      from: nameOf(prev.ap_mac),
+      fromBand: bandName(prev.radio),
+      fromChannel: prev.channel ?? null,
+      fromSignal: prev.signal ?? null,
+      connectedMs: null,
+    });
+  }
+  // A disconnect carries no band: the band of that access point's connect or roam before it.
+  events.sort((a, b) => a.ts - b.ts);
+  const bandOn = new Map();
+  for (const e of events) {
+    if (e.band) bandOn.set(e.ap, e.band);
+    else if (e.kind === "disconnect") e.band = bandOn.get(e.ap) || null;
+  }
+  // The first disconnect in the stretch: the band it rejoined that access point on.
+  events.sort((a, b) => b.ts - a.ts);
+  const bandNext = new Map();
+  for (const e of events) {
+    if (e.band && e.kind !== "disconnect") bandNext.set(e.ap, e.band);
+    else if (e.kind === "disconnect" && !e.band) e.band = bandNext.get(e.ap) || null;
+  }
+  const count = (k) => events.filter((e) => e.kind === k).length;
+  const total = [...time.values()].reduce((a, b) => a + b, 0);
+  return {
+    start,
+    end,
+    events: events.slice(0, 500),
+    more: Math.max(0, events.length - 500),
+    counts: { connects: count("connect"), disconnects: count("disconnect"), roams: count("roam"), bandChanges: count("band") },
+    where: [...time.entries()]
+      .map(([k, minutes]) => {
+        const [ap, band] = k.split("|");
+        return { ap, band: band || null, minutes, share: total ? Math.round((minutes / total) * 100) : 0 };
+      })
+      .sort((a, b) => b.minutes - a.minutes),
+    sampledSince: samples[0]?.ts ?? null,
   };
 }
 

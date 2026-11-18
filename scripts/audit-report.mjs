@@ -275,6 +275,24 @@ for (const { hq, label, dayBar } of hourChecks) {
   } else failures.push("firewall: no rules in the demo");
 }
 
+// Wi-Fi history and unnamed traffic (UU-C-286, UU-C-287): newest first, counts match the list,
+// time shares add up; the owners of unnamed traffic add up to its total.
+{
+  const devs = await get(`/api/devices`);
+  const list = (devs.devices || devs.clients || []).filter((d) => !d.wired).slice(0, 8);
+  for (const d of list) {
+    const h = await get(`/api/devices/${encodeURIComponent(d.mac)}/wifi-history?days=7`);
+    stats.screens += 1;
+    if (h.events.some((e, i) => i && e.ts > h.events[i - 1].ts)) failures.push(`wifi history ${d.mac}: not newest first`);
+    if (!h.more) for (const [k, kind] of [["connects", "connect"], ["disconnects", "disconnect"], ["roams", "roam"], ["bandChanges", "band"]]) if (h.counts[k] !== h.events.filter((e) => e.kind === kind).length) failures.push(`wifi history ${d.mac}: ${k} ${h.counts[k]} does not match the list`);
+    const share = h.where.reduce((n, x) => n + x.share, 0);
+    if (h.where.length && Math.abs(share - 100) > h.where.length) failures.push(`wifi history ${d.mac}: time shares add to ${share}%`);
+    if (h.events.some((e) => (e.kind === "roam" || e.kind === "band") && !e.from)) failures.push(`wifi history ${d.mac}: a roam without where it came from`);
+    const r = await get(`/api/report?period=today&mac=${encodeURIComponent(d.mac)}`);
+    if (r.unnamedTo && r.unnamedTo.owners.reduce((n, o) => n + o.bytes, 0) !== r.unnamedTo.bytes && r.unnamedTo.owners.length < 6) failures.push(`unnamed ${d.mac}: owners do not add up to the total`);
+  }
+}
+
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);
 console.log(`chart places the whole header: ${stats.fullyPlaced}; part of it unplaced (no 5-minute detail): ${stats.partlyPlaced}`);
 console.log(`bytes without time detail: ${MB(stats.unplacedBytes)} of ${MB(stats.headerBytes)} summed over screens`);

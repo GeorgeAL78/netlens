@@ -2160,6 +2160,16 @@ function buildReport(query) {
         };
       });
 
+    // One device's unnamed traffic by who owns the addresses (UU-C-287): "Unidentified" in
+    // UniFi's counters, placed by the connection records. Shares of the unnamed bytes; only
+    // an owner with most of them is named on the page (REVIEW rule 24).
+    let unnamedTo = null;
+    if (mac) {
+      const own = flowstore.unnamedOwners(flowDays, mac, span);
+      const total = own.reduce((n, o) => n + o.bytes, 0);
+      if (total > 0) unnamedTo = { bytes: total, owners: own.map((o) => ({ owner: o.owner, bytes: o.bytes, connections: o.n, share: Math.round((o.bytes / total) * 100) })) };
+    }
+
     // UniFi's SIEM events (UU-C-050), read from SQLite — never from syslog-ng or UniFi on
     // the request path. Events about a device, plus ad-block hits; no traffic volume.
     const siemRows = db.querySiemEvents(start, end, mac || null);
@@ -2267,6 +2277,7 @@ function buildReport(query) {
       localUp: basis === "flows" ? 0 : localUp,
       localServices: basis === "flows" ? [] : localServices,
       uncounted,
+      unnamedTo,
       unplacedBytes,
       lostSpans,
       dailyFill,
@@ -2572,6 +2583,18 @@ app.post("/api/devices/:mac/name", async (req, res) => {
 });
 
 // A device's online / on-network / off changes, newest last (UU-C-124).
+// A Wi-Fi device's connects, roams and disconnects (UU-C-286), newest first, with where it spent
+// its time. ?days=1-30, default 7.
+app.get("/api/devices/:mac/wifi-history", (req, res) => {
+  try {
+    const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
+    const now = Date.now();
+    res.json({ days, ...insights.wifiHistory(req.params.mac, now - days * 86400e3, now + 1) });
+  } catch (err) {
+    sendError(res, "GET /api/devices/:mac/wifi-history", err);
+  }
+});
+
 // Where a wired device was plugged in (UU-C-248): each switch or gateway port, from and to,
 // newest first, from NetLens's samples (90 days).
 app.get("/api/devices/:mac/places", (req, res) => {

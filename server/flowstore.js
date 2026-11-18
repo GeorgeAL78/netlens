@@ -243,6 +243,19 @@ const spanSql = (span, args) => {
   return " AND t >= ? AND t < ?";
 };
 
+// Where one device's unnamed traffic went (UU-C-287): connections UniFi could not name, by the
+// owner of the address (an IP-to-owner table, `source` "asn"), a name the same address had in
+// another connection that day (`source` "ip"), or still bare (owner null). What the page
+// shows next to "Unidentified", which UniFi's own counters cannot place.
+export function unnamedOwners(days, mac, span) {
+  if (!days.length || !mac) return [];
+  const args = [...days, mac];
+  const sql = `SELECT CASE WHEN source IN ('asn', 'ip') THEN app ELSE NULL END AS owner, COALESCE(SUM(bytes), 0) AS bytes, COUNT(*) AS n
+    FROM flows WHERE day IN (${inList(days)}) AND mac = ? AND (source IN ('asn', 'ip') OR app = 'Unidentified') AND (action IS NULL OR action != 'blocked')${spanSql(span, args)}
+    GROUP BY owner ORDER BY bytes DESC LIMIT 6`;
+  return db.prepare(sql).all(...args);
+}
+
 // Rows of these days matching a filter, in the cache's own order (day, seq).
 //   apps: exact app names; localDomains: "Local network" rows by destination.
 export function rowsForApps(days, mac, apps, localDomains, span) {

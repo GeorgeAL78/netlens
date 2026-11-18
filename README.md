@@ -72,7 +72,8 @@ which UniFi itself deletes after a day or a week.
 - **Equipment over time** — Overview's Network tab lists restarts, times offline and firmware
   updates in the period; a gateway restart that made the access points look offline is one note.
 - **Device** — per device: traffic, Wi-Fi signal or wired link speed, where it connected (port
-  and network over time), apps, sessions, events, connection time, online history, CSV export,
+  and network over time), Wi-Fi history (every connect and roam between access points, with band
+  and signal), apps (and where unidentified traffic went), sessions, events, connection time, online history, CSV export,
   block / unblock.
 - **Devices** — every device UniFi knows, new ones first: maker, where it connected (switch port
   or access point and band), IP, first and last seen; rename it (saved in UniFi). Offline devices
