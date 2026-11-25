@@ -1,99 +1,96 @@
-import { useEffect, useRef, useState } from "react";
-import { ago, api, deviceGroups, href, go, isPlumbing, usePending, useRoute } from "./lib.js";
-import { Finder } from "./ui.jsx";
-import Home from "./pages/Home.jsx";
-import Day from "./pages/Day.jsx";
-import Network from "./pages/Network.jsx";
-import Security from "./pages/Security.jsx";
-import Device from "./pages/Device.jsx";
-import Usage from "./pages/Usage.jsx";
-import Settings from "./pages/Settings.jsx";
-import Alerts from "./pages/Alerts.jsx";
-import Devices from "./pages/Devices.jsx";
-import Sites from "./pages/Sites.jsx";
-import Wifi from "./pages/Wifi.jsx";
-import Internet from "./pages/Internet.jsx";
-import Live from "./pages/Live.jsx";
-import Firewall from "./pages/Firewall.jsx";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { ago, api, applyTheme, deviceGroups, go, href, isPlumbing, setPinned, setTheme, themeChoice, usePending, usePins, useRoute } from "./lib.js";
+import { Loading } from "./ui.jsx";
 
-// The shell of the redesigned interface (UU-C-087): one top bar — home, the three views,
-// search and settings — and the page the URL names.
-// Five menus, one question each (UU-C-163). Activity groups four pages that keep their own
-// addresses (old links still work); a tab bar under the top bar switches between them.
-const TABS = [
-  ["home", "Overview", ["home"]], // what happened
-  ["activity", "Activity", ["day", "usage", "sites"]], // what devices were doing
-  ["devices", "Devices", ["devices", "device"]], // what is on the network (UU-C-118)
-  ["network", "Network", ["network", "wifi", "internet", "live"]], // is the equipment OK; Wi-Fi and the internet line (UU-C-239)
-  ["security", "Protection", ["security", "firewall"]], // what got stopped, and the rules that stop it (UU-C-270)
+// Pages load when first opened (UU-C-289): the first screen no longer waits for every page's code.
+const PAGES = {
+  home: lazy(() => import("./pages/Home.jsx")),
+  day: lazy(() => import("./pages/Day.jsx")),
+  network: lazy(() => import("./pages/Network.jsx")),
+  security: lazy(() => import("./pages/Security.jsx")),
+  device: lazy(() => import("./pages/Device.jsx")),
+  usage: lazy(() => import("./pages/Usage.jsx")),
+  settings: lazy(() => import("./pages/Settings.jsx")),
+  alerts: lazy(() => import("./pages/Alerts.jsx")),
+  devices: lazy(() => import("./pages/Devices.jsx")),
+  sites: lazy(() => import("./pages/Sites.jsx")),
+  wifi: lazy(() => import("./pages/Wifi.jsx")),
+  internet: lazy(() => import("./pages/Internet.jsx")),
+  live: lazy(() => import("./pages/Live.jsx")),
+  firewall: lazy(() => import("./pages/Firewall.jsx")),
+};
+
+// ---- icons (one stroke set, 18 px) ----
+const P = {
+  home: "M4 11l8-7 8 7M6 9.5V20h12V9.5",
+  timeline: "M4 6h16M4 12h10M4 18h6",
+  apps: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  sites: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18",
+  devices: "M4 5h12v9H4zM2 18h16M18 9h4v10h-4z",
+  map: "M12 4v5M6 15v-3h12v3M4 15h4v5H4zM16 15h4v5h-4zM10 4h4v5h-4z",
+  wifi: "M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01",
+  internet: "M3 12h4l3-7 4 14 3-7h4",
+  live: "M3 17l5-6 4 3 4-7 5 5",
+  shield: "M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z",
+  rules: "M5 6h14M5 12h14M5 18h9",
+  bell: "M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9M10 20a2.2 2.2 0 0 0 4 0",
+  settings: "M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4",
+  search: "M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12M20 20l-4.5-4.5",
+  refresh: "M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5",
+  more: "M5 12h.01M12 12h.01M19 12h.01",
+  sun: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
+  moon: "M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5",
+  auto: "M12 3a9 9 0 1 0 0 18zM12 3a9 9 0 0 1 0 18",
+  star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z",
+  device: "M7 3h10v18H7zM11 18h2",
+  arrow: "M5 12h14M13 6l6 6-6 6",
+};
+export function Icon({ name, size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={P[name] || P.arrow} />
+    </svg>
+  );
+}
+
+// ---- navigation: every page, grouped by the question it answers ----
+// Old addresses all still work: the pages keep their ids, only the shell around them changed.
+const GROUPS = [
+  { id: "home", label: null, items: [["home", "Overview", "home"]] },
+  { id: "activity", label: "Activity", items: [["day", "Timeline", "timeline"], ["usage", "Apps", "apps"], ["sites", "Sites", "sites"]] },
+  { id: "devices", label: "Devices", items: [["devices", "All devices", "devices"]], also: ["device"] },
+  { id: "network", label: "Network", items: [["network", "Map", "map"], ["wifi", "Wi-Fi", "wifi"], ["internet", "Internet", "internet"], ["live", "Live", "live"]] },
+  { id: "protection", label: "Protection", items: [["security", "Blocked", "shield"], ["firewall", "Firewall rules", "rules"], ["alerts", "Limits", "bell"]] },
 ];
-const ACTIVITY = [
-  ["day", "Timeline"], // every device across the day's hours
-  ["usage", "Apps"], // apps, categories and the app picker (UU-C-106)
-  ["sites", "Sites"], // every site each device connected to (UU-C-135)
-];
-// Network's pages (UU-C-239): the map, the Wi-Fi around it, and the internet line.
-const NETWORK = [
-  ["network", "Map"],
-  ["wifi", "Wi-Fi"],
-  ["internet", "Internet"],
-  ["live", "Live"],
-];
-// Protection's pages (UU-C-270): what was blocked, and the firewall rules.
-const PROTECTION = [
-  ["security", "Blocked"],
-  ["firewall", "Firewall rules"],
-];
+const ALL_PAGES = [...GROUPS.flatMap((g) => g.items.map(([id, label, icon]) => ({ id, label, icon, group: g.label }))), { id: "settings", label: "Settings", icon: "settings", group: null }];
+const groupOf = (page) => GROUPS.find((g) => g.items.some(([id]) => id === page) || g.also?.includes(page));
+const pageLabel = (page) => ALL_PAGES.find((p) => p.id === page)?.label || (page === "device" ? "Device" : "");
+
+// Activity remembers which of its pages you used last (UU-C-163).
 const LAST_ACTIVITY = "netlens.activity";
 const lastActivity = () => {
   try {
     const v = localStorage.getItem(LAST_ACTIVITY);
-    return ACTIVITY.some(([id]) => id === v) ? v : "day";
+    return ["day", "usage", "sites"].includes(v) ? v : "day";
   } catch {
     return "day";
   }
 };
 
-// Top-bar search (UU-C-112): devices, plus apps and categories of the last 7 days — an app or
-// category opens Usage filtered to it. Loaded on first focus.
-function Search() {
-  const [devices, setDevices] = useState(null);
-  const [week, setWeek] = useState(null);
-  const box = useRef(null);
-  const load = () => {
-    if (devices) return;
-    // UniFi's own client list (UU-C-118), so forgotten devices are not offered.
-    api("/api/devices").then((d) => setDevices(d.devices || [])).catch(() => setDevices([]));
-    api("/api/report?period=7d").then(setWeek).catch(() => setWeek({}));
-  };
-  const app = (a) => ({ key: `a${a.value}`, label: a.app, sub: "app", pick: () => go("usage", null, { r: "7d", app: a.value }) });
-  const choices = week?.appChoices || [];
-  const groups = [
-    ...deviceGroups(devices, (c) => go("device", c.mac)),
-    { label: "Apps", items: choices.filter((a) => !isPlumbing(a)).map(app) },
-    {
-      label: "Categories",
-      items: (week?.categories || []).filter((c) => c.catId != null).map((c) => ({ key: `c${c.catId}`, label: c.category, sub: "category", pick: () => go("usage", null, { r: "7d", cat: c.catId }) })),
-    },
-    { label: "Protocols and background", items: choices.filter(isPlumbing).map(app) },
-  ];
-  return (
-    <div ref={box} className="topsearch" onFocus={load}>
-      <Finder groups={groups} placeholder="Find a device, app or category" />
-    </div>
-  );
-}
-
 // Fetch the newest data from UniFi now, then redraw the page (UU-C-089). NetLens also does this
 // by itself every 5 minutes; the button is for "show me right now".
-function Refresh({ onDone }) {
+function useRefresh(onDone) {
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState(null);
   const [err, setErr] = useState("");
   useEffect(() => {
-    api("/api/cache").then((c) => setLast(c.fetchedAt)).catch(() => {});
+    const load = () => api("/api/cache").then((c) => setLast(c.fetchedAt)).catch(() => {});
+    load();
+    const t = setInterval(load, 60 * 1000);
+    return () => clearInterval(t);
   }, []);
   async function run() {
+    if (busy) return;
     setBusy(true);
     setErr("");
     try {
@@ -106,18 +103,19 @@ function Refresh({ onDone }) {
       setBusy(false);
     }
   }
+  return { busy, last, err, run };
+}
+function RefreshButton({ r }) {
   return (
     <button
-      className={`iconbtn ${busy ? "spin" : ""}`}
-      onClick={run}
-      disabled={busy}
+      className={`iconbtn ${r.busy ? "spin" : ""}`}
+      onClick={r.run}
+      disabled={r.busy}
       aria-label="Refresh data now"
-      title={err ? `Refresh failed: ${err}` : busy ? "Fetching from UniFi…" : `Refresh now · updated ${ago(last)}`}
-      style={err ? { borderColor: "var(--bad)", color: "var(--bad)" } : undefined}
+      title={r.err ? `Refresh failed: ${r.err}` : r.busy ? "Fetching from UniFi…" : `Refresh now · updated ${ago(r.last)}`}
+      style={r.err ? { borderColor: "var(--bad)", color: "var(--bad)" } : undefined}
     >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-        <path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" />
-      </svg>
+      <Icon name="refresh" size={16} />
     </button>
   );
 }
@@ -133,8 +131,7 @@ function useVersion() {
   return v;
 }
 
-// How many alert rules fired today, for the tab's count (UU-C-114). Light: no rule is
-// re-evaluated, it only counts what the 5-minute check recorded.
+// How many limits were reached today (UU-C-114). Light: it only counts what the 5-minute check recorded.
 function useFiredToday(page) {
   const [n, setN] = useState(0);
   useEffect(() => {
@@ -150,110 +147,377 @@ function useFiredToday(page) {
   return n;
 }
 
+// Light, dark, or the device's own setting.
+function useTheme() {
+  const [choice, setChoice] = useState(themeChoice);
+  useEffect(() => {
+    applyTheme(choice);
+    if (choice !== "system" || !window.matchMedia) return undefined;
+    const mq = window.matchMedia("(prefers-color-scheme: light)");
+    const on = () => applyTheme("system");
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, [choice]);
+  const pick = (c) => {
+    setTheme(c);
+    setChoice(c);
+  };
+  const next = () => pick(choice === "system" ? "light" : choice === "light" ? "dark" : "system");
+  return { choice, pick, next };
+}
+const THEME_WORD = { system: "Theme: automatic", light: "Theme: light", dark: "Theme: dark" };
+const THEME_ICON = { system: "auto", light: "sun", dark: "moon" };
+
+// ---- command palette: pages, pinned devices, devices, apps, categories and actions ----
+function Palette({ onClose, actions }) {
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(0);
+  const [devices, setDevices] = useState(null);
+  const [week, setWeek] = useState(null);
+  const pins = usePins() || [];
+  const input = useRef(null);
+  const list = useRef(null);
+  useEffect(() => {
+    input.current?.focus();
+    // UniFi's own client list (UU-C-118), so forgotten devices are not offered.
+    api("/api/devices").then((d) => setDevices(d.devices || [])).catch(() => setDevices([]));
+    api("/api/report?period=7d").then(setWeek).catch(() => setWeek({}));
+  }, []);
+  const groups = useMemo(() => {
+    const close = (f) => () => {
+      onClose();
+      f();
+    };
+    const app = (a) => ({ key: `a${a.value}`, label: a.app, sub: "app · last 7 days", icon: "apps", pick: close(() => go("usage", null, { r: "7d", app: a.value })) });
+    const choices = week?.appChoices || [];
+    const devGroups = deviceGroups(devices, (c) => go("device", c.mac)).map((g) => ({ ...g, items: g.items.map((i) => ({ ...i, icon: "device", pick: close(i.pick) })) }));
+    return [
+      { label: "Pages", items: ALL_PAGES.map((p) => ({ key: `p${p.id}`, label: p.label, sub: p.group || "", icon: p.icon, searchable: [p.group], pick: close(() => go(p.id === "day" ? lastActivity() : p.id)) })) },
+      { label: "Pinned", items: pins.map((p) => ({ key: `pin${p.mac}`, label: p.name, sub: "pinned", icon: "star", searchable: [p.mac], pick: close(() => go("device", p.mac)) })) },
+      { label: "Actions", items: actions.map((a) => ({ ...a, icon: a.icon || "arrow", pick: close(a.run) })) },
+      ...devGroups,
+      { label: "Apps", items: choices.filter((a) => !isPlumbing(a)).map(app) },
+      { label: "Categories", items: (week?.categories || []).filter((c) => c.catId != null).map((c) => ({ key: `c${c.catId}`, label: c.category, sub: "category · last 7 days", icon: "apps", pick: close(() => go("usage", null, { r: "7d", cat: c.catId })) })) },
+      { label: "Protocols and background", searchOnly: true, items: choices.filter(isPlumbing).map(app) },
+    ];
+  }, [devices, week, pins, actions, onClose]);
+  const shown = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return groups
+      .filter((g) => s || (!g.searchOnly && g.label !== "Unnamed and offline"))
+      .map((g) => ({ ...g, items: g.items.filter((i) => !s || [i.label, i.sub, ...(i.searchable || [])].join(" ").toLowerCase().includes(s)).slice(0, s ? 10 : g.label === "Pages" || g.label === "Actions" || g.label === "Pinned" ? 20 : 6) }))
+      .filter((g) => g.items.length);
+  }, [q, groups]);
+  const flat = shown.flatMap((g) => g.items);
+  useEffect(() => {
+    list.current?.querySelector("a.on")?.scrollIntoView({ block: "nearest" });
+  }, [sel]);
+  return (
+    <div className="palette-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="palette" role="dialog" aria-label="Find anything">
+        <div className="palette-input">
+          <Icon name="search" />
+          <input
+            ref={input}
+            value={q}
+            placeholder="Find a page, device, app or action"
+            aria-label="Find a page, device, app or action"
+            onChange={(e) => {
+              setQ(e.target.value);
+              setSel(0);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSel((i) => Math.min(i + 1, flat.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSel((i) => Math.max(i - 1, 0));
+              } else if (e.key === "Enter" && flat[sel]) flat[sel].pick();
+              else if (e.key === "Escape") onClose();
+            }}
+          />
+          <kbd>Esc</kbd>
+        </div>
+        <div className="palette-list" ref={list} role="listbox">
+          {devices == null && <div className="dim small" style={{ padding: 10 }}>Loading devices and apps…</div>}
+          {q.trim() && !flat.length && devices != null && <div className="dim small" style={{ padding: 10 }}>Nothing matches “{q}”.</div>}
+          {shown.map((g) => (
+            <div key={g.label}>
+              <div className="grp">{g.label}</div>
+              {g.items.map((i) => {
+                const n = flat.indexOf(i);
+                return (
+                  <a
+                    key={i.key}
+                    href="#"
+                    role="option"
+                    aria-selected={n === sel}
+                    className={n === sel ? "on" : ""}
+                    onMouseMove={() => n !== sel && setSel(n)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      i.pick();
+                    }}
+                  >
+                    <Icon name={i.icon} size={16} />
+                    <span className="ellipsis">{i.label}</span>
+                    {i.sub && <span className="sub">{i.sub}</span>}
+                  </a>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div className="palette-foot">
+          <span><kbd>↑</kbd> <kbd>↓</kbd> move</span>
+          <span><kbd>Enter</kbd> open</span>
+          <span><kbd>Ctrl</kbd> <kbd>K</kbd> or <kbd>/</kbd> from anywhere</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---- the sidebar (wide screens) ----
+function Sidebar({ route, version, fired, pins, refresh, theme, openPalette }) {
+  const isOn = (id) => route.page === id;
+  return (
+    <aside className="side" aria-label="Pages">
+      <a className="brand" href={href("home")} aria-label="NetLens home">
+        <span className="brand-mark" aria-hidden="true" />
+        <strong>NetLens</strong>
+        {version && <small>{/^\d/.test(version) ? `v${version}` : version}</small>}
+      </a>
+      <button className="side-search" onClick={openPalette}>
+        <Icon name="search" size={15} />
+        <span>Find anything</span>
+        <kbd>Ctrl K</kbd>
+      </button>
+      <nav aria-label="Views">
+        {GROUPS.map((g) => (
+          <div key={g.id}>
+            {g.label && <div className="side-group">{g.label}</div>}
+            {g.items.map(([id, label, icon]) => (
+              <a
+                key={id}
+                className={`nav ${isOn(id) || (id === "devices" && route.page === "device" && !pins?.some((p) => p.mac === String(route.arg).toLowerCase())) ? "on" : ""}`}
+                href={href(id)}
+                aria-current={isOn(id) ? "page" : undefined}
+              >
+                <Icon name={icon} />
+                {label}
+                {id === "alerts" && fired > 0 && <span className="count" title={`${fired} reached today`}>{fired}</span>}
+              </a>
+            ))}
+            {g.id === "devices" &&
+              (pins || []).map((p) => (
+                <a key={p.mac} className={`nav pinned ${route.page === "device" && String(route.arg).toLowerCase() === p.mac ? "on" : ""}`} href={href("device", p.mac)} title={`${p.name} (pinned)`}>
+                  <span className="dot" aria-hidden="true" />
+                  <span className="pin-name">{p.name}</span>
+                </a>
+              ))}
+          </div>
+        ))}
+      </nav>
+      <div className="side-foot">
+        <a className={`nav ${isOn("settings") ? "on" : ""}`} href={href("settings")}>
+          <Icon name="settings" />
+          Settings
+        </a>
+        <button className="nav" onClick={theme.next} title="Switch theme">
+          <Icon name={THEME_ICON[theme.choice]} />
+          {THEME_WORD[theme.choice]}
+        </button>
+        <div className="side-status" title={refresh.err ? `Refresh failed: ${refresh.err}` : "NetLens reads UniFi every 5 minutes"}>
+          <span className={`status-dot ${refresh.err ? "bad" : ""}`} />
+          <span>{refresh.busy ? "Updating…" : `Updated ${ago(refresh.last)}`}</span>
+          <RefreshButton r={refresh} />
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+// ---- phones: a bottom bar with the main areas, and a sheet with every page ----
+function BottomNav({ route, fired, onMore }) {
+  const g = groupOf(route.page)?.id || (route.page === "settings" ? "more" : "home");
+  const items = [
+    ["home", "Overview", "home", href("home")],
+    ["activity", "Activity", "timeline", href(lastActivity())],
+    ["devices", "Devices", "devices", href("devices")],
+    ["network", "Network", "map", href("network")],
+  ];
+  return (
+    <nav className="bottomnav" aria-label="Main areas">
+      {items.map(([id, label, icon, to]) => (
+        <a key={id} href={to} className={g === id ? "on" : ""}>
+          <Icon name={icon} size={20} />
+          {label}
+        </a>
+      ))}
+      <button className={g === "protection" || g === "more" ? "on" : ""} onClick={onMore} aria-label={fired > 0 ? `More, ${fired} limits reached today` : "More"}>
+        <Icon name="more" size={20} />
+        More
+        {fired > 0 && <span className="count">{fired}</span>}
+      </button>
+    </nav>
+  );
+}
+function MoreSheet({ route, fired, pins, theme, onClose }) {
+  useEffect(() => {
+    const esc = (e) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [onClose]);
+  const link = (id, label, icon, to = href(id)) => (
+    <a key={id + to} href={to} className={route.page === id ? "on" : ""} onClick={onClose}>
+      <Icon name={icon} />
+      <span className="ellipsis">{label}</span>
+      {id === "alerts" && fired > 0 && <span className="count" style={{ marginLeft: "auto" }}>{fired}</span>}
+    </a>
+  );
+  return (
+    <div className="sheet-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="sheet" role="dialog" aria-label="All pages">
+        <div className="grabber" aria-hidden="true" />
+        {GROUPS.map((g) => (
+          <div key={g.id}>
+            <div className="side-group">{g.label || "Home"}</div>
+            <div className="sheet-grid">
+              {g.items.map(([id, label, icon]) => link(id, label, icon))}
+              {g.id === "devices" && (pins || []).map((p) => link("device", p.name, "star", href("device", p.mac)))}
+            </div>
+          </div>
+        ))}
+        <div className="side-group">NetLens</div>
+        <div className="sheet-grid">
+          {link("settings", "Settings", "settings")}
+          <a
+            href="#"
+            onClick={(e) => {
+              e.preventDefault();
+              theme.next();
+            }}
+          >
+            <Icon name={THEME_ICON[theme.choice]} />
+            <span className="ellipsis">{THEME_WORD[theme.choice]}</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const route = useRoute();
   const version = useVersion();
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [route.page, route.arg]);
-  const pages = {
-    home: Home,
-    day: Day,
-    network: Network,
-    security: Security,
-    device: Device,
-    usage: Usage,
-    settings: Settings,
-    alerts: Alerts,
-    devices: Devices,
-    sites: Sites,
-    wifi: Wifi,
-    internet: Internet,
-    live: Live,
-    firewall: Firewall,
-  };
-  const Page = pages[route.page] || Home;
   const fired = useFiredToday(route.page);
   const updating = usePending();
-  const inActivity = ACTIVITY.some(([id]) => id === route.page);
+  const pins = usePins();
+  const theme = useTheme();
+  const [palette, setPalette] = useState(false);
+  const [more, setMore] = useState(false);
+  // Bumped by Refresh: remounts the page so it loads everything again.
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = useRefresh(() => setRefreshKey((k) => k + 1));
+  const Page = PAGES[route.page] || PAGES.home;
+  const group = groupOf(route.page);
+
   useEffect(() => {
-    if (!inActivity) return;
+    window.scrollTo(0, 0);
+    setMore(false);
+  }, [route.page, route.arg]);
+  useEffect(() => {
+    if (group?.id !== "activity") return;
     try {
       localStorage.setItem(LAST_ACTIVITY, route.page);
     } catch {
       /* remembered for this visit only */
     }
-  }, [route.page, inActivity]);
-  // Bumped by Refresh: remounts the page so it loads everything again.
-  const [refreshKey, setRefreshKey] = useState(0);
+  }, [route.page, group]);
+  useEffect(() => {
+    document.title = `${pageLabel(route.page) || "Overview"} · NetLens`;
+  }, [route.page]);
+  // Ctrl+K / Cmd+K, or / when not typing, opens the palette.
+  useEffect(() => {
+    const on = (e) => {
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName) || e.target?.isContentEditable;
+      if ((e.key === "k" || e.key === "K") && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setPalette((v) => !v);
+      } else if (e.key === "/" && !typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        setPalette(true);
+      }
+    };
+    document.addEventListener("keydown", on);
+    return () => document.removeEventListener("keydown", on);
+  }, []);
+
+  const deviceMac = route.page === "device" && route.arg ? String(route.arg).toLowerCase() : null;
+  const pinnedHere = deviceMac && pins?.some((p) => p.mac === deviceMac);
+  const actions = useMemo(
+    () => [
+      { key: "x-refresh", label: "Refresh data now", sub: "read UniFi now", icon: "refresh", run: refresh.run },
+      { key: "x-theme-system", label: "Theme: follow this device", icon: "auto", run: () => theme.pick("system") },
+      { key: "x-theme-light", label: "Theme: light", icon: "sun", run: () => theme.pick("light") },
+      { key: "x-theme-dark", label: "Theme: dark", icon: "moon", run: () => theme.pick("dark") },
+      ...(deviceMac ? [{ key: "x-pin", label: pinnedHere ? "Unpin this device" : "Pin this device to the sidebar", icon: "star", run: () => setPinned(deviceMac, !pinnedHere).catch(() => {}) }] : []),
+    ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deviceMac, pinnedHere, refresh.busy, theme.choice]
+  );
+
   return (
-    <>
-      <header className="topbar">
-        <a className="brand" href={href("home")} aria-label="NetLens home">
-          <span className="brand-mark" aria-hidden="true" />
-          <strong>NetLens</strong>
-          {version && <small>{/^\d/.test(version) ? `v${version}` : version}</small>}
-        </a>
-        <nav className="tabs" aria-label="Views">
-          {TABS.map(([id, label, pagesOf]) => (
-            <a key={id} href={href(id === "activity" ? lastActivity() : id)} className={pagesOf.includes(route.page) ? "on" : ""}>
-              {label}
-            </a>
-          ))}
-        </nav>
-        <span className="spacer" />
-        <Search />
-        <Refresh onDone={() => setRefreshKey((k) => k + 1)} />
-        {/* Limits are rules you set, not activity (UU-C-200). */}
-        <a className={`iconbtn limits ${route.page === "alerts" ? "on" : ""}`} href={href("alerts")} aria-label={fired > 0 ? `Limits, ${fired} reached today` : "Limits"} title={fired > 0 ? `Limits · ${fired} reached today` : "Limits"}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9M10 20a2.2 2.2 0 0 0 4 0" />
-          </svg>
-          {fired > 0 && <span className="count">{fired}</span>}
-        </a>
-        <a className={`iconbtn ${route.page === "settings" ? "on" : ""}`} href={href("settings")} aria-label="Settings" title="Settings">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-            <path d="M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4" />
-          </svg>
-        </a>
-        {/* A new period or filter is loading; the numbers below are the old ones (UU-C-202). */}
-        {updating && (
-          <div className="updating" role="status">
-            <span className="updating-bar" aria-hidden="true" />
-            <span className="updating-note">Updating…</span>
+    <div className="app">
+      <Sidebar route={route} version={version} fired={fired} pins={pins} refresh={refresh} theme={theme} openPalette={() => setPalette(true)} />
+      <div className="main-col">
+        <header className="topbar">
+          <a className="brand" href={href("home")} aria-label="NetLens home">
+            <span className="brand-mark" aria-hidden="true" />
+            <strong>NetLens</strong>
+          </a>
+          <div className="crumb">
+            {group?.label && <span>{group.label}</span>}
+            {group?.label && <span aria-hidden="true">›</span>}
+            <strong>{pageLabel(route.page) || "Overview"}</strong>
           </div>
+          <span className="spacer" />
+          <button className="top-search" onClick={() => setPalette(true)} aria-label="Find anything">
+            <Icon name="search" size={16} />
+            <span>Find a page, device or app</span>
+            <kbd>/</kbd>
+          </button>
+          <span className="only-phone">
+            <RefreshButton r={refresh} />
+          </span>
+          {/* A new period or filter is loading; the numbers below are the old ones (UU-C-202). */}
+          {updating && (
+            <div className="updating" role="status">
+              <span className="updating-bar" aria-hidden="true" />
+              <span className="updating-note">Updating…</span>
+            </div>
+          )}
+        </header>
+        {group && group.items.length > 1 && (
+          <nav className="subtabs" aria-label={group.label}>
+            {group.items.map(([id, label]) => (
+              <a key={id} href={href(id, null, group.id === "activity" && route.query.d ? { d: route.query.d } : null)} className={route.page === id ? "on" : ""}>
+                {label}
+              </a>
+            ))}
+          </nav>
         )}
-      </header>
-      {inActivity && (
-        <nav className="subtabs" aria-label="Activity">
-          {ACTIVITY.map(([id, label]) => (
-            <a key={id} href={href(id, null, !route.query.d ? null : { d: route.query.d })} className={route.page === id ? "on" : ""}>
-              {label}
-            </a>
-          ))}
-        </nav>
-      )}
-      {NETWORK.some(([id]) => id === route.page) && (
-        <nav className="subtabs wide" aria-label="Network">
-          {NETWORK.map(([id, label]) => (
-            <a key={id} href={href(id)} className={route.page === id ? "on" : ""}>
-              {label}
-            </a>
-          ))}
-        </nav>
-      )}
-      {PROTECTION.some(([id]) => id === route.page) && (
-        <nav className="subtabs" aria-label="Protection">
-          {PROTECTION.map(([id, label]) => (
-            <a key={id} href={href(id)} className={route.page === id ? "on" : ""}>
-              {label}
-            </a>
-          ))}
-        </nav>
-      )}
-      <div className={updating ? "page-wrap stale" : "page-wrap"} aria-busy={updating}>
-        <Page key={refreshKey} route={route} version={version} />
+        <main className={updating ? "page-wrap stale" : "page-wrap"} aria-busy={updating}>
+          <Suspense fallback={<Loading />}>
+            <Page key={refreshKey} route={route} version={version} />
+          </Suspense>
+        </main>
       </div>
-    </>
+      <BottomNav route={route} fired={fired} onMore={() => setMore(true)} />
+      {more && <MoreSheet route={route} fired={fired} pins={pins} theme={theme} onClose={() => setMore(false)} />}
+      {palette && <Palette onClose={() => setPalette(false)} actions={actions} />}
+    </div>
   );
 }

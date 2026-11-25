@@ -511,6 +511,31 @@ export async function getPolicyList(kind) {
   const json = await request(path);
   return Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : null;
 }
+// Network 11 extras (UU-C-289), read only. The internet lines and which one carries traffic
+// ({ wan_interfaces: [{ name, state: ACTIVE | BACKUP | …, wan_networkgroup }] }).
+export async function getWanLines() {
+  const { site } = config();
+  const json = await request(`/proxy/network/v2/api/site/${site}/wan/load-balancing/status`);
+  return Array.isArray(json?.wan_interfaces) ? json.wan_interfaces : null;
+}
+// Channel AI's view of the access points: which of our own radios hear each other, how loud.
+export async function getRadioAi() {
+  const { site } = config();
+  return request(`/proxy/network/v2/api/site/${site}/radio-ai/isolation-matrix`);
+}
+// Scheduled tasks (Channel AI's nightly run is one).
+export async function getScheduleTasks() {
+  const { site } = config();
+  const json = await request(`/proxy/network/api/s/${site}/rest/scheduletask`);
+  return json?.data || [];
+}
+// Threat protection (IPS, ad blocking, DNS filtering, honeypot). The answer also holds a
+// licence token: callers keep only the fields they show.
+export async function getThreatSettings() {
+  const { site } = config();
+  const json = await request(`/proxy/network/api/s/${site}/get/setting/ips`);
+  return json?.data?.[0] || null;
+}
 // Local DNS records and content filters (UU-C-270), shown with the firewall rules.
 export async function getDnsRecords() {
   const { site } = config();

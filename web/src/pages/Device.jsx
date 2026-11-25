@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 
-import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi, sessionDetail, splitTip } from "../lib.js";
+import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi, sessionDetail, splitTip, setPinned, usePins } from "../lib.js";
 import { DayStep, Failed, Loading, Meter, Bytes, Split } from "../ui.jsx";
 
 // One device (UU-C-087): its day — traffic, signal and events by hour — its connection,
@@ -8,7 +8,7 @@ import { DayStep, Failed, Loading, Meter, Bytes, Split } from "../ui.jsx";
 
 const HOUR = 3600000;
 const BAND = { ng: "2.4 GHz", na: "5 GHz", "6e": "6 GHz", "6 GHz": "6 GHz", "5 GHz": "5 GHz", "2.4 GHz": "2.4 GHz" };
-const sigColor = (s) => (s == null ? "var(--cell-0)" : s < -80 ? "#b4513f" : s < -75 ? "#a8752a" : "#3a7d5c");
+const sigColor = (s) => (s == null ? "var(--cell-0)" : s < -80 ? "var(--sig-bad)" : s < -75 ? "var(--sig-weak)" : "var(--sig-good)");
 
 function csv(rows) {
   return rows.map((r) => r.map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -157,6 +157,8 @@ export default function Device({ route }) {
   const blocked = blockedNow ?? Boolean(clients.data?.clients?.find((c) => String(c.mac).toLowerCase() === mac)?.blocked);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const pins = usePins();
+  const pinned = Boolean(pins?.some((p) => p.mac === mac));
 
   const row = day.data?.rows?.find((r) => r.mac === mac) || null;
   const r = report.data;
@@ -273,6 +275,10 @@ export default function Device({ route }) {
         <DayStep date={date} onDate={(d) => go("device", mac, { d: d === todayKey() ? null : d })} />
         <a className="btn" href={href("sites", null, { mac, d: date === todayKey() ? null : date })}>Sites</a>
         <a className="btn" href={href("devices", null, { mac })}>Rename</a>
+        {/* Pinned devices sit in the sidebar on every screen (UU-C-289). */}
+        <button className={`btn pin ${pinned ? "on" : ""}`} aria-pressed={pinned} title={pinned ? "Remove from the sidebar" : "Keep this device in the sidebar"} onClick={() => setPinned(mac, !pinned, name).catch((e) => setMsg(e.message))}>
+          {pinned ? "★ Pinned" : "☆ Pin"}
+        </button>
         <button className="btn danger" onClick={toggleBlock} disabled={busy}>
           {blocked ? "Unblock" : "Block device"}
         </button>
@@ -379,7 +385,7 @@ export default function Device({ route }) {
               {Array.from({ length: 24 }, (_, h) => {
                 const m = row?.marks?.[h];
                 return (
-                  <span key={h} className="small" style={{ textAlign: "center", color: m?.block ? "var(--bad)" : "#c8d2df" }}>
+                  <span key={h} className="small" style={{ textAlign: "center", color: m?.block ? "var(--bad)" : "var(--text-soft)" }}>
                     {m?.block ? "▲" : m?.roam || m?.conn ? "○".repeat(Math.min(2, (m.roam || 0) + (m.conn || 0))) : ""}
                   </span>
                 );
@@ -395,9 +401,9 @@ export default function Device({ route }) {
               <span><i style={{ background: "var(--cell-4)" }} />traffic</span>
               {!wired && (
                 <>
-                  <span><i style={{ background: "#3a7d5c" }} />good signal</span>
-                  <span><i style={{ background: "#a8752a" }} />weak (below −75)</span>
-                  <span><i style={{ background: "#b4513f" }} />poor (below −80)</span>
+                  <span><i style={{ background: "var(--sig-good)" }} />good signal</span>
+                  <span><i style={{ background: "var(--sig-weak)" }} />weak (below −75)</span>
+                  <span><i style={{ background: "var(--sig-bad)" }} />poor (below −80)</span>
                 </>
               )}
               <span>○ roam / connect</span>
@@ -528,7 +534,7 @@ export default function Device({ route }) {
                   <div key={n} className="row" style={{ gridTemplateColumns: "104px minmax(0, 1fr) auto" }}>
                     <span className="mono small dim">{i.at}</span>
                     <span className="stack">
-                      <span style={{ color: i.kind === "session" ? "var(--accent)" : i.kind === "joinfail" ? "var(--bad)" : "#c8d2df" }}>{i.what}</span>
+                      <span style={{ color: i.kind === "session" ? "var(--accent)" : i.kind === "joinfail" ? "var(--bad)" : "var(--text-soft)" }}>{i.what}</span>
                       <span className="dim small ellipsis">{i.detail}</span>
                     </span>
                     <span className="mono small" style={{ textAlign: "right" }}>{i.n != null ? <><Bytes n={i.n} /><Split down={i.down} up={i.up} /></> : i.v}</span>

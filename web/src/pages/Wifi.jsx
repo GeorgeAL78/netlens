@@ -356,6 +356,53 @@ function Devices({ devices, days }) {
   );
 }
 
+// Channel AI (UU-C-289): how loud your own access points are to each other, per band, from
+// UniFi's Channel AI, and when it runs. Two loud access points on overlapping channels share
+// airtime; faint means they are well apart.
+function ChannelAi({ ai }) {
+  if (!ai) return null;
+  const pairs = [...(ai.pairs || [])].sort((a, b) => String(a.band).localeCompare(String(b.band)) || String(a.ap).localeCompare(String(b.ap)));
+  const sig = (s) => (s == null ? "dim" : s >= -67 ? "warn" : s >= -80 ? "" : "ok");
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>How your access points hear each other</h2>
+        <span className="hint">
+          From UniFi's Channel AI{ai.schedule?.text ? `, which runs ${ai.schedule.text}` : ""}.{ai.running ? " It is optimising channels right now." : ""}
+        </span>
+      </div>
+      {!pairs.length ? (
+        <p className="small muted" style={{ margin: 0 }}>None of your access points hear each other in Channel AI's last look, or it has not run yet.</p>
+      ) : (
+        <div className="scroll-x">
+          <table className="t">
+            <thead>
+              <tr>
+                <th>Band</th>
+                <th>Access point</th>
+                <th>Hears</th>
+                <th className="num">Signal</th>
+                <th>Meaning</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pairs.map((p, i) => (
+                <tr key={i}>
+                  <td className="small">{p.band}</td>
+                  <td>{p.ap}{p.channel ? <span className="dim small"> · ch {p.channel}{p.width ? `/${p.width}` : ""}</span> : null}</td>
+                  <td>{p.hears}{p.hearsChannel ? <span className="dim small"> · ch {p.hearsChannel}{p.hearsWidth ? `/${p.hearsWidth}` : ""}</span> : null}</td>
+                  <td className={`num mono ${sig(p.signal)}`}>{p.signal != null ? `${p.signal} dBm` : "—"}</td>
+                  <td className="small">{p.overlap && p.signal != null && p.signal >= -80 ? <span className="warn">On overlapping channels and audible: they take turns</span> : <span className="dim">{p.words}{p.overlap ? " · overlapping channels" : ""}</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // Three tabs (UU-C-241): the radios with channel advice, the nearby networks, the devices.
 const VIEWS = [
   ["aps", "Access points"],
@@ -398,6 +445,7 @@ export default function Wifi({ route }) {
         <>
           <ChannelAdvice advice={data.advice} />
           <AccessPoints aps={data.aps} />
+          <ChannelAi ai={data.radioAi} />
         </>
       )}
       {data && view === "nearby" && <Nearby n={data.nearby} />}

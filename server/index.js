@@ -1186,6 +1186,30 @@ app.post("/api/findings/hidden", (req, res) => {
   res.json({ ok: true, hidden: all.size });
 });
 
+// Pinned devices (UU-C-289): the owner's shortlist, shown in the sidebar on every screen and
+// browser. Order is the owner's; at most 30.
+const MAC_OK = /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/;
+function pinnedDevices() {
+  try {
+    const v = JSON.parse(db.getSetting("pinned_devices", "[]"));
+    return Array.isArray(v) ? v.filter((m) => MAC_OK.test(m)) : [];
+  } catch {
+    return [];
+  }
+}
+app.get("/api/pins", (req, res) => {
+  const names = insights.names();
+  res.json({ pins: pinnedDevices().map((mac) => ({ mac, name: names(mac) || mac })) });
+});
+app.post("/api/pins/:mac", (req, res) => {
+  const mac = String(req.params.mac || "").toLowerCase();
+  if (!MAC_OK.test(mac)) return res.status(400).json({ error: "mac required" });
+  const pins = pinnedDevices().filter((m) => m !== mac);
+  if (req.body?.pinned !== false) pins.push(mac);
+  db.setSetting("pinned_devices", JSON.stringify(pins.slice(-30)));
+  res.json({ ok: true, pinned: req.body?.pinned !== false, count: Math.min(30, pins.length) });
+});
+
 // Overview's feed. Also built right after each data change for today (prewarmOverview), so the
 // first visit after a snapshot is instant too (UU-C-166).
 // Server-Timing of the last Overview built here (UU-C-215).
@@ -1369,7 +1393,7 @@ app.get("/api/wifi/summary", (req, res) => {
     const days = AIR_DAYS(req.query.days);
     const now = Date.now();
     const w = airview.wifiSummary(now - days * 24 * 3600e3, now + 1);
-    res.json({ tz, days, ...w, nearby: airview.nearbySummary(w.aps), advice: airview.channelAdvice(w.aps, now) });
+    res.json({ tz, days, ...w, nearby: airview.nearbySummary(w.aps), advice: airview.channelAdvice(w.aps, now), radioAi: airview.radioAiSummary() });
   } catch (err) {
     sendError(res, "GET /api/wifi/summary", err);
   }
@@ -1383,7 +1407,7 @@ app.get("/api/internet", (req, res) => {
   try {
     const days = AIR_DAYS(req.query.days);
     const now = Date.now();
-    res.json({ tz, ...airview.internetSummary(days, now), daily: wanDays(Math.max(7, days), now) });
+    res.json({ tz, ...airview.internetSummary(days, now), daily: wanDays(Math.max(7, days), now), lines: airview.linesSummary(now - days * 24 * 3600e3, now + 1) });
   } catch (err) {
     sendError(res, "GET /api/internet", err);
   }

@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NetLens</title>
+    <script>
+      // Theme before the first paint (UU-C-289): the saved choice, else the device's.
+      try {
+        var t = localStorage.getItem("netlens.theme");
+        var dark = t === "dark" || (t !== "light" && !(window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches));
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

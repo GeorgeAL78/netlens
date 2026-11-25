@@ -21,10 +21,23 @@ export async function refreshFirewall() {
   // The rest of the Policy Engine; each list on its own, so one UniFi lacks does not stop the rest.
   const more = {};
   for (const k of ["qos", "objects", "portForwards", "nat", "routes", "trafficRules", "acl"]) more[k] = await unifi.getPolicyList(k).catch(() => null);
+  const ips = await unifi.getThreatSettings().catch(() => null);
   if (!Array.isArray(policies) || !Array.isArray(zones)) return null;
   const netName = new Map(nets.map((n) => [n._id, { name: n.name, vlan: Number(n.vlan) || 1, subnet: n.ip_subnet || null }]));
   const keep = {
     at: Date.now(),
+    // Threat protection (UU-C-289): only these fields; UniFi's answer also holds a licence token.
+    threat: ips
+      ? {
+          mode: ips.ips_mode || null,
+          categories: Array.isArray(ips.enabled_categories) ? ips.enabled_categories.length : null,
+          networks: (ips.enabled_networks || []).map((id) => netName.get(id)?.name || "a network"),
+          adBlocking: Boolean(ips.ad_blocking_enabled),
+          dnsFiltering: Boolean(ips.dns_filtering),
+          honeypots: Array.isArray(ips.honeypot) ? ips.honeypot.length : 0,
+          blockPage: Boolean(ips.content_filtering_blocking_page_enabled),
+        }
+      : null,
     zones: zones.map((z) => ({ id: z._id, name: z.name, key: z.zone_key || null, networks: (z.network_ids || []).map((id) => netName.get(id)?.name || "a network") })),
     networks: Object.fromEntries([...netName].map(([id, n]) => [id, n.name])),
     policies: policies.map((p) => ({
@@ -378,6 +391,7 @@ export function firewallSummary({ blocks = new Map(), now = Date.now() } = {}) {
   return {
     at: fw.at,
     changes,
+    threat: fw.threat || null,
     dns,
     filters,
     qos,

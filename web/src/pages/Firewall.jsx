@@ -45,6 +45,43 @@ const ago = (t) => {
   return m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
 };
 
+// Threat protection (UU-C-289): UniFi's intrusion prevention and the extras next to it, as set
+// in UniFi under Settings › Security. NetLens only reads it.
+const IPS_WORD = { ips: ["on", "Detect and block"], ids: ["warn", "Detect only, nothing blocked"], disabled: ["off", "Off"] };
+function Threat({ t }) {
+  if (!t) return null;
+  const [cls, word] = IPS_WORD[t.mode] || ["off", t.mode || "Unknown"];
+  const yes = (v, on = "On", off = "Off") => <span className={`state ${v ? "on" : "off"}`}>{v ? on : off}</span>;
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Threat protection</h2>
+        <span className="hint">UniFi's intrusion prevention and its extras, as set in UniFi under Settings › Security. What it stopped is on Blocked.</span>
+      </div>
+      <div className="facts">
+        <div className="fact">
+          <span className="label">Intrusion prevention</span>
+          <span><span className={`state ${cls}`}>{word}</span></span>
+          {t.mode !== "disabled" && <span className="small dim">{t.categories != null ? `${t.categories} threat categories` : ""}{t.networks?.length ? ` · on ${t.networks.join(", ")}` : ""}</span>}
+        </div>
+        <div className="fact">
+          <span className="label">Ad blocking</span>
+          <span>{yes(t.adBlocking)}</span>
+        </div>
+        <div className="fact">
+          <span className="label">DNS filtering</span>
+          <span>{yes(t.dnsFiltering)}</span>
+        </div>
+        <div className="fact">
+          <span className="label">Honeypot</span>
+          <span>{yes(t.honeypots > 0, `${t.honeypots} set up`, "None")}</span>
+          <span className="small dim">A decoy address that flags any device probing it.</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Firewall() {
   const { data: d, error, loading, reload } = useApi("/api/firewall", 5 * 60 * 1000);
   const on = d?.rules.filter((r) => r.enabled).length || 0;
@@ -71,6 +108,7 @@ export default function Firewall() {
       )}
       {d?.at && (
         <>
+          <Threat t={d.threat} />
           <section className="card">
             <div className="card-head">
               <h2>Your rules</h2>

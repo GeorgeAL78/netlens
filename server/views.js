@@ -846,6 +846,28 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
     }
     if (v.updateAvailable && v.network) out.push({ id: "unifi-update", kind: "equipment", level: "info", ts: v.checkedAt || end, title: "UniFi Network update available", text: `Running ${v.network}.` });
   }
+  // Internet failover (UU-C-289): a line that became the active one. NetLens checks every
+  // 5 minutes, so the time is when it noticed, at most one update after the switch.
+  {
+    let w = null;
+    try {
+      w = JSON.parse(db.getSetting("wan_lines", "null"));
+    } catch {
+      w = null;
+    }
+    for (const c of w?.changes || []) {
+      if (c.at < start || c.at >= end || c.to !== "ACTIVE") continue;
+      const others = (w.lines || []).filter((l) => l.name !== c.name).map((l) => l.name);
+      out.push({
+        id: `wan-switch-${c.at}-${c.name}`,
+        kind: "equipment",
+        level: c.from === "BACKUP" ? "warn" : "info",
+        ts: c.at,
+        title: `Internet switched to ${c.name}`,
+        text: `${c.name} became the active line${c.after ? ` between ${clock(c.after)} and ${clock(c.at)}` : ` at ${clock(c.at)}`}${others.length ? `; ${others.join(", ")} stopped carrying traffic` : ""}.${c.from === "BACKUP" ? " It was the standby line, so the main one most likely went down." : ""}`,
+      });
+    }
+  }
   // Equipment over the period (UU-C-248): restarts, times offline, firmware updates. Restarts that
   // come with a firmware change are the update, not trouble. More than three restarts of one
   // device read as one line.

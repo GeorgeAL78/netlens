@@ -248,7 +248,7 @@ export default function Usage({ route }) {
                 <button
                   key={c.catId ?? c.category}
                   className="row"
-                  style={{ gridTemplateColumns: "minmax(0, 1fr) auto", borderRadius: 10, border: String(q.cat) === String(c.catId) ? "1px solid #2c4d7a" : undefined }}
+                  style={{ gridTemplateColumns: "minmax(0, 1fr) auto", borderRadius: 10, border: String(q.cat) === String(c.catId) ? "1px solid var(--chip-line)" : undefined }}
                   onClick={() => c.catId != null && set({ cat: String(q.cat) === String(c.catId) ? null : c.catId, app: null })}
                 >
                   <span className="stack"><span className="ellipsis">{c.category}</span><Meter share={c.totalBytes / catTotal} color="var(--ok)" /></span>

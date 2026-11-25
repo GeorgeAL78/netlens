@@ -201,6 +201,80 @@ export async function refreshVersions({ force = false } = {}) {
   return versions;
 }
 
+// ---- Internet lines (UU-C-289) -----------------------------------------------------------
+// Network 11 says which line carries traffic (ACTIVE) and which waits (BACKUP). Read with every
+// update; a switch is kept 90 days in setting `wan_lines`, so the Internet page and Overview can
+// say when the gateway failed over and back. A console without the endpoint (404) is asked
+// again only after a day, so the error log is not filled every 5 minutes.
+const LINE_KEEP_MS = 90 * 24 * 3600e3;
+let linesUnsupportedUntil = 0;
+async function refreshLines(ts) {
+  if (ts < linesUnsupportedUntil) return;
+  let rows;
+  try {
+    rows = await unifi.getWanLines();
+  } catch (err) {
+    if (err.status === 404) linesUnsupportedUntil = ts + 24 * 3600e3;
+    return;
+  }
+  if (!Array.isArray(rows) || !rows.length) return;
+  const lines = rows.map((r) => ({ name: r.name || r.wan_networkgroup || "Internet", group: r.wan_networkgroup || null, state: String(r.state || "").toUpperCase() || null }));
+  let prev = null;
+  try {
+    prev = JSON.parse(db.getSetting("wan_lines", "null"));
+  } catch {
+    prev = null;
+  }
+  const changes = (prev?.changes || []).filter((c) => c.at >= ts - LINE_KEEP_MS);
+  const before = new Map((prev?.lines || []).map((l) => [l.group || l.name, l.state]));
+  for (const l of lines) {
+    const was = before.get(l.group || l.name);
+    if (prev && was && was !== l.state) changes.push({ at: ts, name: l.name, from: was, to: l.state, after: prev.at || null });
+  }
+  db.setSetting("wan_lines", JSON.stringify({ at: ts, lines, changes }));
+}
+
+// ---- Channel AI (UU-C-289) ---------------------------------------------------------------
+// Hourly: which of our own access points hear each other and how loud (Channel AI's isolation
+// matrix), whether it is optimising now, and when its nightly run is scheduled. Kept as setting
+// `radio_ai`; device names only, no MACs leave this function except as the key UniFi gives.
+async function refreshRadioAi(now) {
+  const [m, tasks] = await Promise.all([unifi.getRadioAi().catch(() => null), unifi.getScheduleTasks().catch(() => [])]);
+  if (!m || !Array.isArray(m.ap_radio_neighbours)) return;
+  const pairs = [];
+  for (const band of m.ap_radio_neighbours) {
+    for (const ap of band.ap_neighbours || []) {
+      const me = ap.device || {};
+      for (const ch of ap.channel_neighbours || []) {
+        for (const n of ch.neighbours || []) {
+          pairs.push({
+            radio: band.radio || null,
+            ap: me.name || me.model || "access point",
+            apMac: lower(me.mac),
+            channel: num(me.channel),
+            width: num(me.channel_width),
+            hears: n.device?.name || n.device?.model || "access point",
+            hearsMac: lower(n.device?.mac),
+            hearsChannel: num(ch.channel),
+            hearsWidth: num(n.channel_width),
+            signal: num(n.scan?.signal),
+          });
+        }
+      }
+    }
+  }
+  const task = (tasks || []).find((t) => t.action === "radio-ai");
+  db.setSetting(
+    "radio_ai",
+    JSON.stringify({
+      at: now,
+      running: Boolean(m.optimization_status?.in_progress || m.optimization_status?.in_progress_in_site),
+      schedule: task ? { cron: task.cron_expr || null, tz: task.timezone || null, once: Boolean(task.execute_only_once) } : null,
+      pairs,
+    })
+  );
+}
+
 export async function pollHealth() {
   const ts = Date.now();
   await refreshVersions();
@@ -214,6 +288,7 @@ export async function pollHealth() {
     apNames = new Map(devices.map((d) => [lower(d.mac), d.name || modelNames.get(lower(d.mac)) || d.model]));
     db.saveLiveSamples({ clients, devices: devs, wan: wanRow(health, ts) });
     db.saveLocalNames("device", deviceNames(devices), ts);
+    await refreshLines(ts);
     if (ts - lastPrune > 60 * 60 * 1000) {
       db.pruneLiveSamples(ts - RETAIN_MS);
       lastPrune = ts;
@@ -375,6 +450,7 @@ export async function refreshAir({ force = false } = {}) {
       if (nets) db.setSetting("networks", JSON.stringify(nets.filter((n) => n.ip_subnet && n.purpose !== "wan").map((n) => ({ name: n.name, vlan: num(n.vlan) || 1, subnet: n.ip_subnet }))));
       // The firewall rules and zones (UU-C-270), for Protection › Firewall rules.
       await refreshFirewall().catch(() => null);
+      await refreshRadioAi(now).catch(() => null);
       // The access points' last RF scans; a scan already kept is skipped (same time).
       const scans = await unifi.getRfScans().catch(() => []);
       db.saveRfScan(

@@ -39,6 +39,7 @@ export default function Internet() {
       </div>
       {/* The full live view is its own page (UU-C-258). */}
       <LiveMini title="Live · open the live view" />
+      {d?.lines?.lines?.length > 0 && <Lines lines={d.lines} days={days} />}
       {error && <Failed error={error} reload={reload} />}
       {!d && loading && <Loading />}
       {d && !d.samples && <div className="card empty">Nothing recorded in this period.</div>}
@@ -168,5 +169,48 @@ export default function Internet() {
         </>
       )}
     </div>
+  );
+}
+
+// Your internet lines (UU-C-289): which one carries traffic, which waits, and every switch
+// between them in the period. NetLens checks every 5 minutes, so a switch is placed between two
+// checks.
+const STATE_WORD = { ACTIVE: ["on", "Carrying traffic"], BACKUP: ["standby", "Standby"], FAILOVER: ["warn", "Failing over"], DOWN: ["warn", "Down"] };
+function Lines({ lines, days }) {
+  const word = (s) => STATE_WORD[s] || ["off", s ? s.charAt(0) + s.slice(1).toLowerCase() : "Unknown"];
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2>Your lines</h2>
+        <span className="hint">{lines.lines.length > 1 ? "The gateway sends traffic over the active line and switches to the standby one if it fails." : "One internet line."}</span>
+      </div>
+      <div className="facts">
+        {lines.lines.map((l) => {
+          const [cls, text] = word(l.state);
+          return (
+            <div key={l.group || l.name} className="fact">
+              <span className="label">{l.group && l.group !== l.name ? l.group : "Line"}</span>
+              <strong>{l.name}</strong>
+              <span><span className={`state ${cls}`}>{text}</span></span>
+            </div>
+          );
+        })}
+      </div>
+      {lines.changes.length > 0 ? (
+        <div className="rows">
+          {lines.changes.map((c) => (
+            <div key={`${c.at}-${c.name}`} className="row small" style={{ gridTemplateColumns: "150px minmax(0, 1fr)" }}>
+              <span className="mono dim">{shortDate(c.at)}</span>
+              <span>
+                <strong>{c.name}</strong>: {word(c.from)[1].toLowerCase()} → {word(c.to)[1].toLowerCase()}
+                {c.after ? <span className="dim"> (between {clock(c.after)} and {clock(c.at)})</span> : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        lines.lines.length > 1 && <span className="dim small">No switch between lines in the last {days === 1 ? "24 hours" : `${days} days`}.</span>
+      )}
+    </section>
   );
 }

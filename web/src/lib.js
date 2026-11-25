@@ -218,3 +218,65 @@ export function deviceGroups(clients, pick) {
     { label: "Unnamed and offline", searchOnly: true, items: unnamed.filter((c) => !c.online).map((c) => ({ ...item(c), sub: "old private address?" })) },
   ];
 }
+
+// ---- pinned devices (UU-C-289) -------------------------------------------------------------
+// The owner's shortlist, kept on the server so every browser shows the same. One store, so the
+// pin button on a device page and the sidebar agree without a reload.
+let pinState = { pins: null };
+const pinWatchers = new Set();
+const setPins = (pins) => {
+  pinState = { pins };
+  pinWatchers.forEach((w) => w());
+};
+let pinsLoading = null;
+export function loadPins() {
+  if (!pinsLoading) pinsLoading = api("/api/pins").then((d) => setPins(d.pins || [])).catch(() => setPins([])).finally(() => (pinsLoading = null));
+  return pinsLoading;
+}
+export function usePins() {
+  const s = useSyncExternalStore(
+    (w) => (pinWatchers.add(w), () => pinWatchers.delete(w)),
+    () => pinState
+  );
+  useEffect(() => {
+    if (s.pins == null) loadPins();
+  }, [s.pins]);
+  return s.pins;
+}
+export async function setPinned(mac, pinned, name) {
+  const m = String(mac).toLowerCase();
+  const before = pinState.pins || [];
+  setPins(pinned ? [...before.filter((p) => p.mac !== m), { mac: m, name: name || m }] : before.filter((p) => p.mac !== m));
+  try {
+    await api(`/api/pins/${encodeURIComponent(m)}`, { method: "POST", body: JSON.stringify({ pinned }) });
+  } catch (e) {
+    setPins(before);
+    throw e;
+  }
+}
+
+// ---- theme (UU-C-289) ----------------------------------------------------------------------
+// "system" follows the device; the choice is per browser. index.html applies it before the
+// first paint, so a light-theme reload does not flash dark.
+const THEME_KEY = "netlens.theme";
+export function themeChoice() {
+  try {
+    const v = localStorage.getItem(THEME_KEY);
+    return v === "light" || v === "dark" ? v : "system";
+  } catch {
+    return "system";
+  }
+}
+export function applyTheme(choice = themeChoice()) {
+  const dark = choice === "dark" || (choice === "system" && !window.matchMedia?.("(prefers-color-scheme: light)").matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+}
+export function setTheme(choice) {
+  try {
+    if (choice === "system") localStorage.removeItem(THEME_KEY);
+    else localStorage.setItem(THEME_KEY, choice);
+  } catch {
+    /* this visit only */
+  }
+  applyTheme(choice);
+}

@@ -86,7 +86,7 @@ export default function Day({ route }) {
               <span>○ roam / connect</span>
               <span><span className="bad">▲</span> blocked</span>
               <span><span className="bad">✕</span> failed Wi-Fi join</span>
-              <span><i style={{ background: "repeating-linear-gradient(45deg, #2a3140 0 3px, #161b24 3px 6px)" }} />no data</span>
+              <span><i style={{ background: "var(--stripe-nodata)" }} />no data</span>
             </div>
           </div>
           {data.lostSpans?.length > 0 && (
@@ -129,7 +129,7 @@ export default function Day({ route }) {
               <span className="tot"><Bytes n={data.network.total} /><Split down={data.network.down} up={data.network.up} /></span>
 
               {rows.map((r) => [
-                <a key={`${r.mac}-n`} className="who" href={href("device", r.mac, { d: date })} style={{ borderTop: "1px solid #171d28", paddingTop: 6 }}>
+                <a key={`${r.mac}-n`} className="who" href={href("device", r.mac, { d: date })} style={{ borderTop: "1px solid var(--line-soft)", paddingTop: 6 }}>
                   <span className={`status-dot ${healthClass(r.health)}`} />
                   <span className="stack">
                     <span className="nm ellipsis">{r.name}</span>

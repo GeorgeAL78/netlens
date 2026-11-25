@@ -423,3 +423,46 @@ export function internetSummary(days, now) {
     series,
   };
 }
+
+// ---- Network 11 extras (UU-C-289) ----------------------------------------------------------
+const setting = (key) => {
+  try {
+    return JSON.parse(db.getSetting(key, "null"));
+  } catch {
+    return null;
+  }
+};
+// "0 3 * * *" → "every night at 03:00"; anything else is shown as UniFi wrote it.
+export function cronText(cron) {
+  const m = /^(\d{1,2}) (\d{1,2}) \* \* \*$/.exec(String(cron || "").trim());
+  if (m) return `every night at ${m[2].padStart(2, "0")}:${m[1].padStart(2, "0")}`;
+  const w = /^(\d{1,2}) (\d{1,2}) \* \* ([0-6])$/.exec(String(cron || "").trim());
+  if (w) return `every ${["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][Number(w[3])]} at ${w[2].padStart(2, "0")}:${w[1].padStart(2, "0")}`;
+  return cron ? `on schedule ${cron}` : null;
+}
+// How our own access points hear each other (Channel AI's isolation matrix). Two access points
+// that hear each other loudly on overlapping channels share airtime; quiet means well apart.
+export function radioAiSummary() {
+  const r = setting("radio_ai");
+  if (!r) return null;
+  const word = (s) => (s == null ? "not heard" : s >= -67 ? "loud: they share airtime when on the same channel" : s >= -80 ? "audible" : "faint: well apart");
+  const pairs = (r.pairs || []).map((p) => ({
+    band: bandName(p.radio) || p.radio,
+    ap: p.ap,
+    channel: p.channel,
+    width: p.width,
+    hears: p.hears,
+    hearsChannel: p.hearsChannel,
+    hearsWidth: p.hearsWidth,
+    signal: p.signal,
+    overlap: overlaps(channelSpan(p.radio, p.channel, p.width), channelSpan(p.radio, p.hearsChannel, p.hearsWidth)),
+    words: word(p.signal),
+  }));
+  return { at: r.at, running: r.running, schedule: r.schedule ? { ...r.schedule, text: cronText(r.schedule.cron) } : null, pairs };
+}
+// The internet lines and when the gateway switched between them (failover), within the period.
+export function linesSummary(start, end) {
+  const w = setting("wan_lines");
+  if (!w) return null;
+  return { at: w.at, lines: w.lines || [], changes: (w.changes || []).filter((c) => c.at >= start && c.at < end).reverse() };
+}

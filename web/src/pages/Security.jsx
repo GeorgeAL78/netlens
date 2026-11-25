@@ -243,7 +243,7 @@ export default function Security({ route }) {
                     {days.map((d) => (
                       <div key={d.k} title={ads ? `${d.k} · ${d.f} ads and trackers` : `${d.k} · ${d.t} intrusion · ${d.f} blocked by rules`} style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "flex-end", height: "100%", gap: 2 }}>
                         {d.t > 0 && <span style={{ height: `${(d.t / dmax) * 56}px`, background: "var(--bad)", borderRadius: 3 }} />}
-                        {d.f > 0 && <span style={{ height: `${(d.f / dmax) * 56}px`, background: "#8a6a2e", borderRadius: 3 }} />}
+                        {d.f > 0 && <span style={{ height: `${(d.f / dmax) * 56}px`, background: "var(--warn-bar)", borderRadius: 3 }} />}
                       </div>
                     ))}
                   </div>
