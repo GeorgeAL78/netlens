@@ -317,7 +317,7 @@ function Devices({ devices, days }) {
       </div>
       {slower.length > 0 && (
         <p className="small muted" style={{ margin: 0 }}>
-          On 2.4 GHz now, though they used 5 or 6 GHz in the last 30 days: {slower.map((d) => d.name).join(", ")}. Usually too far from an access point for the faster band; closer, or another access point, moves them back.
+          On 2.4 GHz now, though they used 5 or 6 GHz in the last 90 days: {slower.map((d) => d.name).join(", ")}. Either too far from an access point for the faster band (closer, or another access point, moves them back), or joined to a Wi-Fi network that only broadcasts 2.4 GHz.
         </p>
       )}
       <div className="scroll-x">

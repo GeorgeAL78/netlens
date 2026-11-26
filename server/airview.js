@@ -22,7 +22,7 @@ const CLEAN24 = [1, 6, 11];
 // ---- Wi-Fi ---------------------------------------------------------------------------------
 // Each access point's radios over the period: channel, width, power, how busy the channel was
 // and how much of that was other networks. Then the devices (signal, band, roams, failed joins),
-// and which ones sit on 2.4 GHz though they have used 5 or 6 GHz in the last 30 days.
+// and which ones sit on 2.4 GHz though they have used 5 or 6 GHz in the last 90 days (all the samples kept; UU-C-306).
 export function wifiSummary(start, end) {
   const nameOf = names();
   const rows = db.queryDeviceSamples(start, end).filter((r) => r.type === "uap");
@@ -80,9 +80,9 @@ export function wifiSummary(start, end) {
   const samples = db.queryClientSamples(start, end, null);
   const list = wifiList(start, end, samples).clients;
   const newest = list.reduce((m, c) => Math.max(m, c.lastSeen || 0), 0);
-  // On 2.4 GHz at the period's last update, though seen on 5 or 6 GHz in the last 30 days.
+  // On 2.4 GHz at the period's last update, though seen on 5 or 6 GHz in the last 90 days.
   const on24 = list.filter((c) => c.lastSeen >= newest - 15 * 60e3 && c.band && /2\.4/.test(c.band));
-  const faster = db.fasterBandSeen(on24.map((c) => c.mac), end - 30 * 24 * HOUR);
+  const faster = db.fasterBandSeen(on24.map((c) => c.mac), end - 90 * 24 * HOUR);
   const fails = new Map();
   for (const j of db.wifiJoins(start, end)) if (j.result !== "SUCCESS") fails.set(j.mac, (fails.get(j.mac) || 0) + (j.n || 1));
   const devices = list.map((c) => ({
