@@ -47,8 +47,8 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
   or network): its type from UniFi's fingerprint, model or maker, signal or link speed and today's
   data and top app; VMs and containers under their server; one menu per device (rename, type, pin,
   check, block) and several at once; offline devices checked on the network every 5 minutes.
-- **Wi-Fi problems** (with syslog) — why a device left the Wi-Fi, DNS timeouts and the anomalies the
-  access points flag, kept 90 days.
+- **Wi-Fi problems** (with syslog) — why a device left the Wi-Fi, DNS timeouts, the anomalies the
+  access points flag and band steering (asked to move, and whether it did), kept 90 days; gateway errors on Overview.
 - **Activity › Sites** — every site each device connected to (30 days), filtered by category; addresses hidden
   by secure DNS named when they belong to a watched site.
 - **Protection › Limits** — daily limits on time or data for an app on a device, flagged on Overview.

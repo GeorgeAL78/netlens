@@ -343,6 +343,12 @@ for (const { hq, label, dayBar } of hourChecks) {
     const t = await get(`/api/devices/${encodeURIComponent(d.mac)}/wifi-problems?date=${today}`);
     const want = t.dns.events >= 3 && t.dns.timeouts >= 10;
     if (want !== findings.some((f) => f.id === `dns-${d.mac}`)) failures.push(`overview ${d.mac}: DNS timeouts ${t.dns.timeouts} in ${t.dns.events} events today, finding ${want ? "missing" : "shown anyway"}`);
+    // Band steering (UU-C-304): answers never exceed requests by more than the merge allows, and
+    // Overview flags a device exactly when it refused 5+ times and most of its answers.
+    const st = t.steer || { asked: 0, moved: 0, refused: 0, own: 0 };
+    if ([st.asked, st.moved, st.refused, st.own].some((x) => !(x >= 0))) failures.push(`wifi problems ${d.mac}: a negative or missing steering count`);
+    const wantSteer = st.refused >= 5 && st.refused >= 0.8 * (st.refused + st.moved);
+    if (wantSteer !== findings.some((f) => f.id === `steer-${d.mac}`)) failures.push(`overview ${d.mac}: refused ${st.refused}, moved ${st.moved} today, steering finding ${wantSteer ? "missing" : "shown anyway"}`);
   }
 }
 

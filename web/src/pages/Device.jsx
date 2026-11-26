@@ -149,7 +149,7 @@ function WifiProblems({ mac }) {
   const { data: p } = useApi(`/api/devices/${encodeURIComponent(mac)}/wifi-problems?days=${days}`);
   if (!p) return null;
   const removed = p.leaves.filter((l) => !l.own);
-  const nothing = !p.dns.events && !p.anomalies.length && !p.leaves.length && !p.recent.length;
+  const nothing = !p.dns.events && !p.anomalies.length && !p.leaves.length && !p.recent.length && !p.steer?.asked;
   return (
     <div className="card">
       <div className="card-head">
@@ -174,6 +174,13 @@ function WifiProblems({ mac }) {
               <span className="small dim">{[a.signal != null ? `signal around ${a.signal} dBm` : null, a.satisfaction != null ? `satisfaction down to ${a.satisfaction}%` : null, `last ${shortDate(a.last)}`].filter(Boolean).join(" · ")}</span>
             </div>
           ))}
+          {(p.steer?.asked > 0 || p.steer?.moved + p.steer?.refused > 0) && (
+            <div className="fact" title="802.11v band steering: the access point asks a device on a weak signal to move to a better access point or band; the device decides">
+              <span className="label">Asked to move</span>
+              <span className={p.steer.refused > p.steer.moved ? "warn" : ""}>{p.steer.asked} time{p.steer.asked === 1 ? "" : "s"}{p.steer.signal != null ? ` at about ${p.steer.signal} dBm` : ""}</span>
+              <span className="small dim">{p.steer.answers.length ? p.steer.answers.map((a) => `${a.text} ${a.n}`).join(" · ") : "no answer recorded"}</span>
+            </div>
+          )}
           <div className="fact">
             <span className="label">Left Wi-Fi</span>
             <span>{p.leaves.length ? `${p.leaves.length} time${p.leaves.length === 1 ? "" : "s"}` : "None recorded"}</span>
@@ -348,6 +355,7 @@ export default function Device({ route }) {
   if (dev?.host) notes.push({ level: "info", text: `Runs on ${dev.host.name}`, tab: "connection" });
   if (probs?.dns?.timeouts) notes.push({ level: "warn", text: `DNS lookups timed out ${probs.dns.timeouts} time${probs.dns.timeouts === 1 ? "" : "s"} ${isToday ? "today" : "that day"}`, tab: "connection" });
   if (probs?.anomalies?.length) notes.push({ level: "warn", text: `Its access point flagged ${probs.anomalies.map((a) => `${a.label} ×${a.n}`).join(", ")}${probs.anomalies[0].signal != null ? ` (signal around ${probs.anomalies[0].signal} dBm)` : ""}`, tab: "connection" });
+  if (probs?.steer?.refused >= 3) notes.push({ level: "warn", text: `Refused to move to a better access point ${probs.steer.refused} time${probs.steer.refused === 1 ? "" : "s"}${probs.steer.signal != null ? ` at about ${probs.steer.signal} dBm` : ""}`, tab: "connection" });
   const kicked = (probs?.leaves || []).filter((l) => !l.own);
   if (kicked.length) notes.push({ level: "warn", text: `Removed from Wi-Fi by the access point ${kicked.length} time${kicked.length === 1 ? "" : "s"}: ${[...new Set(kicked.map((l) => l.why))].join(", ")}`, tab: "connection" });
   if (r?.uncounted) notes.push({ level: "info", text: "UniFi counted no internet traffic for it; the connection records did", tab: "apps" });

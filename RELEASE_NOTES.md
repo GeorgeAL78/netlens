@@ -1,6 +1,6 @@
 ### Added
-- **Wi-Fi problems from the access points' own log.** With UniFi's Access Points device log sent to NetLens (Settings › CyberSecure › Activity Logging › SIEM Server › Devices), NetLens now reads three things UniFi's API doesn't give:
-  - **Why a device left the Wi-Fi.** Each disconnect in a device's Wi-Fi history says whether it left on its own or was removed by the access point, with the reason (for example "inactive for too long") and its signal just before.
-  - **DNS timeouts.** How often a device's lookups timed out. Overview flags a device when it happens again and again (3 or more times and 10 or more lookups), with the signal it had.
-  - **Anomalies the access point flags for a device**, such as DNS lookups timing out or slow responses, with its signal and satisfaction at the time.
-- On the device page these appear in a new **Wi-Fi problems** card on the Connection tab, in Summary's list of what stands out, and in the day's events. Kept 90 days, like the other events.
+- **Band steering.** When a device's signal gets weak, the access point asks it to move to a better access point or band, and the device accepts or refuses. NetLens now shows how often each device was asked, at what signal and how it answered: in the Wi-Fi problems card, in Summary when it refused 3 or more times, and on Overview when a device keeps refusing (5 or more times, and most of its answers). Needs UniFi's Access Points device log sent to NetLens.
+- **Gateway errors.** When the gateway's own message service keeps failing to reach another part of the console (for example its DNS component), Overview says so.
+
+### Fixed
+- A device's model is shown only when UniFi is at least 50% sure of it. UniFi named an iPhone 15 Pro Max "iPhone 11 Pro Max" at 6%. Otherwise the page shows the maker, and the tooltip gives UniFi's guess with its certainty. The type (phone, tablet…) is still used.

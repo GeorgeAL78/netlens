@@ -12,6 +12,7 @@ import * as unifi from "./unifi.js";
 import { logError } from "./log.js";
 
 const WEEK = 7 * 86400e3;
+export const MODEL_SURE = 50;
 const DAY = 86400e3;
 
 // The kinds NetLens draws. The page has the same list with labels and icons.
@@ -53,6 +54,8 @@ export function namesOf(u) {
     type: typeId != null ? table.types[String(typeId)] || null : null,
     family: famId != null ? table.families[String(famId)] || null : null,
     model: dev?.n || null,
+    // UniFi's own certainty, 0-100 (UU-C-304): a model named at 6 % was wrong on the owner's network.
+    confidence: u.confidence != null ? Number(u.confidence) : null,
   };
   return out.type || out.family || out.model ? out : null;
 }
@@ -127,7 +130,10 @@ export function setOverride(mac, kind) {
 // owner said otherwise); `vendor` = its maker, for the smart-home guess.
 export function typeOf(mac, names, guest, words, choices = overrides(), { hosts = false, vendor = null } = {}) {
   const own = choices[mac];
-  const base = { type: names?.type || null, family: names?.family || null, model: names?.model || null };
+  // The exact model only when UniFi is at least MODEL_SURE % sure; the type and family hold up far
+  // better than the model (an iPhone 15 named "iPhone 11 Pro Max" at 6 %), so they are kept.
+  const sure = names?.confidence == null || names.confidence >= MODEL_SURE;
+  const base = { type: names?.type || null, family: names?.family || null, model: sure ? names?.model || null : null, unsureModel: sure ? null : names?.model || null, confidence: names?.confidence ?? null };
   if (own) return { kind: own, source: "you", ...base };
   if (guest) return { kind: "vm", source: "virtual", ...base, model: base.model || guest.platform || null };
   const k = kindOfNames(names);

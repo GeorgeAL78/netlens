@@ -610,6 +610,32 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       mac: d.mac,
     });
   }
+  // Band steering refused (UU-C-304): the access point keeps asking a device on a weak signal to
+  // move to a better one and it says no — worth a look at 5+ refusals making up most answers.
+  for (const d of wifiproblems.summary(start, end)) {
+    if (!(d.refused >= 5 && d.refused >= 0.8 * (d.refused + d.moved))) continue;
+    out.push({
+      id: `steer-${d.mac}`,
+      kind: "wifi",
+      level: "info",
+      ts: d.last,
+      title: `${d.name} refused to move to a better access point ${d.refused} time${d.refused === 1 ? "" : "s"} ${when}`,
+      text: `${d.aps.length ? `${d.aps.join(", ")} asked it to move${d.steerSignal != null ? ` at about ${d.steerSignal} dBm` : ""}. ` : ""}${d.moved ? `It moved ${d.moved} time${d.moved === 1 ? "" : "s"}. ` : ""}A device decides for itself whether to move; a minimum signal (Minimum RSSI) on the access point makes the decision for it.`,
+      mac: d.mac,
+    });
+  }
+  // The gateway failing to reach another part of the console (UU-C-304), from its own log.
+  for (const g of wifiproblems.gatewaySummary(start, end)) {
+    if (g.n < 10) continue;
+    out.push({
+      id: `gw-${g.target}-${g.why.replace(/\W+/g, "-")}`,
+      kind: "network",
+      level: "info",
+      ts: g.last,
+      title: `The gateway couldn't reach its ${g.target} service ${g.n} times ${when}`,
+      text: `UniFi's message service on the gateway logged "${g.why}" each time, inside the console, not on your network. What it affects isn't documented; if it keeps happening, restarting or updating the console usually clears it.`,
+    });
+  }
   lap("dns");
   // Slow or renegotiated wired links.
   const wired = insights.wiredList(start, end, clientSamples).clients;

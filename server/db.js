@@ -573,6 +573,14 @@ export function apEvents(since, before, mac = null, category = null) {
     .map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
 }
 
+// Gateway problems from its own log (UU-C-304), kind 'gw', newest first.
+export function gatewayEvents(since, before) {
+  return db
+    .prepare(`SELECT uid, ts, name, category, data FROM siem_events WHERE kind = 'gw' AND ts >= ? AND ts < ? ORDER BY ts DESC`)
+    .all(since, before)
+    .map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
+}
+
 // System Log connects / roams / disconnects in [since, before), oldest first, optionally for
 // one device — where devices were attached on days NetLens took no samples (UU-C-102).
 export function linkEvents(since, before, mac = null) {

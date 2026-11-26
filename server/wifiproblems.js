@@ -45,6 +45,21 @@ const ANOMALY = {
 };
 export const anomalyText = (k) => ANOMALY[k] || String(k || "").replace(/_/g, " ");
 
+// 802.11v band steering answers (IEEE 802.11 table 9-428) in words (UU-C-304).
+const STEER = {
+  0: "moved",
+  1: "refused",
+  2: "refused: couldn't hear the other access points",
+  3: "refused: the other access point is full",
+  4: "refused: doesn't want to move",
+  5: "asked to wait",
+  6: "suggested its own access points",
+  7: "refused: no better access point it can see",
+  8: "refused: leaving the network",
+};
+export const steerText = (status) => STEER[status] || `answered ${status}`;
+const refusedStatus = (st) => st !== 0 && st !== 6;
+
 const apName = (nameOf, d) => (d?.apMac ? nameOf(d.apMac) : null) || d?.ap || "an access point";
 const avg = (xs) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
 
@@ -55,6 +70,7 @@ export function forDevice(mac, start, end) {
   const leaves = [];
   const dns = { events: 0, timeouts: 0, last: null, aps: new Set() };
   const kinds = new Map();
+  const steer = { asked: 0, moved: 0, refused: 0, own: 0, rssis: [], last: null, answers: new Map() };
   const recent = [];
   for (const e of rows) {
     const d = e.data || {};
@@ -80,6 +96,19 @@ export function forDevice(mac, start, end) {
         kinds.set(a, k);
       }
       recent.push({ ts: e.ts, kind: "anomaly", what: (d.anomalies || []).map(anomalyText).join(", "), detail: [ap, d.signal != null ? `${d.signal} dBm` : null, d.satisfaction != null ? `satisfaction ${d.satisfaction}%` : null].filter(Boolean).join(" · "), level: "warn" });
+    } else if (e.category === "steer") {
+      const n = Number(d.n) || 1;
+      steer.asked += n;
+      if (d.rssi != null) steer.rssis.push(d.rssi);
+      steer.last = Math.max(steer.last || 0, d.last || e.ts);
+      recent.push({ ts: e.ts, kind: "steer", what: `Asked to move${n > 1 ? ` ×${n}` : ""}`, detail: [ap, d.rssi != null ? `${d.rssi} dBm` : null, d.candidates ? `${d.candidates} better access point${d.candidates === 1 ? "" : "s"} offered` : null].filter(Boolean).join(" · "), level: "info" });
+    } else if (e.category === "steer-reply") {
+      const n = Number(d.n) || 1;
+      if (d.status === 0) steer.moved += n;
+      else if (d.status === 6) steer.own += n;
+      else steer.refused += n;
+      steer.answers.set(steerText(d.status), (steer.answers.get(steerText(d.status)) || 0) + n);
+      recent.push({ ts: e.ts, kind: "steer", what: `${steerText(d.status).replace(/^./, (c) => c.toUpperCase())}${n > 1 ? ` ×${n}` : ""}`, detail: [ap, d.to ? `to ${nameOf(d.to) || d.to}` : null].filter(Boolean).join(" · "), level: refusedStatus(d.status) ? "warn" : "info" });
     } else {
       recent.push({ ts: e.ts, kind: "other", what: e.name, detail: ap, level: "info" });
     }
@@ -88,6 +117,7 @@ export function forDevice(mac, start, end) {
     leaves,
     dns: { events: dns.events, timeouts: dns.timeouts, last: dns.last, aps: [...dns.aps] },
     anomalies: [...kinds.values()].sort((a, b) => b.n - a.n).map((k) => ({ key: k.key, label: k.label, n: k.n, last: k.last, signal: avg(k.signals), satisfaction: k.satisfaction, aps: [...k.aps] })),
+    steer: { asked: steer.asked, moved: steer.moved, refused: steer.refused, own: steer.own, signal: avg(steer.rssis), last: steer.last, answers: [...steer.answers].map(([text, n]) => ({ text, n })).sort((a, b) => b.n - a.n) },
     recent: recent.slice(0, 60),
     more: Math.max(0, recent.length - 60),
   };
@@ -108,11 +138,18 @@ export function summary(start, end) {
   const nameOf = insights.names();
   const by = new Map();
   for (const e of db.apEvents(start, end)) {
-    if (e.category !== "dns" && e.category !== "anomaly") continue;
-    const s = by.get(e.mac) || { mac: e.mac, name: nameOf(e.mac), dnsEvents: 0, timeouts: 0, anomalies: 0, last: 0, signals: [], aps: new Set() };
+    if (!["dns", "anomaly", "steer", "steer-reply"].includes(e.category)) continue;
+    const s = by.get(e.mac) || { mac: e.mac, name: nameOf(e.mac), dnsEvents: 0, timeouts: 0, anomalies: 0, asked: 0, refused: 0, moved: 0, steerSignals: [], last: 0, signals: [], aps: new Set() };
     if (e.category === "dns") {
       s.dnsEvents += 1;
       s.timeouts += Number(e.data?.n) || 1;
+    } else if (e.category === "steer") {
+      s.asked += Number(e.data?.n) || 1;
+      if (e.data?.rssi != null) s.steerSignals.push(e.data.rssi);
+    } else if (e.category === "steer-reply") {
+      const n = Number(e.data?.n) || 1;
+      if (e.data?.status === 0) s.moved += n;
+      else if (refusedStatus(e.data?.status)) s.refused += n;
     } else {
       s.anomalies += 1;
       if (e.data?.signal != null) s.signals.push(e.data.signal);
@@ -121,5 +158,20 @@ export function summary(start, end) {
     s.aps.add(apName(nameOf, e.data));
     by.set(e.mac, s);
   }
-  return [...by.values()].map((s) => ({ ...s, signal: avg(s.signals), aps: [...s.aps], signals: undefined }));
+  return [...by.values()].map((s) => ({ ...s, signal: avg(s.signals), steerSignal: avg(s.steerSignals), aps: [...s.aps], signals: undefined, steerSignals: undefined }));
+}
+
+// The gateway's own problems in [start, end) (UU-C-304): per target and reason, how often.
+export function gatewaySummary(start, end) {
+  const by = new Map();
+  for (const e of db.gatewayEvents(start, end)) {
+    const d = e.data || {};
+    const k = `${d.target}|${d.why}`;
+    const g = by.get(k) || { target: d.target, why: d.why, n: 0, first: e.ts, last: e.ts, host: d.host || null };
+    g.n += Number(d.n) || 1;
+    g.first = Math.min(g.first, e.ts);
+    g.last = Math.max(g.last, d.last || e.ts);
+    by.set(k, g);
+  }
+  return [...by.values()].sort((a, b) => b.n - a.n);
 }

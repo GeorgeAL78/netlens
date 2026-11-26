@@ -89,9 +89,50 @@ function apLineTime(line, now) {
   // The lines arrive as they happen; a device clock in another zone must not move them.
   return t && Math.abs(t - now) < 15 * 60e3 ? t : now;
 }
+// 802.11v band steering (UU-C-304), the access point's kernel log: a request
+//   "vap-2(wifi1ap7):BTM: STA <mac> RSSI: -77, candidates: 4, error: 0, flags: ALLOW (0x1)"
+// and the device's answer
+//   "BTM: Received response from [<mac>](len = 5): dialog_token 1, status 1, delay 0, bssid n/a, cancel 0".
+// Status per IEEE 802.11 table 9-428: 0 accepted, 6 sent its own list, anything else refused.
+const BTM_ASK = /BTM: STA ([0-9a-f:]{17}) RSSI: (-?\d+), candidates: (\d+)/i;
+const BTM_REPLY = /BTM: Received response from \[([0-9a-f:]{17})\][^:]*: .*?status (\d+)[^,]*, delay \d+, bssid ([0-9a-f:]{17}|n\/a)/i;
+const VAP = /\((wifi\d+ap\d+)\)/;
+
+// A gateway problem worth knowing (UU-C-304): its message service failing to reach another part
+// of the console, e.g. "unifi-mq-broker: Failed to send request to coredns: ... connect: connection refused".
+const GW_FAIL = /unifi-mq-broker(?:\[\d+\])?: Failed to send request to (\w+)\b.*?(?:connect: |: )([^:"]+?)\s*$/i;
+export function parseGatewayLine(line, now = Date.now()) {
+  const m = GW_FAIL.exec(line);
+  if (!m) return null;
+  const host = syslogSource(line).host;
+  const ts = apLineTime(line, now);
+  const target = m[1].toLowerCase();
+  const why = (m[2] || "failed").trim().toLowerCase();
+  return { uid: uidOf(`${host}|${ts}|${line}`), ts, kind: GW_KIND, name: `Can't reach ${target}`, category: "console", mac: null, data: { host, target, why, n: 1, merge: `gw|${target}|${why}` } };
+}
+export const GW_KIND = "gw";
+
 export function parseApLine(line, now = Date.now()) {
   const tracker = line.indexOf("STA_ASSOC_TRACKER");
   const anomaly = line.indexOf("log_sta_anomalies");
+  const btm = line.indexOf("BTM: ");
+  if (btm >= 0) {
+    const ask = BTM_ASK.exec(line);
+    const reply = ask ? null : BTM_REPLY.exec(line);
+    if (!ask && !reply) return null;
+    const host = syslogSource(line).host;
+    const tag = AP_TAG.exec(line);
+    const ts = apLineTime(line, now);
+    const vap = VAP.exec(line)?.[1] || null;
+    const base = { ap: host, apMac: tag ? colons(tag[1]) : null, vap, n: 1 };
+    if (ask) {
+      const mac = ask[1].toLowerCase();
+      return { uid: uidOf(`${host}|${ts}|${line}`), ts, kind: AP_KIND, name: "Asked to move", category: "steer", mac, data: { ...base, rssi: Number(ask[2]), candidates: Number(ask[3]), merge: `${mac}|steer` } };
+    }
+    const mac = reply[1].toLowerCase();
+    const status = Number(reply[2]);
+    return { uid: uidOf(`${host}|${ts}|${line}`), ts, kind: AP_KIND, name: status === 0 ? "Moved when asked" : status === 6 ? "Suggested its own access points" : "Refused to move", category: "steer-reply", mac, data: { ...base, status, to: reply[3] === "n/a" ? null : reply[3].toLowerCase(), merge: `${mac}|reply|${status}` } };
+  }
   if (tracker < 0 && anomaly < 0) return null;
   const host = syslogSource(line).host;
   const tag = AP_TAG.exec(line);
@@ -131,7 +172,7 @@ export function parseApLine(line, now = Date.now()) {
 
 export function parseLine(line, now = Date.now()) {
   if (!line) return null;
-  const ap = parseApLine(line, now);
+  const ap = parseApLine(line, now) || parseGatewayLine(line, now);
   if (ap) return ap;
   const c = line.indexOf("CEF:");
   if (c >= 0) {
@@ -278,6 +319,7 @@ export async function refreshSystemLog() {
 const UNPARSED_PER_PROG = 25;
 const unparsed = { since: Date.now(), total: 0, progs: new Map(), hosts: new Map() };
 const anomalySeen = new Map();
+const merged = new Map(); // merge key -> the row being counted (UU-C-304)
 // UniFi puts a tag between the host and the program (measured on Network 11 / firmware 8.8):
 // access points "<mac>,<model>-<version>:", the gateway its own name again, so the program is
 // the first "name[pid]:" or "name:" among the next three words.
@@ -334,18 +376,40 @@ function queue(line) {
     anomalySeen.set(key, ev.ts);
     if (anomalySeen.size > 5000) anomalySeen.clear();
   }
-  state.pending.push(ev);
-  if (!state.flushTimer) {
-    state.flushTimer = setTimeout(() => {
-      state.flushTimer = null;
-      const batch = state.pending.splice(0);
-      try {
-        save(batch);
-      } catch (err) {
-        logError("siem save", err);
-      }
-    }, 2000);
+  // Band steering and gateway failures repeat every few seconds while they last (UU-C-304): one
+  // row per device (or failure) per 10 minutes, its count `n` raised and the last signal kept.
+  if (ev.data?.merge) {
+    const key = ev.data.merge;
+    const open = merged.get(key);
+    if (open && ev.ts - open.ts < 10 * 60e3) {
+      open.data.n += 1;
+      open.data.last = ev.ts;
+      if (ev.data.rssi != null) open.data.rssi = ev.data.rssi;
+      state.pending.push({ ...open, data: { ...open.data }, replace: true });
+      scheduleFlush();
+      return;
+    }
+    merged.set(key, ev);
+    if (merged.size > 5000) merged.clear();
   }
+  state.pending.push(ev);
+  scheduleFlush();
+}
+
+// Saved every 2 s: new rows first, then the merged rows whose count went up (written over).
+function scheduleFlush() {
+  if (state.flushTimer) return;
+  state.flushTimer = setTimeout(() => {
+    state.flushTimer = null;
+    const batch = state.pending.splice(0);
+    try {
+      save(batch.filter((e) => !e.replace));
+      const again = batch.filter((e) => e.replace).map(({ replace, ...e }) => e);
+      if (again.length) save(again, { replace: true });
+    } catch (err) {
+      logError("siem save", err);
+    }
+  }, 2000);
 }
 
 export function stopListener() {

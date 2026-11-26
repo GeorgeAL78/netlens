@@ -228,7 +228,7 @@ export const DEVICE_KINDS = [
 export const kindLabel = (k) => DEVICE_KINDS.find(([id]) => id === k)?.[1] || "Other";
 // How NetLens knows the type, for a tooltip.
 export const kindSource = (t) =>
-  !t ? "" : t.source === "you" ? "set by you" : t.source === "unifi" ? `UniFi's fingerprint${t.model ? `: ${t.model}` : t.type ? `: ${t.type}` : ""}` : t.source === "virtual" ? "its address looks virtual" : t.source === "host" ? "VMs or containers run on it" : t.source === "guess" ? "a guess from its name" : "UniFi did not recognise it";
+  !t ? "" : t.source === "you" ? "set by you" : t.source === "unifi" ? `UniFi's fingerprint${t.model ? `: ${t.model}` : t.family || t.type ? `: ${t.family || t.type}` : ""}${t.unsureModel ? ` (it guesses ${t.unsureModel}, only ${t.confidence} % sure)` : ""}` : t.source === "virtual" ? "its address looks virtual" : t.source === "host" ? "VMs or containers run on it" : t.source === "guess" ? "a guess from its name" : "UniFi did not recognise it";
 
 // ---- pinned devices (UU-C-289) -------------------------------------------------------------
 // The owner's shortlist, kept on the server so every browser shows the same. One store, so the

@@ -80,7 +80,7 @@ which UniFi itself deletes after a day or a week.
   Pin it to the sidebar, rename it, set its type, block / unblock.
 - **Devices** — every device UniFi knows. Tiles on top show what needs you (new devices, failing
   Wi-Fi joins, weak signal, blocked, no name) and filter the list. Each device shows its type
-  (from UniFi's own fingerprint, or set by you), model or maker, where it is (access point and
+  (from UniFi's own fingerprint, or set by you), model (only when UniFi is sure of it) or maker, where it is (access point and
   signal, or switch port and speed) and what it did today (data and top app). Online devices are
   grouped by where they connect, by type or by network; offline devices sit at the bottom, most
   recently seen first; VMs and containers fold under the server they run on. Filter by online,
@@ -92,8 +92,10 @@ which UniFi itself deletes after a day or a week.
   failed…) are kept 90 days with the usual cause.
 - **Wi-Fi problems from the access points' own log** (optional, needs syslog) — why a device left
   the Wi-Fi (on its own, or removed by the access point and why, with its signal), how often its
-  DNS lookups timed out, and the anomalies the access point flags for it, kept 90 days. Overview
-  says when a device's lookups keep timing out.
+  DNS lookups timed out, the anomalies the access point flags for it, and band steering (how often
+  the access point asked it to move to a better one, and whether it did), kept 90 days. Overview
+  says when a device's lookups keep timing out, when it keeps refusing to move, and when the
+  gateway keeps failing to reach part of itself.
 - **Activity › Sites** — every site each device connected to over the last 90 days, with a filter per
   category (social, gaming, school, ads and tracking, AI, adult…), search, and the times of
   each connection. Taken from UniFi's connection records, not a DNS log (UniFi has none). When a
