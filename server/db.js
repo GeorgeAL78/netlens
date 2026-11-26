@@ -454,6 +454,45 @@ export function querySamples(start, end, mac) {
   ).all(start, end);
 }
 
+// Once (UU-C-291): wired speeds already stored are corrected from the switch's port table of the
+// same update — a reading on a port that was down is dropped, one that differs from the port's
+// speed takes the port's. Returns how many readings changed.
+export function fixWiredRatesFromPorts() {
+  if (metaGet("wired_rates_from_ports") === "1") return 0;
+  const devRows = db.prepare(`SELECT ts, mac, data FROM device_samples WHERE ts IN (SELECT DISTINCT ts FROM client_samples WHERE wired = 1 AND tx_rate IS NOT NULL)`).iterate();
+  const ports = new Map();
+  for (const r of devRows) {
+    let d;
+    try {
+      d = JSON.parse(r.data || "{}");
+    } catch {
+      continue;
+    }
+    for (const p of d.ports || []) if (p.idx != null) ports.set(`${r.ts}|${r.mac}|${p.idx}`, p.up && p.speed ? p.speed * 1000 : null);
+  }
+  const rows = db.prepare(`SELECT rowid AS id, ts, ap_mac AS apMac, port, tx_rate AS rate FROM client_samples WHERE wired = 1 AND tx_rate IS NOT NULL AND port IS NOT NULL AND ap_mac IS NOT NULL`).all();
+  const upd = db.prepare(`UPDATE client_samples SET tx_rate = ? WHERE rowid = ?`);
+  let n = 0;
+  db.exec("BEGIN");
+  try {
+    for (const r of rows) {
+      const k = `${r.ts}|${r.apMac}|${r.port}`;
+      if (!ports.has(k)) continue;
+      const v = ports.get(k);
+      if (v !== r.rate) {
+        upd.run(v, r.id);
+        n += 1;
+      }
+    }
+    setMeta.run("wired_rates_from_ports", "1");
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return n;
+}
+
 export function metaGet(key) {
   return getMeta.get(key)?.value ?? null;
 }

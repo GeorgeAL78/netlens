@@ -74,6 +74,13 @@ const BIND = process.env.UNIFI_BIND || (SERVER_MODE ? "0.0.0.0" : "127.0.0.1");
 
 // One-time start-up settings: the main thread only, never a view worker (UU-C-210).
 if (!VIEW_WORKER) {
+  // Wired speeds stored before UU-C-291 are corrected from the switch's port table, once.
+  try {
+    const fixed = db.fixWiredRatesFromPorts();
+    if (fixed) console.log(`wired speeds corrected from the switch ports: ${fixed} reading(s)`);
+  } catch (err) {
+    console.warn(`wired speed correction skipped: ${err.message}`);
+  }
   if (process.env.SIEM_PORT && !db.getSetting("siem_port", "")) db.applyConnectionSettings({ siemPort: process.env.SIEM_PORT });
   // The container listens for UniFi's syslog (ad-block counts) on 5514 by default (UU-C-079), so
   // only UniFi's SIEM server needs pointing at it. Applied once: a port cleared in Settings stays off.

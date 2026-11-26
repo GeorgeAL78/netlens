@@ -275,6 +275,22 @@ async function refreshRadioAi(now) {
   );
 }
 
+// A wired device's speed is its switch port's (UU-C-291). UniFi keeps a device that dropped its
+// link listed as connected for several minutes and reports it at the port's top speed: the TV
+// went to standby, its port was down (speed 0) for 15 minutes, and its client record said
+// 2500 Mbps, which made a 100 Mbps TV look like it had fallen from 2.5 Gbps. The switch's own
+// port table is the truth: a down port means no speed reading at all.
+function portSpeeds(clients, devs) {
+  const ports = new Map();
+  for (const d of devs) for (const p of d.data?.ports || []) if (p.idx != null) ports.set(`${d.mac}|${p.idx}`, p);
+  for (const c of clients) {
+    if (!c.wired || c.apMac == null || c.port == null) continue;
+    const p = ports.get(`${c.apMac}|${c.port}`);
+    if (!p) continue;
+    c.txRate = p.up && p.speed ? p.speed * 1000 : null;
+  }
+}
+
 export async function pollHealth() {
   const ts = Date.now();
   await refreshVersions();
@@ -282,6 +298,7 @@ export async function pollHealth() {
     const [stations, devices, health] = await Promise.all([unifi.getStations(), unifi.getDevices(), unifi.getHealth()]);
     const clients = stations.map((c) => clientRow(c, ts)).filter((c) => c.mac);
     const devs = devices.map((d) => deviceRow(d, ts)).filter((d) => d.mac);
+    portSpeeds(clients, devs);
     siteObjectId = devices.find((d) => d.site_id)?.site_id || siteObjectId;
     // Our own radios, so the nearby list leaves them out (UU-C-239).
     ownBssids = new Set(devices.flatMap((d) => (d.vap_table || []).map((v) => lower(v.bssid))).filter(Boolean));

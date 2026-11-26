@@ -293,6 +293,22 @@ for (const { hq, label, dayBar } of hourChecks) {
   }
 }
 
+// A wired device's speed is its port's (UU-C-291): the demo TV is 100 Mbps; in standby its port is
+// down while UniFi still says 2500 for three updates. Overview must not treat it as a device that
+// used to link faster.
+{
+  const devs = await get(`/api/devices`);
+  const tv = (devs.devices || devs.clients || []).find((d) => d.name === "Living room TV");
+  if (tv) {
+    for (const q of ["days=7", "days=30", `date=${new Date(Date.now() - 86400e3).toLocaleDateString("en-CA")}`]) {
+      const f = await get(`/api/findings?${q}`);
+      stats.screens += 1;
+      const bad = (f.findings || []).filter((x) => x.mac === tv.mac && /^(link|drop)-/.test(x.id));
+      if (bad.length) failures.push(`slow link ${q}: the TV is flagged (${bad.map((x) => x.title).join("; ")}) though its port was down when UniFi said 2500`);
+    }
+  }
+}
+
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);
 console.log(`chart places the whole header: ${stats.fullyPlaced}; part of it unplaced (no 5-minute detail): ${stats.partlyPlaced}`);
 console.log(`bytes without time detail: ${MB(stats.unplacedBytes)} of ${MB(stats.headerBytes)} summed over screens`);

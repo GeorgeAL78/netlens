@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.34.1 — 2026-11-25
+
+### Fixed
+- A wired device that goes to standby or restarts is no longer flagged as a slow link. UniFi keeps listing it for several minutes at its switch port's top speed, even though the port is down, so a 100 Mbps TV looked like it had dropped from 2.5 Gbps. NetLens now takes each wired device's speed from its switch port. A port that's down records no speed. Readings already stored are corrected when the new version starts.
+
 ## 2.34.0 — 2026-11-25
 
 ### Changed
