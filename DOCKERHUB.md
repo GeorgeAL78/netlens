@@ -18,13 +18,13 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 | ![Overview — findings and the internet line](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/home.png) | ![Day — every device by hour](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/day.png) |
 | **Overview** — findings in plain language, limits on top | **Activity › Timeline** — every device by hour |
 | ![Usage — apps, categories and top apps](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/usage.png) | ![Device — traffic, places and events](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/device.png) |
-| **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, where it connected (port and network), apps, sessions and events |
+| **Activity › Apps** — top apps, search by app, category or device | **Device** — in tabs: what stands out, its day by hour, top apps and the latest events |
 | ![Network — live map with a switch's ports](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/network.png) | ![Protection — blocks and intrusions with filters](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/security.png) |
 | **Network › Map** — a card per gateway, switch and access point; a switch selected: each port's traffic, busiest 5 minutes and dropped packets | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
 | ![Wi-Fi — radios and channel suggestions](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/wifi.png) | ![Nearby networks — the ones sharing your channels](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/wifi-nearby.png) |
 | **Network › Wi-Fi** — each radio's channel, load and interference; channel suggestions from UniFi's RF scans | **Network › Wi-Fi › Nearby** — of the hundreds of networks around, the loud ones on your channels |
 | ![Internet — availability, outages, latency and busiest moments](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/internet.png) | ![Devices — new devices, maker and where they connect](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/devices.png) |
-| **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — new devices, maker, switch port or access point, rename |
+| **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — what needs you, then every device grouped by where it connects, with its type, signal or speed and today's use |
 | ![Live — the line, busiest devices and every port](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/live.png) | ![Sites — every site each device connected to, by category](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/sites.png) |
 | **Network › Live** — the last hour of the line, then live every few seconds; the busiest devices and every port with their own graphs | **Activity › Sites** — every site each device connected to, filtered by category |
 | ![Alerts — daily limits per app and device](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/alerts.png) | ![Firewall rules — your rules in plain words](https://raw.githubusercontent.com/GeorgeAL78/netlens/main/assets/screenshots/firewall.png) |
@@ -42,21 +42,24 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 - **Network › Live** — the line over the last hour then live every few seconds, the busiest devices and every port with their own graphs; small live graphs on Overview and the Network map.
 - **Network › Internet** — availability, every outage, latency per test target, the busiest download and upload against your line, public-address history and speed tests.
 - **Moves and equipment** — a device moving to another port or network is noted and listed on its page; restarts, outages and firmware updates of your UniFi equipment over any period.
-- **Device** — traffic, signal or link speed, where it connected (port and network), Wi-Fi history (connects and roams between access points), apps and where unidentified traffic went, sessions, events, online history, block / unblock.
-- **Devices** — new devices first, with maker and switch port or access point; rename (saved in UniFi);
-  offline devices checked on the network every 5 minutes; blocked devices listed with Unblock;
-  failed Wi-Fi joins per device with the usual cause.
+- **Device** — in tabs: a summary of what stands out, its day by hour, apps and events, connection (Wi-Fi joins, Wi-Fi problems, Wi-Fi history with why it left, or every port and network), online history; pin, rename, set type, block / unblock.
+- **Devices** — tiles for what needs you, then every device grouped by where it connects (or type,
+  or network): its type from UniFi's fingerprint, model or maker, signal or link speed and today's
+  data and top app; VMs and containers under their server; one menu per device (rename, type, pin,
+  check, block) and several at once; offline devices checked on the network every 5 minutes.
+- **Wi-Fi problems** (with syslog) — why a device left the Wi-Fi, DNS timeouts and the anomalies the
+  access points flag, kept 90 days.
 - **Activity › Sites** — every site each device connected to (30 days), filtered by category; addresses hidden
   by secure DNS named when they belong to a watched site.
-- **Limits** — daily limits on time or data for an app on a device, flagged on Overview.
+- **Protection › Limits** — daily limits on time or data for an app on a device, flagged on Overview.
 - **Protection** — every block as one incident (intrusions, your firewall rules and app blocks), with filters; ads and trackers on their own tab.
-- **Protection › Firewall rules** — your UniFi firewall rules in plain words, in order, with each rule's blocks in the last 7 days; what the zones do when no rule matches; Objects, speed rules, content filters, local DNS records, port forwards and the rest of the Policy Engine. Read only.
+- **Protection › Firewall rules** — your UniFi firewall rules in plain words, in order, with each rule's blocks in the last 7 days; what the zones do when no rule matches; Objects, speed rules, content filters, local DNS records, port forwards and the rest of the Policy Engine; threat protection with your Content Filtering rules. Read only.
 - **Activity › Apps** — apps, categories and devices for a day, an hour or 90 days, one search box for all
   three; every number adds up.
 - Local-network traffic shown separately; missing data marked, never shown as a quiet hour.
 - **API and AI access**: an MCP endpoint at `/mcp` for Claude and other assistants, and a REST
   API described at `/api/openapi.json`. Read everything; with a full access key also make safe
-  changes (rename a device, alerts, refresh). It can never block devices or change settings.
+  changes (rename, set type or pin a device, alerts, refresh). It can never block devices or change settings.
 
 ## Requirements
 
@@ -97,7 +100,7 @@ and imports such a file — for backups, restores or moving to another server.
 | Port | |
 | --- | --- |
 | `3780/tcp` | web UI |
-| `5514/tcp+udp` | syslog listener for ad-block counts (on by default; point UniFi's SIEM server here) |
+| `5514/tcp+udp` | syslog listener for ad-block counts and the access points' Wi-Fi problems (on by default; point UniFi's SIEM server here and tick Devices › Access Points) |
 
 Forgot the password? Start once with `NETLENS_RESET_PASSWORD=1`, set a new one in the
 browser, then remove the variable.

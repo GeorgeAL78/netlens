@@ -18,13 +18,13 @@ which UniFi itself deletes after a day or a week.
 | ![Overview — findings and the internet line](assets/screenshots/home.png) | ![Day — every device by hour](assets/screenshots/day.png) |
 | **Overview** — findings in plain language, limits on top | **Activity › Timeline** — every device by hour |
 | ![Usage — apps, categories and top apps](assets/screenshots/usage.png) | ![Device — traffic, places and events](assets/screenshots/device.png) |
-| **Activity › Apps** — top apps, search by app, category or device | **Device** — its day, where it connected (port and network), apps, sessions and events |
+| **Activity › Apps** — top apps, search by app, category or device | **Device** — in tabs: what stands out, its day by hour, top apps and the latest events |
 | ![Network — live map with a switch's ports](assets/screenshots/network.png) | ![Protection — blocks and intrusions with filters](assets/screenshots/security.png) |
 | **Network › Map** — a card per gateway, switch and access point; a switch selected: each port's traffic, busiest 5 minutes and dropped packets | **Protection** — every block as one incident, with filters; ads and trackers on their own tab |
 | ![Wi-Fi — radios and channel suggestions](assets/screenshots/wifi.png) | ![Nearby networks — the ones sharing your channels](assets/screenshots/wifi-nearby.png) |
 | **Network › Wi-Fi** — each radio's channel, load and interference; channel suggestions from UniFi's RF scans | **Network › Wi-Fi › Nearby** — of the hundreds of networks around, the loud ones on your channels |
 | ![Internet — availability, outages, latency and busiest moments](assets/screenshots/internet.png) | ![Devices — new devices, maker and where they connect](assets/screenshots/devices.png) |
-| **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — new devices, maker, switch port or access point, rename |
+| **Network › Internet** — availability, outages, latency per test target, the busiest moments against your line | **Devices** — what needs you, then every device grouped by where it connects, with its type, signal or speed and today's use |
 | ![Live — the line, busiest devices and every port](assets/screenshots/live.png) | ![Sites — every site each device connected to, by category](assets/screenshots/sites.png) |
 | **Network › Live** — the last hour of the line, then live every few seconds; the busiest devices and every port with their own graphs | **Activity › Sites** — every site each device connected to, filtered by category |
 | ![Alerts — daily limits per app and device](assets/screenshots/alerts.png) | ![Firewall rules — your rules in plain words](assets/screenshots/firewall.png) |
@@ -71,23 +71,35 @@ which UniFi itself deletes after a day or a week.
   on. A port starts over when a different device takes it; a device's own record follows it.
 - **Equipment over time** — Overview's Network tab lists restarts, times offline and firmware
   updates in the period; a gateway restart that made the access points look offline is one note.
-- **Device** — per device: traffic, Wi-Fi signal or wired link speed, where it connected (port
-  and network over time), Wi-Fi history (every connect and roam between access points, with band
-  and signal), apps (and where unidentified traffic went), sessions, events, connection time, online history, CSV export,
-  block / unblock.
-- **Devices** — every device UniFi knows, new ones first: maker, where it connected (switch port
-  or access point and band), IP, first and last seen; rename it (saved in UniFi). Offline devices
-  are checked on the network every 5 minutes (ping, then common ports, with a MAC check), so a
-  device that is on but not using the internet still shows as there. Blocked devices are listed
-  on top, with an Unblock button, and every device has Block / Unblock. Failed Wi-Fi joins
-  (couldn't log in, no IP address, DNS failed…) are listed per device with the usual cause,
-  kept 90 days.
+- **Device** — one device in tabs. **Summary**: today's data, signal or link speed, a short list of
+  what stands out (weak signal, slow link, failed joins, DNS timeouts, being removed from Wi-Fi),
+  its day by hour, top apps and the latest events. **Apps and events**: every app (and where
+  unidentified traffic went), sessions and events, CSV export. **Connection**: Wi-Fi joins, Wi-Fi
+  problems, Wi-Fi history (every connect, roam and disconnect, with band, signal and why it left)
+  or every port and network a wired device used, and the server a VM runs on. **Online history**.
+  Pin it to the sidebar, rename it, set its type, block / unblock.
+- **Devices** — every device UniFi knows. Tiles on top show what needs you (new devices, failing
+  Wi-Fi joins, weak signal, blocked, no name) and filter the list. Each device shows its type
+  (from UniFi's own fingerprint, or set by you), model or maker, where it is (access point and
+  signal, or switch port and speed) and what it did today (data and top app). Online devices are
+  grouped by where they connect, by type or by network; offline devices sit at the bottom, most
+  recently seen first; VMs and containers fold under the server they run on. Filter by online,
+  offline, Wi-Fi, wired or pinned, sort by name, data today, last seen or newest. One menu per
+  device: rename (saved in UniFi), set type, pin, check on the network, apps, sites, block /
+  unblock; select several to do it at once. Offline devices are checked on the network every 5
+  minutes (ping, then common ports, with a MAC check), so a device that is on but not using the
+  internet still shows as there. Failed Wi-Fi joins (couldn't log in, no IP address, DNS
+  failed…) are kept 90 days with the usual cause.
+- **Wi-Fi problems from the access points' own log** (optional, needs syslog) — why a device left
+  the Wi-Fi (on its own, or removed by the access point and why, with its signal), how often its
+  DNS lookups timed out, and the anomalies the access point flags for it, kept 90 days. Overview
+  says when a device's lookups keep timing out.
 - **Activity › Sites** — every site each device connected to over the last 90 days, with a filter per
   category (social, gaming, school, ads and tracking, AI, adult…), search, and the times of
   each connection. Taken from UniFi's connection records, not a DNS log (UniFi has none). When a
   browser's secure DNS hides the name, NetLens names the address if it belongs to a watched
   site, from its own hourly lookups.
-- **Limits** (the bell in the top bar) — daily limits on time in use or data for an app or category on a device, e.g.
+- **Protection › Limits** — daily limits on time in use or data for an app or category on a device, e.g.
   YouTube on the kids' tablet over 2 hours. Flagged on Overview; watch only.
 - **Protection** — every block as one incident: intrusions (IPS signature, both ends, traffic)
   and devices stopped by your firewall rules or app blocks, with the rule's name, merged with
@@ -98,7 +110,9 @@ which UniFi itself deletes after a day or a week.
   DNS services by name), in the order UniFi checks them, with each rule's blocks in the last 7
   days; what the zones do when no rule matches; UniFi's built-in rules explained. Also the rest of
   the Policy Engine: Objects, speed rules (QoS), content filters, local DNS records, port forwards,
-  traffic routes, older traffic rules, NAT and switch ACLs. Read only.
+  traffic routes, older traffic rules, NAT and switch ACLs. Threat protection: intrusion
+  prevention, your Content Filtering rules (what each blocks, for which network, safe search) and
+  ad blocking. Read only.
 - **Activity › Apps** — apps, categories and devices for a day, an hour or up to 90 days; one search box
   for an app, category or device, and the top apps one click away. **Every number on
   a screen comes from one source and adds up**; a built-in audit (`npm run audit`) checks every
@@ -109,7 +123,8 @@ which UniFi itself deletes after a day or a week.
   per-device totals where those still exist (on Network 11, from its new statistics engine).
 - **Survives UniFi starting over**: Network 11 clears UniFi's statistics when it is installed;
   NetLens keeps its own history and today's traffic carries on from what it had.
-- **History export / import**, an optional syslog listener for ad-block counts.
+- **History export / import**, an optional syslog listener for ad-block counts and the access
+  points' Wi-Fi problems.
 - **API and AI access** — an MCP endpoint (`/mcp`) so Claude or another assistant can ask about
   your network and make safe changes, and the same operations as a REST API described at
   `/api/openapi.json`. See [API and AI access](#api-and-ai-access).
@@ -191,16 +206,19 @@ For scripted installs these seed empty settings on the very first start; after t
 web UI is in charge: `UNIFI_HOST`, `UNIFI_API_KEY`, `UNIFI_SITE`, `UNIFI_SITE_ID`, `TZ`,
 `SIEM_PORT`, `UI_PASSWORD`. `UNIFI_PORT` (default `3780`) is the port inside the container.
 
-### Blocked-ad counts (optional)
+### Syslog (optional)
 
-Network events come from UniFi's System Log automatically. Only ad-block hits need syslog. The
+Network events come from UniFi's System Log automatically. Syslog adds two things: ad-block hits,
+and the access points' own Wi-Fi problems (why a device left, DNS timeouts, anomalies). The
 container listens on port `5514` (TCP and UDP) by default: publish that port and point UniFi at
-this server (CyberSecure → Traffic Logging → Activity Logging → SIEM Server). Clear the port in
-Settings to turn the listener off.
+this server (Settings → CyberSecure → Activity Logging (Syslog) → SIEM Server). For the Wi-Fi
+problems, also tick **Access Points** under Contents › Devices. Clear the port in Settings to turn
+the listener off. Lines NetLens does not use yet are kept briefly in memory, never saved, at
+`/api/siem/unparsed`.
 
 ## API and AI access
 
-NetLens offers 31 operations (23 that read, 8 that make safe changes) in two forms, built from
+NetLens offers 39 operations (29 that read, 10 that make safe changes) in two forms, built from
 one list so they always match:
 
 - **MCP** at `http://<host>:3780/mcp` (Streamable HTTP, JSON answers). In Claude, add a custom
@@ -210,9 +228,9 @@ one list so they always match:
 
 Reading covers every page: Overview findings, usage by device and app, sites, devices and
 presence, the network map now or at any time in the last 90 days, equipment history, Wi-Fi,
-Protection and alerts. The safe changes are: rename a device, set which device a VM runs on,
-check a device on the network, add / switch / delete a usage alert, hide or show an Overview
-finding, and refresh from UniFi. Nothing through this route can block a device, change
+Protection, alerts and each device's Wi-Fi problems. The safe changes are: rename a device, set
+its type, pin it to the sidebar, set which device a VM runs on, check a device on the network,
+add / switch / delete a usage alert, hide or show an Overview finding, and refresh from UniFi. Nothing through this route can block a device, change
 settings, the password or the key, import or export history, or stop NetLens.
 
 With a login password, every call needs an access key: **Settings › API & AI** makes one,
