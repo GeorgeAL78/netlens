@@ -381,14 +381,15 @@ export function saveDpi(apps, cats) {
 
 // Maker and UniFi's first-seen time, kept from the last live device list (UU-C-129) so the
 // Devices page can still show them when UniFi cannot be reached.
-for (const [col, type] of [["vendor", "TEXT"], ["first_seen", "INTEGER"]]) {
+// fp (UU-C-293): UniFi's fingerprint names {type, family, model} as JSON.
+for (const [col, type] of [["vendor", "TEXT"], ["first_seen", "INTEGER"], ["fp", "TEXT"]]) {
   if (!db.prepare(`PRAGMA table_info(clients)`).all().some((c) => c.name === col)) db.exec(`ALTER TABLE clients ADD COLUMN ${col} ${type}`);
 }
 export function saveClientDetails(list) {
-  const up = db.prepare(`UPDATE clients SET vendor = COALESCE(?, vendor), first_seen = COALESCE(?, first_seen) WHERE mac = ?`);
+  const up = db.prepare(`UPDATE clients SET vendor = COALESCE(?, vendor), first_seen = COALESCE(?, first_seen), fp = COALESCE(?, fp) WHERE mac = ?`);
   db.exec("BEGIN");
   try {
-    for (const d of list) up.run(d.vendor || null, d.firstSeen || null, d.mac);
+    for (const d of list) up.run(d.vendor || null, d.firstSeen || null, d.fp ? JSON.stringify(d.fp) : null, d.mac);
     db.exec("COMMIT");
   } catch (err) {
     db.exec("ROLLBACK");
@@ -416,7 +417,7 @@ export function setStoredClientName(mac, name) {
 }
 
 export function listStoredClients() {
-  return db.prepare(`SELECT mac, id, name, hostname, ip, type, last_seen AS lastSeen, blocked, vendor, first_seen AS firstSeen FROM clients ORDER BY name COLLATE NOCASE`).all();
+  return db.prepare(`SELECT mac, id, name, hostname, ip, type, last_seen AS lastSeen, blocked, vendor, first_seen AS firstSeen, fp FROM clients ORDER BY name COLLATE NOCASE`).all();
 }
 
 // UniFi's names that say nothing to a person (UU-C-110). STUN is how FaceTime, WhatsApp, Meet

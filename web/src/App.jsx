@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { ago, api, applyTheme, deviceGroups, go, href, isPlumbing, setPinned, setTheme, themeChoice, usePending, usePins, useRoute } from "./lib.js";
 import { Loading } from "./ui.jsx";
+import { Icon } from "./icons.jsx";
 
 // Pages load when first opened (UU-C-289): the first screen no longer waits for every page's code.
 const PAGES = {
@@ -19,39 +20,6 @@ const PAGES = {
   live: lazy(() => import("./pages/Live.jsx")),
   firewall: lazy(() => import("./pages/Firewall.jsx")),
 };
-
-// ---- icons (one stroke set, 18 px) ----
-const P = {
-  home: "M4 11l8-7 8 7M6 9.5V20h12V9.5",
-  timeline: "M4 6h16M4 12h10M4 18h6",
-  apps: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
-  sites: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18",
-  devices: "M4 5h12v9H4zM2 18h16M18 9h4v10h-4z",
-  map: "M12 4v5M6 15v-3h12v3M4 15h4v5H4zM16 15h4v5h-4zM10 4h4v5h-4z",
-  wifi: "M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01",
-  internet: "M3 12h4l3-7 4 14 3-7h4",
-  live: "M3 17l5-6 4 3 4-7 5 5",
-  shield: "M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z",
-  rules: "M5 6h14M5 12h14M5 18h9",
-  bell: "M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9M10 20a2.2 2.2 0 0 0 4 0",
-  settings: "M4 7h9M17 7h3M15 5v4M4 17h3M11 17h9M9 15v4",
-  search: "M11 5a6 6 0 1 0 0 12 6 6 0 0 0 0-12M20 20l-4.5-4.5",
-  refresh: "M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5",
-  more: "M5 12h.01M12 12h.01M19 12h.01",
-  sun: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
-  moon: "M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5",
-  auto: "M12 3a9 9 0 1 0 0 18zM12 3a9 9 0 0 1 0 18",
-  star: "M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z",
-  device: "M7 3h10v18H7zM11 18h2",
-  arrow: "M5 12h14M13 6l6 6-6 6",
-};
-export function Icon({ name, size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={P[name] || P.arrow} />
-    </svg>
-  );
-}
 
 // ---- navigation: every page, grouped by the question it answers ----
 // Old addresses all still work: the pages keep their ids, only the shell around them changed.

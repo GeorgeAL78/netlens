@@ -620,6 +620,11 @@ export async function setClientBlocked(mac, blocked) {
 
 // Every client UniFi has ever seen, offline ones included (name, hostname, last_ip,
 // fixed_ip, blocked). Used for blocking state and for naming local destinations.
+// The console's fingerprint names (UU-C-293): dev_type_ids, family_ids, dev_ids. ~0.9 MB, read weekly.
+export async function getFingerprints() {
+  return request(`/proxy/network/v2/api/fingerprint_devices/0`);
+}
+
 export async function getKnownClients() {
   const { site } = config();
   const json = await request(`/proxy/network/api/s/${site}/rest/user`);

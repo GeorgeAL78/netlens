@@ -48,8 +48,11 @@ const ago = (t) => {
 // Threat protection (UU-C-289): UniFi's intrusion prevention and the extras next to it, as set
 // in UniFi under Settings › Security. NetLens only reads it.
 const IPS_WORD = { ips: ["on", "Detect and block"], ids: ["warn", "Detect only, nothing blocked"], disabled: ["off", "Off"] };
-function Threat({ t }) {
+function Threat({ t, filters }) {
   if (!t) return null;
+  const onRules = (filters || []).filter((f) => f.enabled);
+  const offRules = (filters || []).filter((f) => !f.enabled);
+  const adRules = onRules.filter((f) => f.blocks.some((b) => /^ads/.test(b)));
   const [cls, word] = IPS_WORD[t.mode] || ["off", t.mode || "Unknown"];
   const yes = (v, on = "On", off = "Off") => <span className={`state ${v ? "on" : "off"}`}>{v ? on : off}</span>;
   return (
@@ -64,13 +67,22 @@ function Threat({ t }) {
           <span><span className={`state ${cls}`}>{word}</span></span>
           {t.mode !== "disabled" && <span className="small dim">{t.categories != null ? `${t.categories} threat categories` : ""}{t.networks?.length ? ` · on ${t.networks.join(", ")}` : ""}</span>}
         </div>
+        {/* Content Filtering rules replaced the old ad-blocking / DNS-filtering switches (UU-C-293):
+            those flags stay off while a rule such as "kids" blocks ads, so the rules decide. */}
         <div className="fact">
-          <span className="label">Ad blocking</span>
-          <span>{yes(t.adBlocking)}</span>
+          <span className="label">Content filtering</span>
+          <span>{yes(onRules.length, `${onRules.length} rule${onRules.length === 1 ? "" : "s"} on`, filters ? "No rule on" : "Off")}</span>
+          {onRules.map((f) => (
+            <span key={f.id} className="small dim">
+              {f.name}: {f.blocks.join(", ") || "nothing blocked"}{f.who.length ? ` · ${f.who.join(", ")}` : ""}{f.safeSearch.length ? ` · safe search ${f.safeSearch.join(", ")}` : ""}
+            </span>
+          ))}
+          {offRules.length > 0 && <span className="small dim">Off: {offRules.map((f) => f.name).join(", ")}</span>}
         </div>
         <div className="fact">
-          <span className="label">DNS filtering</span>
-          <span>{yes(t.dnsFiltering)}</span>
+          <span className="label">Ad blocking</span>
+          <span>{yes(adRules.length || t.adBlocking, adRules.length ? `On for ${adRules.map((f) => f.name).join(", ")}` : "On")}</span>
+          {!adRules.length && !t.adBlocking && <span className="small dim">No content-filtering rule blocks ads.</span>}
         </div>
         <div className="fact">
           <span className="label">Honeypot</span>
@@ -108,7 +120,7 @@ export default function Firewall() {
       )}
       {d?.at && (
         <>
-          <Threat t={d.threat} />
+          <Threat t={d.threat} filters={d.filters} />
           <section className="card">
             <div className="card-head">
               <h2>Your rules</h2>

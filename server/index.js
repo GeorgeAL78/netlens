@@ -21,6 +21,7 @@ import * as wifijoins from "./wifijoins.js";
 import * as blockedrules from "./blockedrules.js";
 import * as firewall from "./firewall.js";
 import * as guests from "./guests.js";
+import * as fingerprint from "./fingerprint.js";
 import { siteCategory } from "./sitecats.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
@@ -2541,21 +2542,77 @@ function storedDevices(now) {
         network: s?.essid || null,
         blocked: Boolean(c.blocked),
         presence: seen.get(mac) || null,
+        fp: (() => {
+          try {
+            return c.fp ? JSON.parse(c.fp) : null;
+          } catch {
+            return null;
+          }
+        })(),
       };
     })
     .sort((a, b) => (b.firstSeen || 0) - (a.firstSeen || 0));
 }
 
+// What the Devices page shows beside each device (UU-C-293), from data NetLens already has —
+// never another UniFi call:
+//   type  — fingerprint.typeOf: the owner's choice, a VM / container, UniFi's fingerprint, a guess;
+//   today — today's data and top apps from the same DPI day totals as Apps and the device page
+//           (REVIEW rule: one source per screen), so the numbers agree;
+//   now   — signal or link speed from its newest 5-minute sample (wired: the port's, UU-C-291);
+//   host  — the device a VM / container runs on, as the Network map groups it (UU-C-165).
+function enrichDevices(devices, now) {
+  const maps = db.dpiMaps();
+  const bundle = cache.readDays([zonedDateKey(now)]);
+  const today = new Map();
+  for (const r of flattenTraffic(bundle.traffic, null, maps)) {
+    const d = today.get(r.mac) || { bytes: 0, down: 0, up: 0, apps: new Map() };
+    d.bytes += r.totalBytes;
+    d.down += Number(r.bytesRx || 0);
+    d.up += Number(r.bytesTx || 0);
+    const name = appName(r.appId, r.catId, maps);
+    const a = d.apps.get(name) || { app: name, category: catName(r.catId, maps), bytes: 0, seconds: 0 };
+    a.bytes += r.totalBytes;
+    a.seconds += Number(r.activitySeconds || 0);
+    d.apps.set(name, a);
+    today.set(r.mac, d);
+  }
+  const last = db.latestClientSamples();
+  const hostOf = new Map();
+  try {
+    const map = views.networkMap({ bundle, now });
+    for (const h of [map.gateway, ...map.nodes].filter(Boolean).flatMap((n) => n.clients).concat(map.loose)) {
+      for (const g of h.guests || []) hostOf.set(g.mac, { mac: h.mac, name: h.name, how: g.how });
+    }
+  } catch (err) {
+    logError("devices: host grouping", err);
+  }
+  const choices = fingerprint.overrides();
+  const hostMacs = new Set([...hostOf.values()].map((h) => h.mac));
+  for (const d of devices) {
+    const guest = guests.guestKind(d.mac, d.vendor, d.wired);
+    d.type = fingerprint.typeOf(d.mac, d.fp, guest, [d.name, d.hostname], choices, { hosts: hostMacs.has(d.mac), vendor: d.vendor });
+    delete d.fp;
+    const t = today.get(d.mac);
+    d.today = t ? { bytes: t.bytes, down: t.down, up: t.up, apps: [...t.apps.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 4) } : null;
+    const s = last.get(d.mac);
+    d.now = s && now - s.ts < 15 * 60e3 ? { ts: s.ts, wired: Boolean(s.wired), signal: s.wired ? null : s.signal ?? null, band: s.wired ? null : RADIO[s.radio] || null, rate: s.tx_rate ?? null } : null;
+    d.host = hostOf.get(d.mac) || null;
+  }
+  return devices;
+}
+
 app.get("/api/devices", async (_req, res) => {
   try {
     const now = Date.now();
-    if (process.env.NETLENS_OFFLINE === "1") return res.json({ devices: storedDevices(now), ts: now, source: "offline", checks: { ...presence.state } });
+    if (process.env.NETLENS_OFFLINE === "1") return res.json({ devices: enrichDevices(storedDevices(now), now), ts: now, source: "offline", checks: { ...presence.state } });
     let known, online;
     try {
-      [known, online] = await Promise.all([unifi.getKnownClients(), unifi.listConnectedClients().catch(() => [])]);
+      // The fingerprint names are read weekly; the page never waits more than 4 s for them.
+      [known, online] = await Promise.all([unifi.getKnownClients(), unifi.listConnectedClients().catch(() => []), Promise.race([fingerprint.ensureTable(now), new Promise((r) => setTimeout(r, 4000))])]);
     } catch (err) {
       logError("devices: UniFi unreachable, using stored list", err);
-      return res.json({ devices: storedDevices(now), ts: now, source: "stored", checks: { ...presence.state } });
+      return res.json({ devices: enrichDevices(storedDevices(now), now), ts: now, source: "stored", checks: { ...presence.state } });
     }
     const onlineMacs = new Set(online.map((c) => c.mac));
     const nameOf = insights.names();
@@ -2585,6 +2642,7 @@ app.get("/api/devices", async (_req, res) => {
           blocked: Boolean(u.blocked),
           // Background presence (UU-C-124): online in UniFi, answering on the LAN, or off.
           presence: seen.get(mac) || null,
+          fp: fingerprint.namesOf(u),
         };
       })
       .sort((a, b) => (b.firstSeen || 0) - (a.firstSeen || 0));
@@ -2593,7 +2651,7 @@ app.get("/api/devices", async (_req, res) => {
     } catch (err) {
       logError("devices: save details", err);
     }
-    res.json({ devices, ts: now, source: "unifi", checks: { ...presence.state } });
+    res.json({ devices: enrichDevices(devices, now), ts: now, source: "unifi", checks: { ...presence.state } });
   } catch (err) {
     sendError(res, "GET /api/devices", err);
   }
@@ -2680,6 +2738,18 @@ app.post("/api/devices/:mac/host", (req, res) => {
     res.json({ ok: true, choice });
   } catch (err) {
     sendError(res, "POST /api/devices/:mac/host", err);
+  }
+});
+
+// The owner's own type for a device (UU-C-293): { kind } from fingerprint.KINDS, or null for automatic.
+app.post("/api/devices/:mac/kind", (req, res) => {
+  try {
+    const mac = String(req.params.mac || "").toLowerCase();
+    if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) return res.status(400).json({ error: "That is not a MAC address." });
+    res.json({ ok: true, kind: fingerprint.setOverride(mac, req.body?.kind || null) });
+  } catch (err) {
+    if (err.status === 400) return res.status(400).json({ error: err.message });
+    sendError(res, "POST /api/devices/:mac/kind", err);
   }
 });
 

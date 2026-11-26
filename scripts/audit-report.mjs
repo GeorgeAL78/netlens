@@ -309,6 +309,23 @@ for (const { hq, label, dayBar } of hourChecks) {
   }
 }
 
+// The Devices list (UU-C-293): every device has a type, today's data is the same number the
+// device page and Apps show (one source), its top apps add up to no more than that, and a VM /
+// container that folds under a host names a host that is itself in the list.
+{
+  const devs = (await get(`/api/devices`)).devices || [];
+  const macs = new Set(devs.map((d) => d.mac));
+  for (const d of devs) {
+    stats.screens += 1;
+    if (!d.type?.kind) failures.push(`devices ${d.mac}: no type`);
+    if (d.host && !macs.has(d.host.mac)) failures.push(`devices ${d.mac}: folds under ${d.host.mac}, which is not in the list`);
+    const r = await get(`/api/report?period=today&mac=${encodeURIComponent(d.mac)}`);
+    const want = r.totals?.source === "dpi" ? r.totals.bytes : 0;
+    if ((d.today?.bytes || 0) !== want) failures.push(`devices ${d.mac}: today ${d.today?.bytes || 0} B on Devices, ${want} B on its page`);
+    if (d.today && d.today.apps.reduce((n, a) => n + a.bytes, 0) > d.today.bytes) failures.push(`devices ${d.mac}: top apps add up to more than its total`);
+  }
+}
+
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);
 console.log(`chart places the whole header: ${stats.fullyPlaced}; part of it unplaced (no 5-minute detail): ${stats.partlyPlaced}`);
 console.log(`bytes without time detail: ${MB(stats.unplacedBytes)} of ${MB(stats.headerBytes)} summed over screens`);

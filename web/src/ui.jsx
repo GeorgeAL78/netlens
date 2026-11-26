@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDays, bytes, dayLabel, todayKey, useApi } from "./lib.js";
+import { addDays, bytes, dayLabel, todayKey, useApi, api, DEVICE_KINDS, kindLabel, kindSource } from "./lib.js";
 
 // A month calendar (UU-C-096). Days with saved data carry a dot; future days are disabled.
 const WEEK = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
@@ -308,3 +308,31 @@ export function WanDays({ days, linkMbps }) {
     </div>
   );
 }
+
+// The owner's own type for a device; "Automatic" returns to UniFi's fingerprint (UU-C-293).
+export function KindPicker({ d, onSaved, onCancel }) {
+  const [msg, setMsg] = useState("");
+  const own = d.type?.source === "you" ? d.type.kind : "";
+  async function choose(kind) {
+    setMsg("");
+    try {
+      const r = await api(`/api/devices/${encodeURIComponent(d.mac)}/kind`, { method: "POST", body: JSON.stringify({ kind: kind || null }) });
+      onSaved(r.kind);
+    } catch (err) {
+      setMsg(err.message || String(err));
+    }
+  }
+  return (
+    <div className="dv-edit" onKeyDown={(e) => e.key === "Escape" && onCancel?.()}>
+      <span className="dim small">Type</span>
+      <select className="field" autoFocus value={own} onChange={(e) => choose(e.target.value)} aria-label={`Type of ${d.label}`}>
+        <option value="">Automatic{d.type && d.type.source !== "you" ? ` — ${kindLabel(d.type.kind)}` : ""}</option>
+        {DEVICE_KINDS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+      </select>
+      <span className="dim small">{kindSource(d.type)}</span>
+      {onCancel && <button type="button" className="btn small" onClick={onCancel}>Done</button>}
+      {msg && <span className="bad small" role="alert" style={{ flexBasis: "100%" }}>{msg}</span>}
+    </div>
+  );
+}
+

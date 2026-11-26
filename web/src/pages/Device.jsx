@@ -1,10 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi, sessionDetail, splitTip, setPinned, usePins } from "../lib.js";
-import { DayStep, Failed, Loading, Meter, Bytes, Split } from "../ui.jsx";
+import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi, sessionDetail, splitTip, setPinned, usePins, kindLabel, kindSource } from "../lib.js";
+import { DayStep, Failed, KindPicker, Loading, Meter, Bytes, Split } from "../ui.jsx";
+import { Icon } from "../icons.jsx";
 
 // One device (UU-C-087): its day — traffic, signal and events by hour — its connection,
 // apps, sessions and events, and blocking. Everything links back to the hour or event.
+// In tabs since UU-C-293 (`?tab=`): Summary (the tiles, what stands out, its day, top apps and
+// the latest events), Apps and events, Connection (joins, Wi-Fi history or ports, runs on), and
+// Online history. Nothing was dropped: each card moved to one tab.
 
 const HOUR = 3600000;
 const BAND = { ng: "2.4 GHz", na: "5 GHz", "6e": "6 GHz", "6 GHz": "6 GHz", "5 GHz": "5 GHz", "2.4 GHz": "2.4 GHz" };
@@ -15,9 +19,8 @@ function csv(rows) {
 }
 
 // Which device a VM / container runs on (UU-C-165): detected, or chosen here.
-function RunsOn({ mac }) {
+function RunsOn({ mac, list }) {
   const info = useApi(`/api/devices/${encodeURIComponent(mac)}/host`);
-  const list = useApi("/api/devices");
   const [msg, setMsg] = useState("");
   const d = info.data;
   if (!d || (!d.guest && !d.choice && !d.host && !d.guests.length)) return null;
@@ -139,6 +142,39 @@ function WifiHistory({ mac }) {
   );
 }
 
+// The header's ⋯ menu: the actions used less often than Pin (UU-C-293).
+function HeadMenu({ items }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const out = (e) => box.current && !box.current.contains(e.target) && setOpen(false);
+    const esc = (e) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", out);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", out);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [open]);
+  return (
+    <span className="dv-menu" ref={box}>
+      <button className="btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>More <Icon name="dots" size={16} /></button>
+      {open && (
+        <span className="dv-pop" role="menu">
+          {items.map((i) =>
+            i.href ? (
+              <a key={i.label} role="menuitem" href={i.href}>{i.label}</a>
+            ) : (
+              <button key={i.label} role="menuitem" className={i.bad ? "bad" : ""} disabled={i.disabled} onClick={() => { setOpen(false); i.run(); }}>{i.label}</button>
+            )
+          )}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export default function Device({ route }) {
   const mac = String(route.arg || "").toLowerCase();
   const date = route.query.d || todayKey();
@@ -159,6 +195,13 @@ export default function Device({ route }) {
   const [msg, setMsg] = useState("");
   const pins = usePins();
   const pinned = Boolean(pins?.some((p) => p.mac === mac));
+  const devices = useApi("/api/devices");
+  const dev = devices.data?.devices?.find((x) => x.mac === mac) || null;
+  const [kindNow, setKindNow] = useState(undefined);
+  const [picking, setPicking] = useState(false);
+  const TABS = ["summary", "apps", "connection", "online"];
+  const tab = TABS.includes(route.query.tab) ? route.query.tab : "summary";
+  const tabHref = (t) => href("device", mac, { ...route.query, tab: t === "summary" ? null : t });
 
   const row = day.data?.rows?.find((r) => r.mac === mac) || null;
   const r = report.data;
@@ -234,6 +277,78 @@ export default function Device({ route }) {
   const current = w?.current;
   const wired = link ? link.wired : w?.wired;
   const poorHours = sigHours.filter((s) => s != null && s < -80).length;
+  // What stands out on this day, in one place (UU-C-293); each line opens the tab with the detail.
+  const kind = kindNow !== undefined ? (kindNow ? { ...dev?.type, kind: kindNow, source: "you" } : { ...dev?.type, source: "unifi" }) : dev?.type;
+  const notes = [];
+  if (!wired && poorHours > 0) notes.push({ level: "warn", text: `Weak signal for ${poorHours} hour${poorHours === 1 ? "" : "s"} ${isToday ? "today" : "that day"} (below −80 dBm)`, tab: "connection" });
+  if (wired && link?.speed != null && link.speed <= 100 && !row?.usualSpeed) notes.push({ level: "warn", text: `Linked at only ${speed(link.speed)} on ${link.via || "its switch"}${link.port != null ? ` port ${link.port}` : ""}`, tab: "connection" });
+  if (jd?.fails) notes.push({ level: "warn", text: `${jd.fails} failed Wi-Fi join${jd.fails === 1 ? "" : "s"} in 7 days: ${jd.problems.map((p) => p.label.toLowerCase()).join(", ")}`, tab: "connection" });
+  if (blocked) notes.push({ level: "bad", text: "Blocked in UniFi: no network access until you unblock it" });
+  const blockHours = (row?.marks || []).filter((m) => m?.block).length;
+  if (blockHours) notes.push({ level: "info", text: `UniFi blocked its connections in ${blockHours} hour${blockHours === 1 ? "" : "s"}`, href: href("security") });
+  if (!wired && (w?.roams?.length || 0) >= 20) notes.push({ level: "info", text: `Roamed ${w.roams.length} times between access points`, tab: "connection" });
+  if (dev?.host) notes.push({ level: "info", text: `Runs on ${dev.host.name}`, tab: "connection" });
+  if (r?.uncounted) notes.push({ level: "info", text: "UniFi counted no internet traffic for it; the connection records did", tab: "apps" });
+  const appsTop = r ? r.apps.slice(0, tab === "apps" ? 40 : 5) : [];
+
+  const appsCard = r && (
+    <div className="card">
+      <div className="card-head">
+        <h2>Apps</h2>
+        {tab === "summary" && r.apps.length > 5 ? <a className="end small" href={tabHref("apps")}>All {r.apps.length}</a> : <a className="end small" href={href("usage", null, { d: date, mac })}>On the Apps page</a>}
+      </div>
+      {!r.apps.length && !r.uncounted && <span className="dim">No traffic counted.</span>}
+      {r.uncounted && tab === "apps" && (
+        <p className="dim small" style={{ margin: 0 }}>
+          UniFi counted no internet traffic for this device, but its connection records show <Bytes n={r.uncounted.bytes} /> (↓ <Bytes n={r.uncounted.down} /> ↑ <Bytes n={r.uncounted.up} />) with {r.uncounted.apps.join(", ")}
+          {r.uncounted.more ? ` and ${r.uncounted.more} more` : ""}. Connection records miss most of a long connection such as a VPN tunnel, so the real amount can be higher.
+        </p>
+      )}
+      {appsTop.map((a) => (
+        <a key={a.appId} href={href("usage", null, { d: date, mac, app: a.appId })} style={{ color: "var(--text)", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 4 }}>
+          <span style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+            <span className="ellipsis" style={{ minWidth: 0 }}>{a.app} <span className="dim small">· {a.category}</span></span>
+            <span className="mono" style={{ textAlign: "right", flexShrink: 0 }}><Bytes n={a.totalBytes} /><Split down={a.bytesRx} up={a.bytesTx} /></span>
+          </span>
+          <Meter share={a.totalBytes / appsMax} />
+          {a.app === "Unidentified" && r.unnamedTo ? <UnnamedTo u={r.unnamedTo} /> : null}
+        </a>
+      ))}
+      {r.localBytes > 0 && tab === "apps" && (
+        <p className="dim small" style={{ margin: 0 }}>
+          Plus <Bytes n={r.localBytes} />{Number(r.localDown) || Number(r.localUp) ? <> (↓ <Bytes n={r.localDown} /> ↑ <Bytes n={r.localUp} />)</> : null} inside your own network ({r.localServices.slice(0, 3).map((s) => s.app).join(", ")}), which UniFi does not count.
+        </p>
+      )}
+    </div>
+  );
+  const eventsShown = tab === "summary" ? items.slice(0, 6) : items.slice(0, 60);
+  const eventsCard = r && (
+    <div className="card">
+      <div className="card-head">
+        <h2>{tab === "summary" ? "Latest sessions and events" : "Sessions and events"}</h2>
+        {tab === "summary" ? (items.length > 6 ? <a className="end small" href={tabHref("apps")}>All {items.length}</a> : null) : <button className="btn small end" onClick={exportCsv} disabled={!items.length}>Export CSV</button>}
+      </div>
+      {!items.length && <span className="dim">Nothing recorded.</span>}
+      <div className="rows">
+        {eventsShown.map((i, n) => (
+          <div key={n} className="row" style={{ gridTemplateColumns: "104px minmax(0, 1fr) auto" }}>
+            <span className="mono small dim">{i.at}</span>
+            <span className="stack">
+              <span style={{ color: i.kind === "session" ? "var(--accent)" : i.kind === "joinfail" ? "var(--bad)" : "var(--text-soft)" }}>{i.what}</span>
+              <span className="dim small ellipsis">{i.detail}</span>
+            </span>
+            <span className="mono small" style={{ textAlign: "right" }}>{i.n != null ? <><Bytes n={i.n} /><Split down={i.down} up={i.up} /></> : i.v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  const tabs = [
+    ["summary", "Summary"],
+    ["apps", "Apps and events", r ? `${r.apps.length} · ${items.length}` : null],
+    ["connection", "Connection", null, notes.some((x) => x.tab === "connection" && x.level === "warn")],
+    ["online", "Online history", seen.data?.log?.length || null],
+  ];
   return (
     <div className="page narrow">
       <div className="crumbs">
@@ -245,50 +360,72 @@ export default function Device({ route }) {
       </div>
       <div className="page-head">
         <div className="titles">
-          {!wired && poorHours > 0 && <span className="tag warn">WEAK SIGNAL{isToday ? " TODAY" : ""}</span>}
-          {wired && link?.speed != null && link.speed <= 100 && !row?.usualSpeed && <span className="tag warn">SLOW LINK</span>}
-          <h1 style={{ fontSize: 32 }}>{name}</h1>
+          <h1 className="dvp-title">
+            <span className="dv-icon big" title={kind ? `${kindLabel(kind.kind)} · ${kindSource(kind)}` : undefined}><Icon name={kind?.kind || "other"} size={24} /></span>
+            <span className="ellipsis">{name}</span>
+          </h1>
           <span className="muted">
             {link?.unsampled && !current && !link.via
               ? `${wired ? "Wired" : "Wi-Fi"} · no connection details that day`
               : link?.unsampled && !current && !wired
               ? `Wi-Fi · ${link.via}${link.band ? ` · ${link.band}` : ""}${link.signal != null ? ` · ${link.signal} dBm` : ""} · from UniFi's System Log`
               : wired
-              ? `Wired ·${link?.via || "switch"}${link?.port != null ? ` port ${link.port}` : ""}${link?.speed ? ` · ${speed(link.speed)}` : ""}`
+              ? `Wired · ${link?.via || "switch"}${link?.port != null ? ` port ${link.port}` : ""}${link?.speed ? ` · ${speed(link.speed)}` : ""}`
               : current
                 ? `Wi-Fi ${BAND[current.band] || current.band || ""} on ${current.ap}${current.essid ? ` · ${current.essid}` : ""}`
                 : "Not seen on this day"}
             {link?.uptime != null ? ` · connected ${duration(link.uptime)}` : ""}
+          </span>
+          <span className="dim small">
+            {[kind?.model && kind.source !== "none" ? kind.model : null, dev?.vendor || (dev?.privateMac ? "private address" : null)].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i).map((v) => `${v} · `).join("")}
             {row?.ip && (
               <>
+                <span className="mono" title={row.ipLastKnown ? "No address recorded that day; this is the last one known" : "Its address that day"}>{row.ip}</span>
+                {row.ipLastKnown && <span> (last known)</span>}
                 {" · "}
-                <span className="mono" title={row.ipLastKnown ? "No address recorded that day; this is the last one known" : "Its address that day"}>
-                  {row.ip}
-                </span>
-                {row.ipLastKnown && <span className="dim"> (last known)</span>}
               </>
             )}
-            {" · "}
             <span className="mono">{mac}</span>
           </span>
         </div>
-        <DayStep date={date} onDate={(d) => go("device", mac, { d: d === todayKey() ? null : d })} />
-        <a className="btn" href={href("sites", null, { mac, d: date === todayKey() ? null : date })}>Sites</a>
-        <a className="btn" href={href("devices", null, { mac })}>Rename</a>
+        <DayStep date={date} onDate={(d) => go("device", mac, { ...route.query, d: d === todayKey() ? null : d })} />
         {/* Pinned devices sit in the sidebar on every screen (UU-C-289). */}
         <button className={`btn pin ${pinned ? "on" : ""}`} aria-pressed={pinned} title={pinned ? "Remove from the sidebar" : "Keep this device in the sidebar"} onClick={() => setPinned(mac, !pinned, name).catch((e) => setMsg(e.message))}>
           {pinned ? "★ Pinned" : "☆ Pin"}
         </button>
-        <button className="btn danger" onClick={toggleBlock} disabled={busy}>
-          {blocked ? "Unblock" : "Block device"}
-        </button>
+        <HeadMenu
+          items={[
+            { label: "Rename", href: href("devices", null, { mac }) },
+            { label: "Set type", run: () => setPicking(true), disabled: !dev },
+            { label: "Sites it visited", href: href("sites", null, { mac, d: date === todayKey() ? null : date }) },
+            { label: "Its apps on the Apps page", href: href("usage", null, { d: date, mac }) },
+            { label: blocked ? "Unblock" : "Block device", run: toggleBlock, bad: !blocked, disabled: busy },
+          ]}
+        />
       </div>
+      {picking && dev && (
+        <div className="card tight">
+          <KindPicker d={{ ...dev, label: name, type: kind }} onSaved={(k) => setKindNow(k)} onCancel={() => setPicking(false)} />
+        </div>
+      )}
       {msg && <p className="note">{msg}</p>}
       {err && <Failed error={err} />}
       {loading && <Loading />}
       {r && (
         <>
-          <div className="grid g4">
+          <nav className="dtabs" role="tablist" aria-label="Device sections">
+            {tabs.map(([id, label, count, alert]) => (
+              <a key={id} role="tab" aria-selected={tab === id} className={tab === id ? "on" : ""} href={tabHref(id)}>
+                {label}
+                {count ? <span className="dim small"> {count}</span> : null}
+                {alert ? <span className="dtab-alert" title="Something here needs a look" /> : null}
+              </a>
+            ))}
+          </nav>
+
+          {tab === "summary" && (
+            <>
+              <div className="grid g4 dvp-stats">
             <div className="card tight stat">
               <span className="label">{isToday ? "Today" : "That day"}</span>
               <span className="value"><Bytes n={r.totals.bytes} /></span>
@@ -354,8 +491,17 @@ export default function Device({ route }) {
               <span className="sub">{wired ? "seen that day" : w?.favoriteAp ? `mostly on ${w.favoriteAp.ap}` : "from UniFi's log"}</span>
             </div>
           </div>
-
-          <div className="card">
+              {notes.length > 0 && (
+                <div className="card tight">
+                  <div className="dvp-notes">
+                    {notes.map((n, i) => {
+                      const body = <><span className={`status-dot ${n.level === "warn" ? "warn" : n.level === "bad" ? "bad" : "off"}`} /> {n.text}</>;
+                      return n.tab ? <a key={i} href={tabHref(n.tab)} className="dvp-note">{body}<span className="dim small"> · details</span></a> : n.href ? <a key={i} href={n.href} className="dvp-note">{body}</a> : <span key={i} className="dvp-note">{body}</span>;
+                    })}
+                  </div>
+                </div>
+              )}
+              <div className="card">
             <div className="card-head">
               <h2>Its day</h2>
               <span className="hint">by hour · click an hour to see it in 5-minute steps</span>
@@ -419,11 +565,24 @@ export default function Device({ route }) {
               </p>
             )}
           </div>
+              <div className="grid g2">
+                {appsCard}
+                {eventsCard}
+              </div>
+            </>
+          )}
 
-          <RunsOn mac={mac} />
+          {tab === "apps" && (
+            <div className="grid g2">
+              {appsCard}
+              {eventsCard}
+            </div>
+          )}
 
-          {/* Wi-Fi join attempts over 7 days, from UniFi's wifi-connectivity (UU-C-146). */}
-          {jd && (
+          {tab === "connection" && (
+            <>
+              <RunsOn mac={mac} list={devices} />
+              {jd && (
             <div className="card">
               <div className="card-head">
                 <h2>Wi-Fi joins</h2>
@@ -445,12 +604,8 @@ export default function Device({ route }) {
               </div>
             </div>
           )}
-
-          {/* Connects, roams and disconnects over 1-30 days (UU-C-286). */}
-          {w && !wired && <WifiHistory mac={mac} />}
-
-          {/* Where it was plugged in, newest first (UU-C-248): its record follows it from port to port. */}
-          {places.data?.places?.length > 0 && (
+              {w && !wired && <WifiHistory mac={mac} />}
+              {places.data?.places?.length > 0 && (
             <div className="card">
               <div className="card-head">
                 <h2>Where it connected</h2>
@@ -471,16 +626,20 @@ export default function Device({ route }) {
               </div>
             </div>
           )}
+              {!jd && !(w && !wired) && !places.data?.places?.length && <div className="card"><span className="dim">No connection history recorded for this device.</span></div>}
+            </>
+          )}
 
-          {/* Online / on the network / off over the last 7 days, from the 5-minute checks (UU-C-124). */}
-          {seen.data?.log?.length > 0 && (
+          {tab === "online" && (
+            <>
+              {seen.data?.log?.length > 0 && (
             <div className="card">
               <div className="card-head">
                 <h2>Online history</h2>
                 <span className="dim small">last 7 days · checked with every update</span>
               </div>
               <div className="rows">
-                {[...seen.data.log].reverse().slice(0, 40).map((e) => (
+                {[...seen.data.log].reverse().slice(0, 100).map((e) => (
                   <div key={e.ts} className="row" style={{ gridTemplateColumns: "150px 14px minmax(0, 1fr)", cursor: "default" }}>
                     <span className="mono small dim">{shortDate(e.ts)}</span>
                     <span className={`status-dot ${e.state === "online" ? "" : e.state === "lan" ? "warn" : "off"}`} />
@@ -493,56 +652,9 @@ export default function Device({ route }) {
               </div>
             </div>
           )}
-
-          <div className="grid g2">
-            <div className="card">
-              <div className="card-head">
-                <h2>Apps</h2>
-                <a className="end small" href={href("usage", null, { d: date, mac })}>Details</a>
-              </div>
-              {!r.apps.length && !r.uncounted && <span className="dim">No traffic counted.</span>}
-              {r.uncounted && (
-                <p className="dim small" style={{ margin: 0 }}>
-                  UniFi counted no internet traffic for this device, but its connection records show <Bytes n={r.uncounted.bytes} /> (↓ <Bytes n={r.uncounted.down} /> ↑ <Bytes n={r.uncounted.up} />) with {r.uncounted.apps.join(", ")}
-                  {r.uncounted.more ? ` and ${r.uncounted.more} more` : ""}. Connection records miss most of a long connection such as a VPN tunnel, so the real amount can be higher.
-                </p>
-              )}
-              {r.apps.slice(0, 8).map((a) => (
-                <a key={a.appId} href={href("usage", null, { d: date, mac, app: a.appId })} style={{ color: "var(--text)", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 4 }}>
-                  <span style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <span className="ellipsis" style={{ minWidth: 0 }}>{a.app} <span className="dim small">· {a.category}</span></span>
-                    <span className="mono" style={{ textAlign: "right", flexShrink: 0 }}><Bytes n={a.totalBytes} /><Split down={a.bytesRx} up={a.bytesTx} /></span>
-                  </span>
-                  <Meter share={a.totalBytes / appsMax} />
-                  {a.app === "Unidentified" && r.unnamedTo ? <UnnamedTo u={r.unnamedTo} /> : null}
-                </a>
-              ))}
-              {r.localBytes > 0 && (
-                <p className="dim small" style={{ margin: 0 }}>
-                  Plus <Bytes n={r.localBytes} />{Number(r.localDown) || Number(r.localUp) ? <> (↓ <Bytes n={r.localDown} /> ↑ <Bytes n={r.localUp} />)</> : null} inside your own network ({r.localServices.slice(0, 3).map((s) => s.app).join(", ")}), which UniFi does not count.
-                </p>
-              )}
-            </div>
-            <div className="card">
-              <div className="card-head">
-                <h2>Sessions and events</h2>
-                <button className="btn small end" onClick={exportCsv} disabled={!items.length}>Export CSV</button>
-              </div>
-              {!items.length && <span className="dim">Nothing recorded.</span>}
-              <div className="rows">
-                {items.slice(0, 60).map((i, n) => (
-                  <div key={n} className="row" style={{ gridTemplateColumns: "104px minmax(0, 1fr) auto" }}>
-                    <span className="mono small dim">{i.at}</span>
-                    <span className="stack">
-                      <span style={{ color: i.kind === "session" ? "var(--accent)" : i.kind === "joinfail" ? "var(--bad)" : "var(--text-soft)" }}>{i.what}</span>
-                      <span className="dim small ellipsis">{i.detail}</span>
-                    </span>
-                    <span className="mono small" style={{ textAlign: "right" }}>{i.n != null ? <><Bytes n={i.n} /><Split down={i.down} up={i.up} /></> : i.v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+              {!seen.data?.log?.length && <div className="card"><span className="dim">No online or offline changes in the last 7 days.</span></div>}
+            </>
+          )}
         </>
       )}
     </div>

@@ -219,6 +219,17 @@ export function deviceGroups(clients, pick) {
   ];
 }
 
+// What kind of device (UU-C-293): the server's fingerprint.KINDS, in the order a picker lists them.
+export const DEVICE_KINDS = [
+  ["phone", "Phone"], ["tablet", "Tablet"], ["laptop", "Laptop"], ["computer", "Computer"], ["tv", "TV or streamer"], ["console", "Game console"],
+  ["speaker", "Speaker"], ["camera", "Camera or doorbell"], ["watch", "Watch"], ["printer", "Printer"], ["smart", "Smart home"], ["light", "Light"],
+  ["car", "Car or charger"], ["server", "Server or NAS"], ["vm", "VM or container"], ["network", "Network gear"], ["other", "Other"],
+];
+export const kindLabel = (k) => DEVICE_KINDS.find(([id]) => id === k)?.[1] || "Other";
+// How NetLens knows the type, for a tooltip.
+export const kindSource = (t) =>
+  !t ? "" : t.source === "you" ? "set by you" : t.source === "unifi" ? `UniFi's fingerprint${t.model ? `: ${t.model}` : t.type ? `: ${t.type}` : ""}` : t.source === "virtual" ? "its address looks virtual" : t.source === "host" ? "VMs or containers run on it" : t.source === "guess" ? "a guess from its name" : "UniFi did not recognise it";
+
 // ---- pinned devices (UU-C-289) -------------------------------------------------------------
 // The owner's shortlist, kept on the server so every browser shows the same. One store, so the
 // pin button on a device page and the sidebar agree without a reload.
