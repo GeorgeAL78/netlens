@@ -326,6 +326,26 @@ for (const { hq, label, dayBar } of hourChecks) {
   }
 }
 
+// Wi-Fi problems from the access points' logs (UU-C-299): counts hold together, a reason sits
+// only on a disconnect, and a device whose DNS kept timing out today is on Overview.
+{
+  const devs = ((await get(`/api/devices`)).devices || []).filter((d) => !d.wired);
+  const today = new Date().toLocaleDateString("en-CA");
+  const findings = (await get(`/api/findings`)).findings || [];
+  for (const d of devs) {
+    stats.screens += 1;
+    const p = await get(`/api/devices/${encodeURIComponent(d.mac)}/wifi-problems?days=7`);
+    if (p.dns.timeouts < p.dns.events) failures.push(`wifi problems ${d.mac}: fewer timeouts than timeout events`);
+    if (p.anomalies.some((a) => !(a.n > 0) || !a.label)) failures.push(`wifi problems ${d.mac}: an anomaly without a count or words`);
+    if (p.leaves.some((l) => typeof l.own !== "boolean" || !l.text)) failures.push(`wifi problems ${d.mac}: a leave without its meaning`);
+    const h = await get(`/api/devices/${encodeURIComponent(d.mac)}/wifi-history?days=7`);
+    if ((h.events || []).some((e) => e.why && e.kind !== "disconnect")) failures.push(`wifi history ${d.mac}: a leave reason on something that is not a disconnect`);
+    const t = await get(`/api/devices/${encodeURIComponent(d.mac)}/wifi-problems?date=${today}`);
+    const want = t.dns.events >= 3 && t.dns.timeouts >= 10;
+    if (want !== findings.some((f) => f.id === `dns-${d.mac}`)) failures.push(`overview ${d.mac}: DNS timeouts ${t.dns.timeouts} in ${t.dns.events} events today, finding ${want ? "missing" : "shown anyway"}`);
+  }
+}
+
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);
 console.log(`chart places the whole header: ${stats.fullyPlaced}; part of it unplaced (no 5-minute detail): ${stats.partlyPlaced}`);
 console.log(`bytes without time detail: ${MB(stats.unplacedBytes)} of ${MB(stats.headerBytes)} summed over screens`);

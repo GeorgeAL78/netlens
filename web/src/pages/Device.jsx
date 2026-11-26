@@ -126,7 +126,7 @@ function WifiHistory({ mac }) {
                   {e.kind === "roam" || e.kind === "band" ? (
                     <>{where(e.from, e.fromBand, e.fromChannel, e.fromSignal)} <span className="dim">→</span> {where(e.ap, e.band, e.channel, e.signal)}</>
                   ) : e.kind === "disconnect" ? (
-                    <>from {where(e.ap, e.band, null, e.signal)}{e.connectedMs ? <span className="dim"> · after {dur(e.connectedMs)}</span> : null}</>
+                    <>from {where(e.ap, e.band, null, e.signal)}{e.connectedMs ? <span className="dim"> · after {dur(e.connectedMs)}</span> : null}{e.why ? <span className={e.why.own ? "dim" : "warn"} title={e.why.code != null ? `802.11 reason ${e.why.code}: ${e.why.why}` : undefined}> · {e.why.text}{e.why.rssi != null ? ` at ${e.why.rssi} dBm` : ""}</span> : null}</>
                   ) : (
                     <>to {where(e.ap, e.band, e.channel, e.signal)}</>
                   )}
@@ -138,6 +138,61 @@ function WifiHistory({ mac }) {
         </div>
       ))}
       {h.more > 0 && <span className="dim small">and {h.more} older</span>}
+    </div>
+  );
+}
+
+// Wi-Fi problems from the access points' own logs (UU-C-299): DNS timeouts, the anomalies the
+// access point flags for this device, and how often it left or was removed.
+function WifiProblems({ mac }) {
+  const [days, setDays] = useState(7);
+  const { data: p } = useApi(`/api/devices/${encodeURIComponent(mac)}/wifi-problems?days=${days}`);
+  if (!p) return null;
+  const removed = p.leaves.filter((l) => !l.own);
+  const nothing = !p.dns.events && !p.anomalies.length && !p.leaves.length && !p.recent.length;
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Wi-Fi problems</h2>
+        <span className="dim small">from the access points' own log</span>
+        <div className="seg end" role="group" aria-label="Period">
+          {HISTORY_DAYS.map(([n, label]) => <button key={n} className={days === n ? "on" : ""} aria-pressed={days === n} onClick={() => setDays(n)}>{label}</button>)}
+        </div>
+      </div>
+      {nothing && <span className="dim small">Nothing flagged. (This needs UniFi's Access Points device log sent to NetLens: Activity Logging › SIEM Server › Devices.)</span>}
+      {!nothing && (
+        <div className="facts">
+          <div className="fact">
+            <span className="label">DNS timeouts</span>
+            <span className={p.dns.timeouts ? "warn" : ""}>{p.dns.timeouts ? `${p.dns.timeouts} lookups, ${p.dns.events} time${p.dns.events === 1 ? "" : "s"}` : "None"}</span>
+            {p.dns.last ? <span className="small dim">last {shortDate(p.dns.last)}{p.dns.aps.length ? ` · ${p.dns.aps.join(", ")}` : ""}</span> : null}
+          </div>
+          {p.anomalies.map((a) => (
+            <div key={a.key} className="fact">
+              <span className="label">Flagged: {a.label}</span>
+              <span className="warn">{a.n} time{a.n === 1 ? "" : "s"}</span>
+              <span className="small dim">{[a.signal != null ? `signal around ${a.signal} dBm` : null, a.satisfaction != null ? `satisfaction down to ${a.satisfaction}%` : null, `last ${shortDate(a.last)}`].filter(Boolean).join(" · ")}</span>
+            </div>
+          ))}
+          <div className="fact">
+            <span className="label">Left Wi-Fi</span>
+            <span>{p.leaves.length ? `${p.leaves.length} time${p.leaves.length === 1 ? "" : "s"}` : "None recorded"}</span>
+            {p.leaves.length > 0 && <span className={`small ${removed.length ? "warn" : "dim"}`}>{removed.length ? `${removed.length} removed by the access point (${[...new Set(removed.map((l) => l.why))].join(", ")})` : "always on its own"}</span>}
+          </div>
+        </div>
+      )}
+      {p.recent.length > 0 && (
+        <div className="rows">
+          {p.recent.slice(0, 20).map((e, i) => (
+            <div key={i} className="row wh-row" style={{ gridTemplateColumns: "120px 190px minmax(0, 1fr)", cursor: "default" }}>
+              <span className="mono small dim">{shortDate(e.ts)}</span>
+              <span className={`small ${e.level === "warn" ? "warn" : ""}`}>{e.what}</span>
+              <span className="small dim ellipsis">{e.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {p.recent.length > 20 && <span className="dim small">and {p.recent.length - 20 + (p.more || 0)} older</span>}
     </div>
   );
 }
@@ -187,6 +242,7 @@ export default function Device({ route }) {
   const places = useApi(`/api/devices/${encodeURIComponent(mac)}/places?days=30`); // UU-C-248
   const joins = useApi(`/api/wifi-joins?days=7&mac=${encodeURIComponent(mac)}`); // UU-C-146
   const jd = joins.data?.devices?.[0] || null;
+  const probs = useApi(`/api/devices/${encodeURIComponent(mac)}/wifi-problems?date=${date}`).data; // UU-C-299
   // Blocked state lives in UniFi's full client list (a blocked device is usually offline).
   const clients = useApi("/api/clients?scope=all");
   const [blockedNow, setBlocked] = useState(null);
@@ -244,8 +300,10 @@ export default function Device({ route }) {
       }
       for (const g of hours.values()) list.push({ ts: g.last, at: g.first === g.last ? clock(g.last) : `${clock(g.first)} – ${clock(g.last)}`, what: `${g.label}${g.n > 1 ? ` ×${g.n}` : ""}`, detail: [...g.aps].join(", "), v: "", kind: "joinfail" });
     }
+    // The access points' own log (UU-C-299): DNS timeouts, anomalies, and leaves it removed.
+    for (const e of probs?.recent || []) if (e.kind !== "leave" || e.level === "warn") list.push({ ts: e.ts, at: clock(e.ts), what: e.what, detail: e.detail, v: "", kind: e.level === "warn" ? "joinfail" : "event" });
     return list.sort((a, b) => b.ts - a.ts);
-  }, [r, w, joins.data, day.data]);
+  }, [r, w, joins.data, day.data, probs]);
 
   async function toggleBlock() {
     const next = !blocked;
@@ -288,6 +346,10 @@ export default function Device({ route }) {
   if (blockHours) notes.push({ level: "info", text: `UniFi blocked its connections in ${blockHours} hour${blockHours === 1 ? "" : "s"}`, href: href("security") });
   if (!wired && (w?.roams?.length || 0) >= 20) notes.push({ level: "info", text: `Roamed ${w.roams.length} times between access points`, tab: "connection" });
   if (dev?.host) notes.push({ level: "info", text: `Runs on ${dev.host.name}`, tab: "connection" });
+  if (probs?.dns?.timeouts) notes.push({ level: "warn", text: `DNS lookups timed out ${probs.dns.timeouts} time${probs.dns.timeouts === 1 ? "" : "s"} ${isToday ? "today" : "that day"}`, tab: "connection" });
+  if (probs?.anomalies?.length) notes.push({ level: "warn", text: `Its access point flagged ${probs.anomalies.map((a) => `${a.label} ×${a.n}`).join(", ")}${probs.anomalies[0].signal != null ? ` (signal around ${probs.anomalies[0].signal} dBm)` : ""}`, tab: "connection" });
+  const kicked = (probs?.leaves || []).filter((l) => !l.own);
+  if (kicked.length) notes.push({ level: "warn", text: `Removed from Wi-Fi by the access point ${kicked.length} time${kicked.length === 1 ? "" : "s"}: ${[...new Set(kicked.map((l) => l.why))].join(", ")}`, tab: "connection" });
   if (r?.uncounted) notes.push({ level: "info", text: "UniFi counted no internet traffic for it; the connection records did", tab: "apps" });
   const appsTop = r ? r.apps.slice(0, tab === "apps" ? 40 : 5) : [];
 
@@ -604,6 +666,7 @@ export default function Device({ route }) {
               </div>
             </div>
           )}
+              {w && !wired && <WifiProblems mac={mac} />}
               {w && !wired && <WifiHistory mac={mac} />}
               {places.data?.places?.length > 0 && (
             <div className="card">

@@ -2,6 +2,7 @@ import * as db from "./db.js";
 import * as insights from "./insights.js";
 import { sessionize } from "./classify.js";
 import * as wifijoins from "./wifijoins.js";
+import * as wifiproblems from "./wifiproblems.js";
 import { groupGuests } from "./guests.js";
 import * as flowstore from "./flowstore.js";
 
@@ -595,6 +596,21 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
   }
 
   lap("joins");
+  // DNS lookups timing out, from the access points' own logs (UU-C-299): worth a look when it
+  // happened on 3+ occasions and 10+ lookups in the period; one-offs stay on the device page.
+  for (const d of wifiproblems.summary(start, end)) {
+    if (!(d.dnsEvents >= 3 && d.timeouts >= 10)) continue;
+    out.push({
+      id: `dns-${d.mac}`,
+      kind: "wifi",
+      level: "warn",
+      ts: d.last,
+      title: `${d.name}'s DNS lookups timed out ${d.timeouts} times ${when}`,
+      text: `${d.aps.length ? `On ${d.aps.join(", ")}. ` : ""}${d.signal != null ? `Signal around ${d.signal} dBm when its access point flagged it${d.signal < -75 ? ", which is weak: lost packets are the likely cause" : ""}. ` : ""}From the access points' own log.`,
+      mac: d.mac,
+    });
+  }
+  lap("dns");
   // Slow or renegotiated wired links.
   const wired = insights.wiredList(start, end, clientSamples).clients;
   const fastest = db.fastestWiredLinks(wired.map((c) => c.mac), end - 30 * 86400e3);

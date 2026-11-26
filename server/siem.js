@@ -70,8 +70,69 @@ function cefExtension(ext) {
   return out;
 }
 
+// ---- access point device logs (UU-C-299) ----------------------------------------------
+// UniFi's "Access Points" device log (Activity Logging › SIEM Server › Devices), measured on
+// U7 Pro / U7 Pro Wall, firmware 8.8.14. Three kinds of line carry what the API does not:
+//   stahtd STA_ASSOC_TRACKER JSON — "sta_leave" (why a device left: sta_dc_reason, the 802.11
+//     disassoc_reason code, avg_rssi before it went) and "dns timeout" (dns_timeouts count);
+//     any other event_type except association / success (which repeat the System Log and
+//     wifi-connectivity) is kept too, as it may be a problem the page can show later;
+//   mcad log_sta_anomalies — per device: signal, satisfaction_now, anomalies (dns_timeout,
+//     tcp_latency…), every ~20 s while it lasts (queue() keeps one per device and set per 5 min).
+// The header's "<mac>,<model>-<version>:" tag names the access point.
+export const AP_KIND = "ap";
+const AP_TAG = /\s([0-9a-f]{12}),[^\s:]+:\s/i;
+const colons = (hex) => hex.toLowerCase().match(/../g).join(":");
+const macOf = (v) => (/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(String(v || "")) ? String(v).toLowerCase() : null);
+function apLineTime(line, now) {
+  const t = headerTime(line, now);
+  // The lines arrive as they happen; a device clock in another zone must not move them.
+  return t && Math.abs(t - now) < 15 * 60e3 ? t : now;
+}
+export function parseApLine(line, now = Date.now()) {
+  const tracker = line.indexOf("STA_ASSOC_TRACKER");
+  const anomaly = line.indexOf("log_sta_anomalies");
+  if (tracker < 0 && anomaly < 0) return null;
+  const host = syslogSource(line).host;
+  const tag = AP_TAG.exec(line);
+  const apMac = tag ? colons(tag[1]) : null;
+  const ts = apLineTime(line, now);
+  const base = { ap: host, apMac };
+  if (tracker >= 0) {
+    let o;
+    try {
+      o = JSON.parse(line.slice(line.lastIndexOf("{", tracker)));
+    } catch {
+      return null;
+    }
+    const type = String(o.event_type || "");
+    const mac = macOf(o.mac);
+    if (!mac || !type || type === "association" || type === "success") return null;
+    const rest = Object.fromEntries(Object.entries(o).filter(([k]) => !["op", "message_type", "mac", "event_type"].includes(k)));
+    if (type === "sta_leave")
+      return { uid: uidOf(`${host}|${ts}|${line}`), ts, kind: AP_KIND, name: "Left Wi-Fi", category: "leave", mac, data: { ...base, reason: o.sta_dc_reason || null, code: o.disassoc_reason != null ? Number(o.disassoc_reason) : null, rssi: o.avg_rssi != null ? Number(o.avg_rssi) : null, vap: o.vap || null } };
+    if (type === "dns timeout")
+      return { uid: uidOf(`${host}|${ts}|${line}`), ts, kind: AP_KIND, name: "DNS timeouts", category: "dns", mac, data: { ...base, n: Number(o.dns_timeouts) || 1, vap: o.vap || null } };
+    return { uid: uidOf(`${host}|${ts}|${line}`), ts, kind: AP_KIND, name: type, category: "other", mac, data: { ...base, ...rest } };
+  }
+  const kv = Object.fromEntries([...line.slice(anomaly).matchAll(/(\w+)=(\S+)/g)].map((m) => [m[1], m[2]]));
+  const mac = macOf(kv.sta);
+  if (!mac || !kv.anomalies) return null;
+  return {
+    uid: uidOf(`${host}|${ts}|${line}`),
+    ts,
+    kind: AP_KIND,
+    name: "Wi-Fi anomaly",
+    category: "anomaly",
+    mac,
+    data: { ...base, anomalies: kv.anomalies.split(",").filter(Boolean), signal: kv.signal != null ? Number(kv.signal) : null, satisfaction: kv.satisfaction_now != null ? Number(kv.satisfaction_now) : null, radio: kv.radio || null, vap: kv.vap || null },
+  };
+}
+
 export function parseLine(line, now = Date.now()) {
   if (!line) return null;
+  const ap = parseApLine(line, now);
+  if (ap) return ap;
   const c = line.indexOf("CEF:");
   if (c >= 0) {
     const payload = line.slice(c);
@@ -216,6 +277,7 @@ export async function refreshSystemLog() {
 // rare ones out. GET /api/siem/unparsed shows them, to decide what is worth reading properly.
 const UNPARSED_PER_PROG = 25;
 const unparsed = { since: Date.now(), total: 0, progs: new Map(), hosts: new Map() };
+const anomalySeen = new Map();
 // UniFi puts a tag between the host and the program (measured on Network 11 / firmware 8.8):
 // access points "<mac>,<model>-<version>:", the gateway its own name again, so the program is
 // the first "name[pid]:" or "name:" among the next three words.
@@ -264,6 +326,13 @@ function queue(line) {
   if (!ev) {
     if (clean.trim()) keepUnparsed(clean);
     return;
+  }
+  // An anomaly repeats every ~20 s while it lasts: one per device and set of anomalies per 5 min.
+  if (ev.kind === AP_KIND && ev.category === "anomaly") {
+    const key = `${ev.mac}|${ev.data.anomalies.join(",")}`;
+    if (ev.ts - (anomalySeen.get(key) || 0) < 5 * 60e3) return;
+    anomalySeen.set(key, ev.ts);
+    if (anomalySeen.size > 5000) anomalySeen.clear();
   }
   state.pending.push(ev);
   if (!state.flushTimer) {

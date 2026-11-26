@@ -554,6 +554,25 @@ export function querySiemEvents(start, end, mac) {
   }));
 }
 
+// Access point device-log events (UU-C-299): why a device left, DNS timeouts, anomalies — kind
+// 'ap' in siem_events, newest first, optionally for one device or category.
+export function apEvents(since, before, mac = null, category = null) {
+  const where = ["kind = 'ap'", "ts >= ?", "ts < ?"];
+  const args = [since, before];
+  if (mac) {
+    where.push("mac = ?");
+    args.push(mac);
+  }
+  if (category) {
+    where.push("category = ?");
+    args.push(category);
+  }
+  return db
+    .prepare(`SELECT uid, ts, name, category, mac, data FROM siem_events WHERE ${where.join(" AND ")} ORDER BY ts DESC`)
+    .all(...args)
+    .map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
+}
+
 // System Log connects / roams / disconnects in [since, before), oldest first, optionally for
 // one device — where devices were attached on days NetLens took no samples (UU-C-102).
 export function linkEvents(since, before, mac = null) {

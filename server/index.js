@@ -22,6 +22,7 @@ import * as blockedrules from "./blockedrules.js";
 import * as firewall from "./firewall.js";
 import * as guests from "./guests.js";
 import * as fingerprint from "./fingerprint.js";
+import * as wifiproblems from "./wifiproblems.js";
 import { siteCategory } from "./sitecats.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
@@ -2683,9 +2684,30 @@ app.get("/api/devices/:mac/wifi-history", (req, res) => {
   try {
     const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
     const now = Date.now();
-    res.json({ days, ...insights.wifiHistory(req.params.mac, now - days * 86400e3, now + 1) });
+    const h = insights.wifiHistory(req.params.mac, now - days * 86400e3, now + 1);
+    // Why it left, from the access point's own log (UU-C-299), on each disconnect it matches.
+    const why = wifiproblems.leavesNear(req.params.mac, now - days * 86400e3, now + 1);
+    for (const e of h.events || []) if (e.kind === "disconnect") e.why = why(e.ts);
+    res.json({ days, ...h });
   } catch (err) {
     sendError(res, "GET /api/devices/:mac/wifi-history", err);
+  }
+});
+
+// Wi-Fi problems from the access points' logs (UU-C-299): leaves with their reason, DNS
+// timeouts, anomalies. `date=` one day, else the last `days` (1-30, default 7).
+app.get("/api/devices/:mac/wifi-problems", (req, res) => {
+  try {
+    const mac = String(req.params.mac || "").toLowerCase();
+    if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) return res.status(400).json({ error: "That is not a MAC address." });
+    const now = Date.now();
+    const date = /^\d{4}-\d\d-\d\d$/.test(String(req.query.date || "")) ? String(req.query.date) : null;
+    const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
+    const start = date ? zonedMidnight(date) : now - days * 86400e3;
+    const end = date ? zonedMidnight(addDays(date, 1)) : now + 1;
+    res.json({ mac, date, days: date ? 1 : days, start, end, ...wifiproblems.forDevice(mac, start, end) });
+  } catch (err) {
+    sendError(res, "GET /api/devices/:mac/wifi-problems", err);
   }
 });
 
