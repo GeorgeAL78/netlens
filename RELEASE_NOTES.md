@@ -1,2 +1,2 @@
-### Added
-- NetLens now keeps a short sample of syslog lines it doesn't use yet: the device logs (Gateway, Access Points, Switches) that UniFi can add to its SIEM export. The newest 25 lines per program are kept in memory only, never saved, at `/api/siem/unparsed` (filter with `?prog=` or `?q=`). It's for deciding what to read from them next, such as port up and down events or why a device left the Wi-Fi.
+### Fixed
+- The syslog sample at `/api/siem/unparsed` now names each line's real program (hostapd, kernel, mcad, dnsmasq…). UniFi access points and gateways put an extra tag before the program, so every line from one access point landed in a single group and busy programs pushed the rare lines out.

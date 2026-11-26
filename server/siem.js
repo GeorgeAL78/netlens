@@ -216,11 +216,22 @@ export async function refreshSystemLog() {
 // rare ones out. GET /api/siem/unparsed shows them, to decide what is worth reading properly.
 const UNPARSED_PER_PROG = 25;
 const unparsed = { since: Date.now(), total: 0, progs: new Map(), hosts: new Map() };
-const HEADER = /^\s*(?:\d+\s+)?(?:<\d+>)?(?:\d\s+)?(?:[A-Z][a-z]{2}\s+\d+\s+[\d:]+|\d{4}-\d\d-\d\dT\S+)\s+(\S+)\s+([^\s:[]+)/;
-function keepUnparsed(line) {
+// UniFi puts a tag between the host and the program (measured on Network 11 / firmware 8.8):
+// access points "<mac>,<model>-<version>:", the gateway its own name again, so the program is
+// the first "name[pid]:" or "name:" among the next three words.
+const HEADER = /^\s*(?:\d+\s+)?(?:<\d+>)?(?:\d\s+)?(?:[A-Z][a-z]{2}\s+\d+\s+[\d:]+|\d{4}-\d\d-\d\dT\S+)\s+(\S+)\s+(.*)$/;
+export function syslogSource(line) {
   const m = HEADER.exec(line);
-  const host = m ? m[1] : "?";
-  const prog = m ? m[2] : "?";
+  if (!m) return { host: "?", prog: "?" };
+  const words = m[2].split(/\s+/).slice(0, 3);
+  for (const w of words) {
+    const p = /^([A-Za-z][\w.-]*)(?:\[\d+\])?:$/.exec(w);
+    if (p) return { host: m[1], prog: p[1] };
+  }
+  return { host: m[1], prog: words[0]?.replace(/[:[].*$/, "") || "?" };
+}
+function keepUnparsed(line) {
+  const { host, prog } = syslogSource(line);
   unparsed.total += 1;
   unparsed.hosts.set(host, (unparsed.hosts.get(host) || 0) + 1);
   const p = unparsed.progs.get(prog) || { n: 0, lines: [] };
