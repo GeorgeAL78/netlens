@@ -1438,6 +1438,11 @@ app.get("/api/siem", (_req, res) => {
   res.json(siem.status());
 });
 
+// Syslog lines NetLens does not use yet (UU-C-295), from memory: per program, newest first.
+app.get("/api/siem/unparsed", (req, res) => {
+  res.json(siem.unparsedLines({ prog: req.query.prog || null, q: req.query.q || null }));
+});
+
 app.get("/api/cache", (_req, res) => {
   const todayKey = zonedDateKey(Date.now());
   res.json({

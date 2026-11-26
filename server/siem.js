@@ -210,11 +210,50 @@ export async function refreshSystemLog() {
 
 // ---- listen source ------------------------------------------------------------------
 
+// Lines NetLens does not use yet (UU-C-295): the device logs UniFi can add to its SIEM export
+// (Gateway, Access Points, Switches: kernel, hostapd, port links...). Kept in memory only, never
+// written: the newest 25 per program and a count of each, so a chatty program cannot push the
+// rare ones out. GET /api/siem/unparsed shows them, to decide what is worth reading properly.
+const UNPARSED_PER_PROG = 25;
+const unparsed = { since: Date.now(), total: 0, progs: new Map(), hosts: new Map() };
+const HEADER = /^\s*(?:\d+\s+)?(?:<\d+>)?(?:\d\s+)?(?:[A-Z][a-z]{2}\s+\d+\s+[\d:]+|\d{4}-\d\d-\d\dT\S+)\s+(\S+)\s+([^\s:[]+)/;
+function keepUnparsed(line) {
+  const m = HEADER.exec(line);
+  const host = m ? m[1] : "?";
+  const prog = m ? m[2] : "?";
+  unparsed.total += 1;
+  unparsed.hosts.set(host, (unparsed.hosts.get(host) || 0) + 1);
+  const p = unparsed.progs.get(prog) || { n: 0, lines: [] };
+  p.n += 1;
+  p.lines.push({ at: Date.now(), host, line: line.slice(0, 1500) });
+  if (p.lines.length > UNPARSED_PER_PROG) p.lines.shift();
+  unparsed.progs.set(prog, p);
+}
+export function unparsedLines({ prog = null, q = null } = {}) {
+  const needle = q ? String(q).toLowerCase() : null;
+  const lines = [];
+  for (const [name, p] of unparsed.progs) {
+    if (prog && name !== prog) continue;
+    for (const l of p.lines) if (!needle || l.line.toLowerCase().includes(needle)) lines.push({ prog: name, ...l });
+  }
+  return {
+    since: unparsed.since,
+    total: unparsed.total,
+    programs: [...unparsed.progs].map(([name, p]) => ({ name, count: p.n })).sort((a, b) => b.count - a.count),
+    hosts: [...unparsed.hosts].map(([name, n]) => ({ name, count: n })).sort((a, b) => b.count - a.count),
+    lines: lines.sort((a, b) => b.at - a.at),
+  };
+}
+
 function queue(line) {
-  const ev = parseLine(line.replace(/\r$/, ""));
+  const clean = line.replace(/\r$/, "");
+  const ev = parseLine(clean);
   state.received += 1;
   state.lastReceivedAt = Date.now();
-  if (!ev) return;
+  if (!ev) {
+    if (clean.trim()) keepUnparsed(clean);
+    return;
+  }
   state.pending.push(ev);
   if (!state.flushTimer) {
     state.flushTimer = setTimeout(() => {
