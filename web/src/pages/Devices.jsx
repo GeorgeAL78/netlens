@@ -202,7 +202,9 @@ export default function Devices({ route }) {
   const online = top.filter((d) => d.online).sort(order);
   const offlineAll = top.filter((d) => !d.online).sort((a, b) => (sortBy === "name" || sortBy === "seen" ? (b.lastSeen || 0) - (a.lastSeen || 0) : order(a, b)));
   const hiddenOld = s || tile ? 0 : offlineAll.filter(old).length;
-  const offline = s || tile || showOld ? offlineAll : offlineAll.filter((d) => !old(d));
+  // Old unnamed addresses sit together under their own button, not mixed in by last seen (UU-C-308).
+  const offline = s || tile ? offlineAll : offlineAll.filter((d) => !old(d));
+  const oldList = s || tile ? [] : offlineAll.filter(old);
   const offlineOpen = showOffline || status === "offline" || Boolean(s) || Boolean(tile) || !online.length;
   const groups = (() => {
     const m = new Map();
@@ -484,6 +486,12 @@ export default function Devices({ route }) {
                   <button className="btn small" style={{ alignSelf: "flex-start" }} onClick={() => setShowOld((v) => !v)}>
                     {showOld ? "Hide" : "Show"} {hiddenOld} old unnamed address{hiddenOld === 1 ? "" : "es"}
                   </button>
+                )}
+                {offlineOpen && showOld && oldList.length > 0 && (
+                  <>
+                    <h3 className="dv-group-head"><span className="dv-group-name">Old unnamed addresses · {oldList.length}</span><span className="dim small">not seen for a week or more, no name</span></h3>
+                    <div className="rows">{oldList.map((d) => row(d))}</div>
+                  </>
                 )}
               </section>
             )}
