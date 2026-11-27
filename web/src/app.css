@@ -177,6 +177,7 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius
   display: flex; align-items: center; gap: 12px; min-height: var(--top-h); padding: 8px 28px; position: sticky; top: 0; z-index: 20;
   border-bottom: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(10px);
 }
+.topbar .top-back { display: none; }
 .topbar .crumb { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--dim); font-size: 13px; }
 .topbar .crumb strong { color: var(--text); font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .topbar .spacer { flex: 1; }
@@ -227,6 +228,7 @@ kbd { font-family: var(--mono); font-size: 11px; padding: 1px 5px; border-radius
   .top-search { min-width: 0; width: 36px; padding: 0; justify-content: center; }
   .top-search span, .top-search kbd { display: none; }
   .topbar .only-phone { display: inline-grid; }
+  .topbar .top-back { display: inline-grid; margin-right: -2px; }
   .subtabs { display: flex; }
   .bottomnav {
     display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;

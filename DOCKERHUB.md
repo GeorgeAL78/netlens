@@ -58,6 +58,7 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
 - **Activity › Apps** — apps, categories and devices for a day, an hour or 90 days, one search box for all
   three; every number adds up.
 - Local-network traffic shown separately; missing data marked, never shown as a quiet hour.
+- Works on a phone: a bottom bar with every page and a Back button in the top bar.
 - **API and AI access**: an MCP endpoint at `/mcp` for Claude and other assistants, and a REST
   API described at `/api/openapi.json`. Read everything; with a full access key also make safe
   changes (rename, set type or pin a device, alerts, refresh). It can never block devices or change settings.

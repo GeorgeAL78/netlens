@@ -88,10 +88,43 @@ function parse() {
   return { page: parts[0] || "home", arg: parts[1] || null, query: Object.fromEntries(new URLSearchParams(q)) };
 }
 
+// How deep into this tab's NetLens history we are (UU-C-313), kept on each history entry so the
+// phone's Back button knows whether going back stays in NetLens or would leave it. A new entry has
+// no depth yet and gets the last one plus one; one we came back or forward to keeps its own.
+let depth = 0;
+function stampDepth() {
+  try {
+    const d = window.history.state?.nlDepth;
+    if (typeof d === "number") depth = d;
+    else {
+      depth = stampDepth.ready && !replacing ? depth + 1 : depth;
+      window.history.replaceState({ ...(window.history.state || {}), nlDepth: depth }, "");
+    }
+  } catch {
+    /* history unavailable: Back goes up a level instead */
+  }
+  stampDepth.ready = true;
+  replacing = false;
+}
+let replacing = false;
+export const canGoBack = () => depth > 0;
+// Back within NetLens; opened straight on a page (a bookmark, a link), up one level instead, in
+// place of this entry, so Back from there goes further up rather than down again.
+export function goBack(route) {
+  if (canGoBack()) window.history.back();
+  else {
+    replacing = true;
+    window.location.replace(href(route.page === "device" ? "devices" : "home"));
+  }
+}
+
 export function useRoute() {
-  const [route, setRoute] = useState(parse);
+  const [route, setRoute] = useState(() => (stampDepth(), parse()));
   useEffect(() => {
-    const on = () => setRoute(parse());
+    const on = () => {
+      stampDepth();
+      setRoute(parse());
+    };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);

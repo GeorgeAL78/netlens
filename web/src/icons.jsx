@@ -42,6 +42,7 @@ export const P = {
   dots: "M6 10.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8M12 10.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8M18 10.6a1.4 1.4 0 1 0 0 2.8 1.4 1.4 0 0 0 0-2.8",
   check: "M5 12l5 5 9-10",
   chevron: "M9 6l6 6-6 6",
+  back: "M15 6l-6 6 6 6",
   arrow: "M5 12h14M13 6l6 6-6 6",
 };
 export function Icon({ name, size = 18 }) {

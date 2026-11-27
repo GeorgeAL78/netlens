@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
-import { ago, api, applyTheme, deviceGroups, go, href, isPlumbing, setPinned, setTheme, themeChoice, usePending, usePins, useRoute } from "./lib.js";
+import { ago, api, applyTheme, canGoBack, deviceGroups, go, goBack, href, isPlumbing, setPinned, setTheme, themeChoice, usePending, usePins, useRoute } from "./lib.js";
 import { Loading } from "./ui.jsx";
 import { Icon } from "./icons.jsx";
 
@@ -442,6 +442,12 @@ export default function App() {
       <Sidebar route={route} version={version} fired={fired} pins={pins} refresh={refresh} theme={theme} openPalette={() => setPalette(true)} />
       <div className="main-col">
         <header className="topbar">
+          {/* Phones only (UU-C-313): no breadcrumb or sidebar there, and a home-screen app has no browser Back. */}
+          {(route.page !== "home" || canGoBack()) && (
+            <button className="iconbtn top-back" onClick={() => goBack(route)} aria-label="Back" title="Back">
+              <Icon name="back" size={18} />
+            </button>
+          )}
           <a className="brand" href={href("home")} aria-label="NetLens home">
             <span className="brand-mark" aria-hidden="true" />
             <strong>NetLens</strong>

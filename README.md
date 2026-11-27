@@ -131,6 +131,8 @@ which UniFi itself deletes after a day or a week.
   NetLens keeps its own history and today's traffic carries on from what it had.
 - **History export / import**, an optional syslog listener for ad-block counts and the access
   points' Wi-Fi problems.
+- **Works on a phone** — a bottom bar with every page, and a Back button in the top bar that
+  steps back through what you opened, or up a level when you came straight to a page.
 - **API and AI access** — an MCP endpoint (`/mcp`) so Claude or another assistant can ask about
   your network and make safe changes, and the same operations as a REST API described at
   `/api/openapi.json`. See [API and AI access](#api-and-ai-access).
