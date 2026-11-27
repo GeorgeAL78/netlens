@@ -3,6 +3,7 @@ import * as insights from "./insights.js";
 import { sessionize } from "./classify.js";
 import * as wifijoins from "./wifijoins.js";
 import * as wifiproblems from "./wifiproblems.js";
+import * as cablelinks from "./cablelinks.js";
 import { groupGuests } from "./guests.js";
 import * as flowstore from "./flowstore.js";
 
@@ -634,6 +635,21 @@ export function findings({ bundle, start, end, now, lostSpans, clock, appName, c
       ts: g.last,
       title: `The gateway couldn't reach its ${g.target} service ${g.n} times ${when}`,
       text: `UniFi's message service on the gateway logged "${g.why}" each time, inside the console, not on your network. What it affects isn't documented; if it keeps happening, restarting or updating the console usually clears it.`,
+    });
+  }
+  // Wired links dropping and coming back (UU-C-311), from the switches' own log: worth a look at 6+
+  // drops a day that sleep, waking up or standby don't explain.
+  const perDay = Math.max(1, Math.round((end - start) / 86400e3));
+  for (const p of cablelinks.summary(start, end)) {
+    if (p.unexplained < 6 * perDay) continue;
+    out.push({
+      id: `link-${p.swMac}-${p.port}`,
+      kind: "network",
+      level: "warn",
+      ts: p.last,
+      title: `${p.name ? `${p.name}'s cable link` : `${p.via} port ${p.port}`} dropped ${p.unexplained} times ${when}`,
+      text: `${p.via} port ${p.port} went down and came back at full speed each time${p.asleep ? ` (another ${p.asleep} drop${p.asleep === 1 ? " was" : "s were"} the device going to sleep)` : ""}. If the device didn't restart that often, reseat or swap the cable.`,
+      ...(p.mac ? { mac: p.mac } : {}),
     });
   }
   lap("dns");

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { addDays, bytes, dayLabel, todayKey, useApi, api, DEVICE_KINDS, kindLabel, kindSource } from "./lib.js";
+import { addDays, bytes, dayLabel, todayKey, useApi, api, DEVICE_KINDS, kindLabel, kindSource, guessText } from "./lib.js";
 
 // A month calendar (UU-C-096). Days with saved data carry a dot; future days are disabled.
 const WEEK = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
@@ -330,6 +330,7 @@ export function KindPicker({ d, onSaved, onCancel }) {
         {DEVICE_KINDS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
       </select>
       <span className="dim small">{kindSource(d.type)}</span>
+      {guessText(d.type) && <span className="dim small" style={{ flexBasis: "100%" }}>{guessText(d.type)}</span>}
       {onCancel && <button type="button" className="btn small" onClick={onCancel}>Done</button>}
       {msg && <span className="bad small" role="alert" style={{ flexBasis: "100%" }}>{msg}</span>}
     </div>

@@ -96,6 +96,10 @@ which UniFi itself deletes after a day or a week.
   the access point asked it to move to a better one, and whether it did), kept 90 days. Overview
   says when a device's lookups keep timing out, when it keeps refusing to move, and when the
   gateway keeps failing to reach part of itself.
+- **Cable link drops from the switch's own log** (optional, needs syslog) — each time a wired
+  device's link went down and the speed it came back at, read as going to sleep, waking up, standby
+  or back at full speed; Overview flags a port that keeps dropping for no such reason. UniFi's own
+  traffic-based guesses of what a device is show in its type.
 - **Activity › Sites** — every site each device connected to over the last 90 days, with a filter per
   category (social, gaming, school, ads and tracking, AI, adult…), search, and the times of
   each connection. Taken from UniFi's connection records, not a DNS log (UniFi has none). When a
@@ -210,17 +214,19 @@ web UI is in charge: `UNIFI_HOST`, `UNIFI_API_KEY`, `UNIFI_SITE`, `UNIFI_SITE_ID
 
 ### Syslog (optional)
 
-Network events come from UniFi's System Log automatically. Syslog adds two things: ad-block hits,
-and the access points' own Wi-Fi problems (why a device left, DNS timeouts, anomalies). The
+Network events come from UniFi's System Log automatically. Syslog adds ad-block hits, the access
+points' own Wi-Fi problems (why a device left, DNS timeouts, anomalies, band steering), the
+switches' link drops and the gateway's own errors and device guesses. The
 container listens on port `5514` (TCP and UDP) by default: publish that port and point UniFi at
 this server (Settings → CyberSecure → Activity Logging (Syslog) → SIEM Server). For the Wi-Fi
-problems, also tick **Access Points** under Contents › Devices. Clear the port in Settings to turn
+problems and link drops, also tick **Gateway**, **Access Points** and **Switches** under Contents ›
+Devices. Clear the port in Settings to turn
 the listener off. Lines NetLens does not use yet are kept briefly in memory, never saved, at
 `/api/siem/unparsed`.
 
 ## API and AI access
 
-NetLens offers 39 operations (29 that read, 10 that make safe changes) in two forms, built from
+NetLens offers 40 operations (30 that read, 10 that make safe changes) in two forms, built from
 one list so they always match:
 
 - **MCP** at `http://<host>:3780/mcp` (Streamable HTTP, JSON answers). In Claude, add a custom

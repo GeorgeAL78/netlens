@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi, sessionDetail, splitTip, setPinned, usePins, kindLabel, kindSource } from "../lib.js";
+import { api, bytes, clock, duration, go, href, rate, shortDate, speed, todayKey, useApi, sessionDetail, splitTip, setPinned, usePins, kindLabel, kindSource, guessText } from "../lib.js";
 import { DayStep, Failed, KindPicker, Loading, Meter, Bytes, Split } from "../ui.jsx";
 import { Icon } from "../icons.jsx";
 
@@ -200,6 +200,55 @@ function WifiProblems({ mac }) {
         </div>
       )}
       {p.recent.length > 20 && <span className="dim small">and {p.recent.length - 20 + (p.more || 0)} older</span>}
+    </div>
+  );
+}
+
+// A wired device's link drops from the switches' own log (UU-C-311).
+function CableLinks({ mac }) {
+  const [days, setDays] = useState(7);
+  const { data: c } = useApi(`/api/devices/${encodeURIComponent(mac)}/cable?days=${days}`);
+  if (!c) return null;
+  const all = c.ports.flatMap((p) => p.drops.map((d) => ({ ...d, via: p.via, port: p.port, swMac: p.swMac }))).sort((a, b) => b.ts - a.ts);
+  const count = (w) => all.filter((d) => d.what === w).length;
+  const loose = count("back") + count("down");
+  return (
+    <div className="card">
+      <div className="card-head">
+        <h2>Cable link</h2>
+        <span className="dim small">from the switch's own log</span>
+        <div className="seg end" role="group" aria-label="Period">
+          {HISTORY_DAYS.map(([n, label]) => <button key={n} className={days === n ? "on" : ""} aria-pressed={days === n} onClick={() => setDays(n)}>{label}</button>)}
+        </div>
+      </div>
+      {!c.switchLog && <span className="dim small">No switch log yet. (This needs UniFi's Switches device log sent to NetLens: Activity Logging › SIEM Server › Devices.)</span>}
+      {c.switchLog && !all.length && <span className="dim small">The link stayed up{c.ports.length ? ` on ${c.ports.map((p) => `${p.via} port ${p.port}`).join(", ")}` : ""}.</span>}
+      {all.length > 0 && (
+        <div className="facts">
+          <div className="fact">
+            <span className="label">Link drops</span>
+            <span className={loose >= 6 ? "warn" : ""}>{all.length} time{all.length === 1 ? "" : "s"}</span>
+            <span className="small dim">{[count("asleep") && `${count("asleep")} going to sleep`, count("woke") && `${count("woke")} waking up`, count("slower") && `${count("slower")} slower than usual`, loose && `${loose} back at full speed`].filter(Boolean).join(" · ")}</span>
+          </div>
+          {c.ports.filter((p) => p.usual).map((p) => (
+            <div key={`${p.swMac}|${p.port}`} className="fact">
+              <span className="label">{p.via} port {p.port}</span>
+              <span>usually {speed(p.usual)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {all.length > 0 && (
+        <div className="rows">
+          {all.slice(0, 20).map((d, i) => (
+            <div key={i} className="row wh-row" style={{ gridTemplateColumns: "120px minmax(0, 1fr)", cursor: "default" }}>
+              <span className="mono small dim">{shortDate(d.ts)}</span>
+              <span className={`small ${d.what === "back" || d.what === "down" ? "warn" : ""}`}>{d.text.replace(/^./, (x) => x.toUpperCase())}{c.ports.length > 1 ? <span className="dim"> · {d.via} port {d.port}</span> : null}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {all.length > 20 && <span className="dim small">and {all.length - 20} older</span>}
     </div>
   );
 }
@@ -431,7 +480,7 @@ export default function Device({ route }) {
       <div className="page-head">
         <div className="titles">
           <h1 className="dvp-title">
-            <span className="dv-icon big" title={kind ? `${kindLabel(kind.kind)} · ${kindSource(kind)}` : undefined}><Icon name={kind?.kind || "other"} size={24} /></span>
+            <span className="dv-icon big" title={kind ? [`${kindLabel(kind.kind)} · ${kindSource(kind)}`, guessText(kind)].filter(Boolean).join("\n") : undefined}><Icon name={kind?.kind || "other"} size={24} /></span>
             <span className="ellipsis">{name}</span>
           </h1>
           <span className="muted">
@@ -674,6 +723,7 @@ export default function Device({ route }) {
               </div>
             </div>
           )}
+              {wired && <CableLinks mac={mac} />}
               {w && !wired && <WifiProblems mac={mac} />}
               {w && !wired && <WifiHistory mac={mac} />}
               {places.data?.places?.length > 0 && (

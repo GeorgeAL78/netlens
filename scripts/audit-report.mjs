@@ -351,6 +351,27 @@ for (const { hq, label, dayBar } of hourChecks) {
     if (wantSteer !== findings.some((f) => f.id === `steer-${d.mac}`)) failures.push(`overview ${d.mac}: refused ${st.refused}, moved ${st.moved} today, steering finding ${wantSteer ? "missing" : "shown anyway"}`);
   }
 }
+// Cable links (UU-C-311): every wired device's drops come back with words and a known reading,
+// a wake-up always follows a sleep, and Overview flags a port exactly when 6+ drops today that sleep,
+// waking or standby don't explain — counted here from the device pages, once per port.
+{
+  const wired = ((await get(`/api/devices`)).devices || []).filter((d) => d.wired);
+  const today = new Date().toLocaleDateString("en-CA");
+  const findings = (await get(`/api/findings`)).findings || [];
+  const ports = new Map();
+  for (const d of wired) {
+    stats.screens += 1;
+    const c = await get(`/api/devices/${encodeURIComponent(d.mac)}/cable?date=${today}`);
+    for (const p of c.ports) {
+      for (const x of p.drops) if (!x.text || !["asleep", "woke", "slower", "back", "down"].includes(x.what)) failures.push(`cable ${d.mac}: a drop without a reading or words`);
+      for (const [i, x] of p.drops.entries()) if (x.what === "woke" && p.drops[i + 1] && p.drops[i + 1].what !== "asleep") failures.push(`cable ${d.mac}: a wake-up that does not follow a sleep`);
+      // Containers share their server's port, so the port's count is the largest any device shows.
+      const k = `${p.swMac}-${p.port}`;
+      ports.set(k, Math.max(ports.get(k) || 0, p.drops.filter((x) => x.what === "back" || x.what === "down").length));
+    }
+  }
+  for (const [k, n] of ports) if (n >= 6 !== findings.some((f) => f.id === `link-${k}`)) failures.push(`overview: port ${k} had ${n} unexplained drops today, finding ${n >= 6 ? "missing" : "shown anyway"}`);
+}
 
 console.log(`\nscreens: ${stats.screens} (DPI basis ${stats.dpi}, flow basis ${stats.flows})`);
 console.log(`chart places the whole header: ${stats.fullyPlaced}; part of it unplaced (no 5-minute detail): ${stats.partlyPlaced}`);

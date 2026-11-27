@@ -112,6 +112,44 @@ export function parseGatewayLine(line, now = Date.now()) {
 }
 export const GW_KIND = "gw";
 
+// ---- switch port links (UU-C-311) ---------------------------------------------------------
+// UniFi's "Switches" device log, measured on a USW Flex 2.5G 5 (firmware 2.1.8): one line per
+// port going down or up, with the speed it came back at —
+//   "<30>USW-Flex-2.5G-5 <mac>,USW-Flex-2.5G-5-2.1.8.971: switch: Port:2 link up, Speed: 2500M, Duplex: full"
+// The switch sends no time in the header, so the time is when NetLens received it.
+export const SW_KIND = "sw";
+const SW_LINK = /\bswitch: Port:\s*(\d+) link (up|down)(?:, Speed: (\d+)M)?(?:, Duplex: (\w+))?/i;
+export function parseSwitchLine(line, now = Date.now()) {
+  const m = SW_LINK.exec(line);
+  if (!m) return null;
+  const host = syslogSource(line).host;
+  const tag = AP_TAG.exec(line);
+  const ts = apLineTime(line, now);
+  const up = m[2].toLowerCase() === "up";
+  return { uid: uidOf(`${host}|${ts}|${line}`), ts, kind: SW_KIND, name: up ? "Link up" : "Link down", category: "link", mac: null, data: { host, swMac: tag ? colons(tag[1]) : null, port: Number(m[1]), up, speed: m[3] ? Number(m[3]) : null, duplex: m[4] ? m[4].toLowerCase() : null } };
+}
+
+// ---- UniFi's own device guesses (UU-C-311) --------------------------------------------------
+// The gateway's traffic-based fingerprinting ("fp ml") logs its top guesses for a device as it
+// learns them, the same line under two programs (ubios-udapi-server and dpi-flow-stats):
+//   "ubnt-dpi-util: fp ml for mac: <mac> [GE Cync A19 Light Bulb - 5989]@59% [GE Cync Indoor Smart Plug - 5717]@24%"
+//   "ubnt-dpi-util: fp ml for mac: <mac> is empty - below threshold: "Dreo Ceiling Fans"@41%,"Nespresso …"@2%"
+// Kept as the device's latest guesses; queue() drops a repeat of the same guesses within 6 hours.
+export const FP_KIND = "fp";
+const FP_ML = /ubnt-dpi-util: fp ml for mac: ([0-9a-f:]{17}) (.*)$/i;
+export function parseGuessLine(line, now = Date.now()) {
+  const m = FP_ML.exec(line);
+  if (!m) return null;
+  const mac = macOf(m[1]);
+  if (!mac) return null;
+  const below = /below threshold/i.test(m[2]);
+  const pairs = below ? [...m[2].matchAll(/"([^"]+)"@(\d+)%/g)] : [...m[2].matchAll(/\[([^\]]+?)(?: - \d+)?\]@(\d+)%/g)];
+  const guesses = pairs.map((p) => ({ name: p[1].trim(), pct: Number(p[2]) })).filter((g) => g.name).slice(0, 5);
+  if (!guesses.length) return null;
+  const ts = apLineTime(line, now);
+  return { uid: uidOf(`${mac}|${ts}|${m[2]}`), ts, kind: FP_KIND, name: "UniFi's guess", category: "guess", mac, data: { guesses, below } };
+}
+
 export function parseApLine(line, now = Date.now()) {
   const tracker = line.indexOf("STA_ASSOC_TRACKER");
   const anomaly = line.indexOf("log_sta_anomalies");
@@ -172,7 +210,7 @@ export function parseApLine(line, now = Date.now()) {
 
 export function parseLine(line, now = Date.now()) {
   if (!line) return null;
-  const ap = parseApLine(line, now) || parseGatewayLine(line, now);
+  const ap = parseApLine(line, now) || parseGatewayLine(line, now) || parseSwitchLine(line, now) || parseGuessLine(line, now);
   if (ap) return ap;
   const c = line.indexOf("CEF:");
   if (c >= 0) {
@@ -319,13 +357,16 @@ export async function refreshSystemLog() {
 const UNPARSED_PER_PROG = 25;
 const unparsed = { since: Date.now(), total: 0, progs: new Map(), hosts: new Map() };
 const anomalySeen = new Map();
+const guessSeen = new Map(); // mac -> { sig, ts } (UU-C-311)
 const merged = new Map(); // merge key -> the row being counted (UU-C-304)
 // UniFi puts a tag between the host and the program (measured on Network 11 / firmware 8.8):
 // access points "<mac>,<model>-<version>:", the gateway its own name again, so the program is
 // the first "name[pid]:" or "name:" among the next three words.
 const HEADER = /^\s*(?:\d+\s+)?(?:<\d+>)?(?:\d\s+)?(?:[A-Z][a-z]{2}\s+\d+\s+[\d:]+|\d{4}-\d\d-\d\dT\S+)\s+(\S+)\s+(.*)$/;
+// Switches send no time at all: "<30>USW-Flex-2.5G-5 <mac>,<model>-<version>: switch: ..." (UU-C-311).
+const HEADER_NO_TIME = /^\s*(?:\d+\s+)?<\d+>(?:\d\s+)?([A-Za-z][\w.-]*)\s+(.*)$/;
 export function syslogSource(line) {
-  const m = HEADER.exec(line);
+  const m = HEADER.exec(line) || HEADER_NO_TIME.exec(line);
   if (!m) return { host: "?", prog: "?" };
   const words = m[2].split(/\s+/).slice(0, 3);
   for (const w of words) {
@@ -375,6 +416,15 @@ function queue(line) {
     if (ev.ts - (anomalySeen.get(key) || 0) < 5 * 60e3) return;
     anomalySeen.set(key, ev.ts);
     if (anomalySeen.size > 5000) anomalySeen.clear();
+  }
+  // UniFi's guesses come twice per line and again as it relearns: one per device per 6 hours
+  // unless they changed.
+  if (ev.kind === FP_KIND) {
+    const sig = JSON.stringify(ev.data.guesses);
+    const was = guessSeen.get(ev.mac);
+    if (was && was.sig === sig && ev.ts - was.ts < 6 * 3600e3) return;
+    guessSeen.set(ev.mac, { sig, ts: ev.ts });
+    if (guessSeen.size > 5000) guessSeen.clear();
   }
   // Band steering and gateway failures repeat every few seconds while they last (UU-C-304): one
   // row per device (or failure) per 10 minutes, its count `n` raised and the last signal kept.

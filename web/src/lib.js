@@ -227,6 +227,9 @@ export const DEVICE_KINDS = [
 ];
 export const kindLabel = (k) => DEVICE_KINDS.find(([id]) => id === k)?.[1] || "Other";
 // How NetLens knows the type, for a tooltip.
+// UniFi's traffic-based guesses from the gateway's log (UU-C-311), when it has any: "GE Cync A19
+// Light Bulb 59 %, GE Cync Indoor Smart Plug 24 %".
+export const guessText = (t) => (t?.guesses?.list?.length ? `UniFi's traffic guesses${t.guesses.below ? " (none sure enough to use)" : ""}: ${t.guesses.list.slice(0, 3).map((g) => `${g.name} ${g.pct} %`).join(", ")}` : "");
 export const kindSource = (t) =>
   !t ? "" : t.source === "you" ? "set by you" : t.source === "unifi" ? `UniFi's fingerprint${t.model ? `: ${t.model}` : t.family || t.type ? `: ${t.family || t.type}` : ""}${t.unsureModel ? ` (it guesses ${t.unsureModel}, only ${t.confidence} % sure)` : ""}` : t.source === "virtual" ? "its address looks virtual" : t.source === "host" ? "VMs or containers run on it" : t.source === "guess" ? "a guess from its name" : "UniFi did not recognise it";
 

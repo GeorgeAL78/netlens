@@ -581,6 +581,40 @@ export function gatewayEvents(since, before) {
     .map((r) => ({ ...r, data: JSON.parse(r.data || "{}") }));
 }
 
+// Switch port links going down and up (UU-C-311), kind 'sw', oldest first, optionally for one
+// switch and port.
+export function switchLinks(since, before, swMac = null, port = null) {
+  const where = ["kind = 'sw'", "ts >= ?", "ts < ?"];
+  const args = [since, before];
+  if (swMac) {
+    where.push("json_extract(data, '$.swMac') = ?");
+    args.push(swMac);
+  }
+  if (port != null) {
+    where.push("json_extract(data, '$.port') = ?");
+    args.push(Number(port));
+  }
+  return db
+    .prepare(`SELECT ts, data FROM siem_events WHERE ${where.join(" AND ")} ORDER BY ts`)
+    .all(...args)
+    .map((r) => ({ ts: r.ts, ...JSON.parse(r.data || "{}") }));
+}
+
+// The wired devices last seen on a switch port at or before `at` (UU-C-311), newest first.
+export function wiredOnPortAt(swMac, port, at, window = 7 * 86400e3) {
+  return db
+    .prepare(`SELECT mac, MAX(ts) AS ts FROM client_samples WHERE wired = 1 AND ap_mac = ? AND port = ? AND ts <= ? AND ts > ? GROUP BY mac ORDER BY ts DESC`)
+    .all(swMac, Number(port), at, at - window);
+}
+
+// Each device's newest guesses from UniFi's traffic fingerprinting (UU-C-311), kind 'fp'.
+export function latestGuesses(since) {
+  const out = new Map();
+  const rows = db.prepare(`SELECT mac, MAX(ts) AS ts, data FROM siem_events WHERE kind = 'fp' AND mac IS NOT NULL AND ts >= ? GROUP BY mac`).all(since);
+  for (const r of rows) out.set(r.mac, { ts: r.ts, ...JSON.parse(r.data || "{}") });
+  return out;
+}
+
 // System Log connects / roams / disconnects in [since, before), oldest first, optionally for
 // one device — where devices were attached on days NetLens took no samples (UU-C-102).
 export function linkEvents(since, before, mac = null) {

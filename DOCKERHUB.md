@@ -49,6 +49,7 @@ Source, issues and full documentation: **https://github.com/GeorgeAL78/netlens**
   check, block) and several at once; offline devices checked on the network every 5 minutes.
 - **Wi-Fi problems** (with syslog) — why a device left the Wi-Fi, DNS timeouts, the anomalies the
   access points flag and band steering (asked to move, and whether it did), kept 90 days; gateway errors on Overview.
+- **Cable link drops** (with syslog) — when a wired device's link went down and the speed it came back at (asleep, woke up, standby, or a loose cable), from the switch's own log.
 - **Activity › Sites** — every site each device connected to (30 days), filtered by category; addresses hidden
   by secure DNS named when they belong to a watched site.
 - **Protection › Limits** — daily limits on time or data for an app on a device, flagged on Overview.
@@ -100,7 +101,7 @@ and imports such a file — for backups, restores or moving to another server.
 | Port | |
 | --- | --- |
 | `3780/tcp` | web UI |
-| `5514/tcp+udp` | syslog listener for ad-block counts and the access points' Wi-Fi problems (on by default; point UniFi's SIEM server here and tick Devices › Access Points) |
+| `5514/tcp+udp` | syslog listener for ad-block counts and the access points' Wi-Fi problems (on by default; point UniFi's SIEM server here and tick Devices › Gateway, Access Points and Switches) |
 
 Forgot the password? Start once with `NETLENS_RESET_PASSWORD=1`, set a new one in the
 browser, then remove the variable.

@@ -27,6 +27,7 @@ import { siteCategory } from "./sitecats.js";
 import { BUCKET_MS } from "./buckets.js";
 import * as siem from "./siem.js";
 import * as health from "./health.js";
+import * as cablelinks from "./cablelinks.js";
 import * as insights from "./insights.js";
 import * as airview from "./airview.js";
 import * as live from "./live.js";
@@ -2594,11 +2595,15 @@ function enrichDevices(devices, now) {
     logError("devices: host grouping", err);
   }
   const choices = fingerprint.overrides();
+  // UniFi's traffic-based guesses from the gateway's log (UU-C-311), the newest per device.
+  const guessed = db.latestGuesses(now - 30 * 86400e3);
   const hostMacs = new Set([...hostOf.values()].map((h) => h.mac));
   for (const d of devices) {
     const guest = guests.guestKind(d.mac, d.vendor, d.wired);
     d.type = fingerprint.typeOf(d.mac, d.fp, guest, [d.name, d.hostname], choices, { hosts: hostMacs.has(d.mac), vendor: d.vendor });
     delete d.fp;
+    const g = guessed.get(d.mac);
+    if (g && d.type) d.type.guesses = { ts: g.ts, below: Boolean(g.below), list: g.guesses || [] };
     const t = today.get(d.mac);
     d.today = t ? { bytes: t.bytes, down: t.down, up: t.up, apps: [...t.apps.values()].sort((a, b) => b.bytes - a.bytes).slice(0, 4) } : null;
     const s = last.get(d.mac);
@@ -2708,6 +2713,23 @@ app.get("/api/devices/:mac/wifi-problems", (req, res) => {
     res.json({ mac, date, days: date ? 1 : days, start, end, ...wifiproblems.forDevice(mac, start, end) });
   } catch (err) {
     sendError(res, "GET /api/devices/:mac/wifi-problems", err);
+  }
+});
+
+// A wired device's link drops from the switches' own log (UU-C-311): per port it used, each time
+// the link went down and the speed it came back at. `date=` one day, else the last `days` (1-30, default 7).
+app.get("/api/devices/:mac/cable", (req, res) => {
+  try {
+    const mac = String(req.params.mac || "").toLowerCase();
+    if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) return res.status(400).json({ error: "That is not a MAC address." });
+    const now = Date.now();
+    const date = /^\d{4}-\d\d-\d\d$/.test(String(req.query.date || "")) ? String(req.query.date) : null;
+    const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
+    const start = date ? zonedMidnight(date) : now - days * 86400e3;
+    const end = date ? zonedMidnight(addDays(date, 1)) : now + 1;
+    res.json({ mac, date, days: date ? 1 : days, start, end, ...cablelinks.forDevice(mac, start, end) });
+  } catch (err) {
+    sendError(res, "GET /api/devices/:mac/cable", err);
   }
 });
 
